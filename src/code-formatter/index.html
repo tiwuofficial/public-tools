@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>コード整形 (HTML / CSS / JS) - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>コード整形 (HTML / CSS / JavaScript)</h1>
+    <p class="lead">外部依存なしの簡易フォーマッタ。一般的なコードを読みやすい形に整形します。</p>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button type="button" class="active" data-lang="html">HTML</button>
+    <button type="button" data-lang="css">CSS</button>
+    <button type="button" data-lang="js">JavaScript</button>
+  </div>
+
+  <div class="split-2">
+    <div class="pane">
+      <div class="pane-label">入力</div>
+      <textarea id="input" rows="22" placeholder="ここにコードを貼り付け…"></textarea>
+    </div>
+    <div class="pane">
+      <div class="pane-label">出力</div>
+      <pre class="code" id="output" style="margin-top:0;min-height:480px;"></pre>
+    </div>
+  </div>
+
+  <div class="actions" style="margin-top:12px;">
+    <button type="button" id="format" class="primary">整形</button>
+    <button type="button" id="copy">出力をコピー</button>
+    <button type="button" id="clear">クリア</button>
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;color:var(--muted);">
+      インデント
+      <select id="indent" style="width:auto;">
+        <option value="2" selected>スペース 2</option>
+        <option value="4">スペース 4</option>
+        <option value="tab">タブ</option>
+      </select>
+    </label>
+  </div>
+
+  <div id="status"></div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    ※ 簡易実装のため、複雑な記法（テンプレートリテラル内の式・JSX・特殊な改行など）では完全な整形ができない場合があります。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const tabs = document.querySelectorAll('.tabs button');
+    const input = $('input');
+    const output = $('output');
+    const status = $('status');
+    let lang = 'html';
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function getIndent() {
+      const v = $('indent').value;
+      return v === 'tab' ? '\t' : ' '.repeat(parseInt(v, 10));
+    }
+
+    // ======== HTML formatter ========
+    const VOID = new Set(['area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr']);
+    const RAW = new Set(['script','style']);
+
+    function formatHtml(src, indent) {
+      const tokens = [];
+      let i = 0;
+      while (i < src.length) {
+        if (src.startsWith('<!--', i)) {
+          const end = src.indexOf('-->', i + 4);
+          const e = end < 0 ? src.length : end + 3;
+          tokens.push({ type: 'comment', value: src.slice(i, e) });
+          i = e;
+        } else if (src.startsWith('<!', i) || src.startsWith('<?', i)) {
+          const end = src.indexOf('>', i);
+          const e = end < 0 ? src.length : end + 1;
+          tokens.push({ type: 'doctype', value: src.slice(i, e) });
+          i = e;
+        } else if (src[i] === '<') {
+          const end = src.indexOf('>', i);
+          if (end < 0) { tokens.push({ type: 'text', value: src.slice(i) }); break; }
+          const tag = src.slice(i, end + 1);
+          const isClosing = tag.startsWith('</');
+          const isSelfClose = tag.endsWith('/>');
+          const m = tag.match(/^<\/?([a-zA-Z][a-zA-Z0-9-]*)/);
+          const name = m ? m[1].toLowerCase() : '';
+          tokens.push({ type: 'tag', value: tag, name, isClosing, isSelfClose });
+          i = end + 1;
+          if (!isClosing && !isSelfClose && RAW.has(name)) {
+            const close = '</' + name;
+            const lower = src.toLowerCase();
+            const ce = lower.indexOf(close, i);
+            const re = ce < 0 ? src.length : ce;
+            tokens.push({ type: 'raw', value: src.slice(i, re) });
+            i = re;
+          }
+        } else {
+          const next = src.indexOf('<', i);
+          const end = next < 0 ? src.length : next;
+          tokens.push({ type: 'text', value: src.slice(i, end) });
+          i = end;
+        }
+      }
+
+      let depth = 0;
+      const lines = [];
+      const ind = (d) => indent.repeat(Math.max(0, d));
+      const inlineNext = []; // not used in basic version
+
+      for (const t of tokens) {
+        if (t.type === 'text') {
+          const trimmed = t.value.replace(/\s+/g, ' ').trim();
+          if (trimmed) lines.push(ind(depth) + trimmed);
+        } else if (t.type === 'comment' || t.type === 'doctype') {
+          lines.push(ind(depth) + t.value);
+        } else if (t.type === 'raw') {
+          const inner = t.value.replace(/^\s+|\s+$/g, '');
+          if (!inner) continue;
+          // 内部を行ごとに整形（インデント深さ +1）
+          const baseIndentMatch = inner.match(/^[ \t]*/);
+          const baseLen = baseIndentMatch ? baseIndentMatch[0].length : 0;
+          const innerLines = inner.split('\n').map((l) => {
+            // 元の先頭インデントを剥がしつつ末尾空白除去
+            const stripped = l.replace(/[ \t]+$/, '');
+            const cut = stripped.startsWith(' '.repeat(baseLen)) || stripped.startsWith('\t'.repeat(baseLen))
+              ? stripped.slice(baseLen)
+              : stripped.replace(/^\s+/, '');
+            return cut === '' ? '' : ind(depth + 1) + cut;
+          });
+          while (innerLines.length && innerLines[0] === '') innerLines.shift();
+          while (innerLines.length && innerLines[innerLines.length - 1] === '') innerLines.pop();
+          innerLines.forEach((l) => lines.push(l));
+        } else if (t.type === 'tag') {
+          if (t.isClosing) {
+            depth = Math.max(0, depth - 1);
+            lines.push(ind(depth) + t.value);
+          } else {
+            lines.push(ind(depth) + t.value);
+            if (!t.isSelfClose && !VOID.has(t.name)) depth++;
+          }
+        }
+      }
+      return lines.join('\n');
+    }
+
+    // ======== CSS formatter ========
+    function formatCss(src, indent) {
+      let i = 0, depth = 0, out = '', buf = '';
+      const ind = () => indent.repeat(Math.max(0, depth));
+      function emitLine(line) {
+        if (out !== '' && !out.endsWith('\n')) out += '\n';
+        out += ind() + line;
+      }
+      function flushSelectorOpen() {
+        const s = buf.replace(/\s+/g, ' ').trim();
+        if (s) emitLine(s + ' {');
+        else emitLine('{');
+        buf = '';
+      }
+      function flushDecl() {
+        const s = buf.replace(/\s+/g, ' ').trim();
+        if (s) {
+          // ":" で分け、prop と value を整える
+          const idx = s.indexOf(':');
+          if (idx > 0) {
+            const prop = s.slice(0, idx).trim();
+            const val = s.slice(idx + 1).trim();
+            emitLine(prop + ': ' + val + ';');
+          } else {
+            emitLine(s + ';');
+          }
+        }
+        buf = '';
+      }
+      while (i < src.length) {
+        const c = src[i];
+        if (c === '"' || c === "'") {
+          const q = c;
+          let j = i + 1;
+          while (j < src.length && src[j] !== q) {
+            if (src[j] === '\\' && j + 1 < src.length) j += 2;
+            else j++;
+          }
+          buf += src.slice(i, j + 1);
+          i = j + 1;
+          continue;
+        }
+        if (c === '/' && src[i + 1] === '*') {
+          const end = src.indexOf('*/', i + 2);
+          const e = end < 0 ? src.length : end + 2;
+          if (buf.trim()) flushDecl();
+          emitLine(src.slice(i, e));
+          i = e;
+          continue;
+        }
+        if (c === '{') { flushSelectorOpen(); depth++; i++; continue; }
+        if (c === '}') {
+          if (buf.trim()) flushDecl();
+          depth = Math.max(0, depth - 1);
+          emitLine('}');
+          i++;
+          continue;
+        }
+        if (c === ';') { flushDecl(); i++; continue; }
+        buf += c;
+        i++;
+      }
+      if (buf.trim()) flushDecl();
+      return out.replace(/^\n+/, '').replace(/\n{3,}/g, '\n\n');
+    }
+
+    // ======== JavaScript formatter (best-effort) ========
+    function formatJs(src, indent) {
+      // --- tokenize ---
+      const tokens = [];
+      let i = 0;
+      function isRegexCtx() {
+        for (let k = tokens.length - 1; k >= 0; k--) {
+          const t = tokens[k];
+          if (t.t === 'comment') continue;
+          if (t.t === 'punct') {
+            if ([')', ']'].includes(t.v)) return false;
+            if (['++', '--'].includes(t.v)) return false;
+            return true;
+          }
+          if (t.t === 'word') {
+            return ['return', 'typeof', 'in', 'of', 'new', 'delete', 'void', 'throw',
+                    'case', 'do', 'else', 'instanceof', 'yield', 'await'].includes(t.v);
+          }
+          return false;
+        }
+        return true;
+      }
+      while (i < src.length) {
+        const c = src[i];
+        if (c === '/' && src[i + 1] === '/') {
+          const end = src.indexOf('\n', i);
+          const e = end < 0 ? src.length : end;
+          tokens.push({ t: 'comment', v: src.slice(i, e), line: true });
+          i = e;
+        } else if (c === '/' && src[i + 1] === '*') {
+          const end = src.indexOf('*/', i + 2);
+          const e = end < 0 ? src.length : end + 2;
+          tokens.push({ t: 'comment', v: src.slice(i, e), line: false });
+          i = e;
+        } else if (c === '"' || c === "'" || c === '`') {
+          const q = c;
+          let j = i + 1;
+          while (j < src.length && src[j] !== q) {
+            if (src[j] === '\\') { j += 2; continue; }
+            if (q === '`' && src[j] === '$' && src[j + 1] === '{') {
+              let d = 1; j += 2;
+              while (j < src.length && d > 0) {
+                if (src[j] === '\\') { j += 2; continue; }
+                if (src[j] === '{') d++;
+                else if (src[j] === '}') d--;
+                j++;
+              }
+              continue;
+            }
+            j++;
+          }
+          tokens.push({ t: 'string', v: src.slice(i, j + 1) });
+          i = j + 1;
+        } else if (c === '/' && isRegexCtx()) {
+          let j = i + 1, cls = false;
+          while (j < src.length) {
+            if (src[j] === '\\') { j += 2; continue; }
+            if (src[j] === '[') cls = true;
+            else if (src[j] === ']') cls = false;
+            else if (src[j] === '/' && !cls) break;
+            else if (src[j] === '\n') break;
+            j++;
+          }
+          if (src[j] === '/') j++;
+          while (j < src.length && /[a-z]/i.test(src[j])) j++;
+          tokens.push({ t: 'regex', v: src.slice(i, j) });
+          i = j;
+        } else if (/\s/.test(c)) {
+          // 改行は意味があるかもしれないが、簡易版では全て無視
+          i++;
+        } else if (/[a-zA-Z_$]/.test(c)) {
+          let j = i;
+          while (j < src.length && /[a-zA-Z_$0-9]/.test(src[j])) j++;
+          tokens.push({ t: 'word', v: src.slice(i, j) });
+          i = j;
+        } else if (/[0-9]/.test(c) || (c === '.' && /[0-9]/.test(src[i + 1]))) {
+          let j = i;
+          while (j < src.length && /[0-9._eExX+\-a-fA-F]/.test(src[j])) {
+            // 数値の符号は前のトークンが演算子の場合のみ。簡易判定で止める
+            if ((src[j] === '+' || src[j] === '-') && !/[eE]/.test(src[j - 1])) break;
+            j++;
+          }
+          tokens.push({ t: 'num', v: src.slice(i, j) });
+          i = j;
+        } else {
+          const three = src.slice(i, i + 3);
+          const two = src.slice(i, i + 2);
+          if (['===', '!==', '>>>', '...', '**=', '>>>='].includes(three)) {
+            tokens.push({ t: 'punct', v: three }); i += 3;
+          } else if (['==', '!=', '<=', '>=', '&&', '||', '=>', '++', '--',
+                      '+=', '-=', '*=', '/=', '%=', '**', '??', '?.', '<<', '>>',
+                      '|=', '&=', '^='].includes(two)) {
+            tokens.push({ t: 'punct', v: two }); i += 2;
+          } else {
+            tokens.push({ t: 'punct', v: c }); i++;
+          }
+        }
+      }
+
+      // --- render ---
+      const KW_SPACE_BEFORE_PAREN = new Set(['if', 'while', 'for', 'switch', 'catch', 'return', 'typeof', 'in', 'of', 'new', 'delete', 'void', 'throw', 'yield', 'await']);
+      const BIN_OP = new Set(['=', '+', '-', '*', '/', '%', '==', '===', '!=', '!==',
+        '<', '<=', '>', '>=', '&&', '||', '=>', '+=', '-=', '*=', '/=', '%=',
+        '??', '**', '**=', '|', '&', '^', '<<', '>>', '>>>', '|=', '&=', '^=']);
+      const UNARY_AMBIG = new Set(['+', '-', '!', '~']);
+
+      let depth = 0;
+      let parenDepth = 0;
+      let bracketDepth = 0;
+      let lines = [];
+      let cur = '';
+      const indStr = () => indent.repeat(Math.max(0, depth));
+
+      function pushLine() {
+        if (cur.length > 0) {
+          lines.push(indStr() + cur);
+          cur = '';
+        }
+      }
+      function append(s) { cur += s; }
+      function endsWithSpaceOrEmpty() {
+        return cur === '' || /[\s({\[]$/.test(cur);
+      }
+
+      for (let k = 0; k < tokens.length; k++) {
+        const t = tokens[k];
+        const prev = tokens[k - 1];
+        const next = tokens[k + 1];
+
+        if (t.t === 'comment') {
+          if (t.line) {
+            // 行コメント: 既存行があれば末尾、なければ新規行
+            if (cur.trim() !== '') append(' ' + t.v);
+            else append(t.v);
+            pushLine();
+          } else {
+            if (cur.trim() !== '') append(' ' + t.v);
+            else append(t.v);
+          }
+          continue;
+        }
+
+        if (t.t === 'punct') {
+          if (t.v === '{') {
+            if (!endsWithSpaceOrEmpty()) append(' ');
+            append('{');
+            depth++;
+            pushLine();
+          } else if (t.v === '}') {
+            pushLine();
+            depth = Math.max(0, depth - 1);
+            cur = '';
+            append('}');
+            // セミコロンや `,` `else` などが続かなければ改行
+            if (!next || (next.t !== 'punct' || (next.v !== ';' && next.v !== ',' && next.v !== ')' && next.v !== ']'))
+                && !(next && next.t === 'word' && ['else', 'catch', 'finally', 'while'].includes(next.v))) {
+              pushLine();
+            }
+          } else if (t.v === ';') {
+            append(';');
+            if (parenDepth === 0) pushLine();
+          } else if (t.v === '(') {
+            parenDepth++;
+            append('(');
+          } else if (t.v === ')') {
+            parenDepth--;
+            append(')');
+          } else if (t.v === '[') {
+            bracketDepth++;
+            append('[');
+          } else if (t.v === ']') {
+            bracketDepth--;
+            append(']');
+          } else if (t.v === ',') {
+            append(',');
+            if (parenDepth > 0 || bracketDepth > 0) append(' ');
+            else pushLine();
+          } else if (t.v === ':') {
+            // ラベル/三項/オブジェクト/型: 簡易にどれも `: ` に統一
+            append(': ');
+          } else if (t.v === '.') {
+            append('.');
+          } else if (t.v === '?') {
+            if (!endsWithSpaceOrEmpty()) append(' ');
+            append('? ');
+          } else if (t.v === '?.') {
+            append('?.');
+          } else if (t.v === '...') {
+            if (!endsWithSpaceOrEmpty()) append(' ');
+            append('...');
+          } else if (BIN_OP.has(t.v)) {
+            // 単項演算子の場合がある
+            const isUnary = UNARY_AMBIG.has(t.v) && (
+              !prev ||
+              prev.t === 'punct' && !['++', '--', ')', ']'].includes(prev.v) ||
+              prev.t === 'word' && ['return', 'typeof', 'new', 'delete', 'void', 'throw', 'in', 'of', 'instanceof', 'await', 'yield', 'else', 'do'].includes(prev.v)
+            );
+            if (isUnary) {
+              if (prev && (prev.t === 'word' || prev.t === 'num' || prev.t === 'string' || prev.t === 'regex' || (prev.t === 'punct' && [')', ']'].includes(prev.v)))) {
+                append(' ');
+              }
+              append(t.v);
+            } else {
+              if (!endsWithSpaceOrEmpty()) append(' ');
+              append(t.v + ' ');
+            }
+          } else {
+            append(t.v);
+          }
+          continue;
+        }
+
+        if (t.t === 'word' || t.t === 'num' || t.t === 'string' || t.t === 'regex') {
+          if (prev && (['word', 'num', 'string', 'regex'].includes(prev.t) ||
+                       (prev.t === 'punct' && [')', ']'].includes(prev.v)))) {
+            if (!endsWithSpaceOrEmpty()) append(' ');
+          }
+          append(t.v);
+          if (t.t === 'word' && KW_SPACE_BEFORE_PAREN.has(t.v) && next && next.t === 'punct' && next.v === '(') {
+            append(' ');
+          }
+          continue;
+        }
+      }
+      pushLine();
+      return lines.filter((l, idx, arr) => !(l.trim() === '' && arr[idx - 1] !== undefined && arr[idx - 1].trim() === '')).join('\n').trim();
+    }
+
+    // ---- highlight (very basic) ----
+    function highlight(text, ln) {
+      const e = escapeHtml(text);
+      if (ln === 'js') {
+        return e.replace(
+          /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|\b(true|false|null|undefined|function|return|if|else|for|while|do|switch|case|break|continue|var|let|const|new|delete|typeof|instanceof|in|of|class|extends|this|super|throw|try|catch|finally|yield|await|async|export|import|from|default)\b|-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b/g,
+          (m, c, s, w, n) => {
+            if (c) return '<span class="tk-null">' + c + '</span>';
+            if (s) return '<span class="tk-str">' + s + '</span>';
+            if (w) return '<span class="tk-bool">' + w + '</span>';
+            return '<span class="tk-num">' + m + '</span>';
+          }
+        );
+      }
+      if (ln === 'css') {
+        return e.replace(
+          /(\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|([\w-]+)(?=\s*:)|(#[0-9a-fA-F]{3,8})/g,
+          (m, c, s, p, h) => {
+            if (c) return '<span class="tk-null">' + c + '</span>';
+            if (s) return '<span class="tk-str">' + s + '</span>';
+            if (p) return '<span class="tk-key">' + p + '</span>';
+            if (h) return '<span class="tk-num">' + h + '</span>';
+            return m;
+          }
+        );
+      }
+      // html
+      return e.replace(
+        /(&lt;!--[\s\S]*?--&gt;)|(&lt;\/?[a-zA-Z][^&]*?&gt;)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g,
+        (m, c, t, s) => {
+          if (c) return '<span class="tk-null">' + c + '</span>';
+          if (t) return '<span class="tk-key">' + t + '</span>';
+          if (s) return '<span class="tk-str">' + s + '</span>';
+          return m;
+        }
+      );
+    }
+
+    function setStatus(kind, msg) {
+      status.innerHTML = '<div class="banner ' + kind + '">' + escapeHtml(msg) + '</div>';
+    }
+    function clearStatus() { status.innerHTML = ''; }
+
+    function format() {
+      const src = input.value;
+      if (!src.trim()) { output.innerHTML = ''; clearStatus(); return; }
+      const ind = getIndent();
+      let out = '';
+      try {
+        if (lang === 'html') out = formatHtml(src, ind);
+        else if (lang === 'css') out = formatCss(src, ind);
+        else out = formatJs(src, ind);
+      } catch (e) {
+        setStatus('error', '整形中にエラー: ' + e.message);
+        return;
+      }
+      output.innerHTML = highlight(out, lang);
+      setStatus('ok', 'OK ・ ' + out.length.toLocaleString('ja-JP') + ' 文字');
+    }
+
+    tabs.forEach((b) => {
+      b.addEventListener('click', function () {
+        tabs.forEach((x) => x.classList.remove('active'));
+        b.classList.add('active');
+        lang = b.dataset.lang;
+        // プレースホルダ更新
+        input.placeholder = {
+          html: '<div class="x"><p>hello</p></div>',
+          css: '.x{color:red;background:#fff;}',
+          js: 'function add(a,b){return a+b;}'
+        }[lang];
+      });
+    });
+    input.placeholder = '<div class="x"><p>hello</p></div>';
+
+    $('format').addEventListener('click', format);
+    $('clear').addEventListener('click', function () {
+      input.value = ''; output.innerHTML = ''; clearStatus(); input.focus();
+    });
+    $('copy').addEventListener('click', async function () {
+      const text = output.textContent;
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        const orig = this.textContent;
+        this.textContent = 'コピー済';
+        setTimeout(() => { this.textContent = orig; }, 1200);
+      } catch (e) { alert('コピーできませんでした: ' + e.message); }
+    });
+    input.addEventListener('keydown', function (e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); format(); }
+    });
+  })();
+</script>
+</body>
+</html>
