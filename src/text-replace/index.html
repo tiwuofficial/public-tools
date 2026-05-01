@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文字置換 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 置換ペアの行レイアウト */
+  .pair-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 60px;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .pair-row input { width: 100%; }
+  .pair-row .small-btn { padding: 6px 8px; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>文字置換</h1>
+    <p class="lead">テキストの中の文字を別の文字に置き換えます。複数の置換を一度に実行できます。</p>
+  </header>
+
+  <div class="split-2">
+    <div class="pane">
+      <div class="pane-label">入力テキスト</div>
+      <textarea id="input" rows="14" placeholder="ここに置換したいテキストを貼り付け…"></textarea>
+    </div>
+    <div class="pane">
+      <div class="pane-label">置換結果</div>
+      <textarea id="output" rows="14" readonly></textarea>
+    </div>
+  </div>
+
+  <h2>置換ペア</h2>
+  <div class="card">
+    <div style="display:grid;grid-template-columns:1fr 1fr 60px;gap:8px;margin-bottom:6px;color:var(--muted);font-size:0.85rem;">
+      <div>検索する文字</div>
+      <div>置換後の文字</div>
+      <div></div>
+    </div>
+    <div id="pairs"></div>
+    <div class="actions">
+      <button type="button" id="addPair">＋ ペアを追加</button>
+    </div>
+  </div>
+
+  <h2>オプション</h2>
+  <div class="card">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.95rem;">
+        <input type="checkbox" id="caseInsensitive" style="width:auto;"> 大文字・小文字を区別しない
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.95rem;">
+        <input type="checkbox" id="useRegex" style="width:auto;"> 正規表現として扱う
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.95rem;">
+        <input type="checkbox" id="wholeWord" style="width:auto;"> 単語全体だけ置換 (英数字の境界)
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.95rem;">
+        <input type="checkbox" id="multiline" style="width:auto;"> 複数行モード (^ $ を行頭末に)
+      </label>
+    </div>
+  </div>
+
+  <div class="actions" style="margin-top:12px;">
+    <button type="button" id="run" class="primary">置換実行</button>
+    <button type="button" id="copy">結果をコピー</button>
+    <button type="button" id="swap">結果を入力に戻す</button>
+    <button type="button" id="clear">クリア</button>
+  </div>
+
+  <div id="status" style="margin-top:8px;"></div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    ヒント: 置換ペアは上から順に適用されます。正規表現モードの置換後文字列では <code>$1</code>, <code>$&amp;</code> なども使えます。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const pairsEl = $('pairs');
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function escapeAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+    function setStatus(kind, msg) {
+      $('status').innerHTML = msg ? '<div class="banner ' + kind + '">' + escapeHtml(msg) + '</div>' : '';
+    }
+
+    function addPair(s, r) {
+      const div = document.createElement('div');
+      div.className = 'pair-row';
+      div.innerHTML =
+        '<input type="text" class="p-find" spellcheck="false" placeholder="検索" value="' + escapeAttr(s || '') + '">' +
+        '<input type="text" class="p-rep" spellcheck="false" placeholder="置換後" value="' + escapeAttr(r || '') + '">' +
+        '<button type="button" class="small-btn p-del">削除</button>';
+      pairsEl.appendChild(div);
+    }
+
+    pairsEl.addEventListener('click', function (e) {
+      if (e.target.classList.contains('p-del')) {
+        e.target.closest('.pair-row').remove();
+        run();
+      }
+    });
+    pairsEl.addEventListener('input', function (e) {
+      if (e.target.classList.contains('p-find') || e.target.classList.contains('p-rep')) run();
+    });
+
+    $('addPair').addEventListener('click', function () { addPair('', ''); });
+
+    function buildRegex(find) {
+      let flags = 'g';
+      if ($('caseInsensitive').checked) flags += 'i';
+      if ($('multiline').checked) flags += 'm';
+      let pattern;
+      if ($('useRegex').checked) {
+        pattern = find;
+      } else {
+        pattern = escapeRegex(find);
+      }
+      if ($('wholeWord').checked) {
+        pattern = '\\b' + pattern + '\\b';
+      }
+      return new RegExp(pattern, flags);
+    }
+
+    function run() {
+      setStatus('', '');
+      const src = $('input').value;
+      const rows = pairsEl.querySelectorAll('.pair-row');
+      let result = src;
+      let totalReplacements = 0;
+      const stats = [];
+      try {
+        rows.forEach((row) => {
+          const find = row.querySelector('.p-find').value;
+          const rep = row.querySelector('.p-rep').value;
+          if (find === '') return;
+          const re = buildRegex(find);
+          let count = 0;
+          // count による集計のため、まず matchAll でカウント
+          const matches = result.matchAll(re);
+          for (const _ of matches) count++;
+          result = result.replace(re, rep);
+          totalReplacements += count;
+          stats.push(find + ' → ' + rep + '：' + count + ' 件');
+        });
+      } catch (e) {
+        setStatus('error', '置換エラー: ' + e.message);
+        $('output').value = '';
+        return;
+      }
+      $('output').value = result;
+      if (totalReplacements > 0) {
+        setStatus('ok', '✓ ' + totalReplacements + ' 件置換しました（' + stats.join(' / ') + '）');
+      } else {
+        setStatus('', '');
+      }
+    }
+
+    ['input', 'caseInsensitive', 'useRegex', 'wholeWord', 'multiline'].forEach((id) => {
+      $(id).addEventListener('input', run);
+      $(id).addEventListener('change', run);
+    });
+    $('run').addEventListener('click', run);
+    $('copy').addEventListener('click', async function () {
+      if (!$('output').value) return;
+      try {
+        await navigator.clipboard.writeText($('output').value);
+        const o = this.textContent; this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = o, 1000);
+      } catch (e) {}
+    });
+    $('swap').addEventListener('click', function () {
+      $('input').value = $('output').value;
+      $('output').value = '';
+      run();
+    });
+    $('clear').addEventListener('click', function () {
+      $('input').value = ''; $('output').value = '';
+      pairsEl.innerHTML = ''; addPair('', '');
+      setStatus('', ''); $('input').focus();
+    });
+
+    // 初期サンプル
+    addPair('hello', 'こんにちは');
+    addPair('world', '世界');
+    $('input').value = 'hello world!\nHello, world.';
+    run();
+  })();
+</script>
+</body>
+</html>
