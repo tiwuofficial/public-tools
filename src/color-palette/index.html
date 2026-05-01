@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>配色テーマジェネレータ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 配色スウォッチ */
+  .pal-section { margin-bottom: 22px; }
+  .pal-section h2 {
+    margin-bottom: 6px;
+    font-size: 1rem;
+  }
+  .pal-section .desc {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+  }
+  .swatch-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+  }
+  .swatch {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.1s ease;
+  }
+  .swatch:hover { transform: translateY(-2px); }
+  .swatch .color {
+    height: 80px;
+  }
+  .swatch .meta {
+    padding: 6px 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+    display: flex;
+    justify-content: space-between;
+  }
+  .swatch .label {
+    color: var(--muted);
+    font-size: 0.75rem;
+  }
+  .scale-row {
+    display: grid;
+    grid-template-columns: repeat(11, 1fr);
+    gap: 4px;
+  }
+  .scale-row .swatch .color { height: 56px; }
+  .scale-row .swatch .meta { padding: 4px 6px; font-size: 0.75rem; flex-direction: column; gap: 2px; }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>配色テーマジェネレータ</h1>
+    <p class="lead">ベースとなる色を 1 つ決めるだけで、補色・類似色・三角配色などの調和した配色テーマを自動生成します。</p>
+  </header>
+
+  <div class="card" style="margin-bottom:18px;">
+    <div style="display:grid;grid-template-columns:140px 1fr 200px;gap:10px;align-items:center;">
+      <label for="base" style="color:var(--muted);font-size:0.95rem;">ベース色</label>
+      <input type="color" id="base" value="#3b82f6" style="height:48px;padding:4px;width:160px;">
+      <input type="text" id="baseHex" value="#3b82f6" spellcheck="false">
+
+      <label style="color:var(--muted);font-size:0.95rem;">プリセット</label>
+      <div style="grid-column:span 2;display:flex;flex-wrap:wrap;gap:6px;" id="basePresets"></div>
+    </div>
+  </div>
+
+  <div class="pal-section">
+    <h2>① モノクロマティック (明度違い)</h2>
+    <div class="desc">同じ色相で明度を変えただけのバリエーション。ベース 1 色だけでまとめたいときに。</div>
+    <div class="scale-row" id="monoOut"></div>
+  </div>
+
+  <div class="pal-section">
+    <h2>② 類似色 (Analogous, ±30°)</h2>
+    <div class="desc">色相環で隣り合う色。やわらかく統一感のある配色。</div>
+    <div class="swatch-row" id="anaOut"></div>
+  </div>
+
+  <div class="pal-section">
+    <h2>③ 補色 (Complementary, +180°)</h2>
+    <div class="desc">色相環の反対側。コントラストが強く、目を引きたいアクセントに。</div>
+    <div class="swatch-row" id="compOut"></div>
+  </div>
+
+  <div class="pal-section">
+    <h2>④ スプリット補色 (Split-complementary, ±150°)</h2>
+    <div class="desc">補色の両隣を使うやさしい強調配色。</div>
+    <div class="swatch-row" id="splitOut"></div>
+  </div>
+
+  <div class="pal-section">
+    <h2>⑤ 三角配色 (Triadic, 120° 間隔)</h2>
+    <div class="desc">バランスのとれた鮮やかな 3 色配色。</div>
+    <div class="swatch-row" id="triOut"></div>
+  </div>
+
+  <div class="pal-section">
+    <h2>⑥ 四角配色 (Tetradic, 90° 間隔)</h2>
+    <div class="desc">2 組の補色ペアによる 4 色配色。バランスが難しいが多彩。</div>
+    <div class="swatch-row" id="tetraOut"></div>
+  </div>
+
+  <h2>エクスポート</h2>
+  <div class="tabs" role="tablist">
+    <button type="button" class="active" data-fmt="css">CSS 変数</button>
+    <button type="button" data-fmt="scss">SCSS</button>
+    <button type="button" data-fmt="json">JSON</button>
+    <button type="button" data-fmt="tailwind">Tailwind config</button>
+  </div>
+  <pre class="code" id="exportOut" style="white-space:pre-wrap;"></pre>
+  <div class="actions">
+    <button type="button" id="copy" class="primary">コピー</button>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    // ===== 色変換 =====
+    function hexToRgb(hex) {
+      let h = hex.replace('#', '');
+      if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+      return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
+    }
+    function rgbToHex(r, g, b) {
+      return '#' + [r, g, b].map((n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0')).join('');
+    }
+    function rgbToHsl(r, g, b) {
+      r /= 255; g /= 255; b /= 255;
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      let h = 0, s = 0; const l = (max + min) / 2;
+      if (max !== min) {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+          case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+          case g: h = (b - r) / d + 2; break;
+          case b: h = (r - g) / d + 4; break;
+        }
+        h *= 60;
+      }
+      return { h, s: s * 100, l: l * 100 };
+    }
+    function hslToRgb(h, s, l) {
+      h = ((h % 360) + 360) % 360;
+      s /= 100; l /= 100;
+      const c = (1 - Math.abs(2 * l - 1)) * s;
+      const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+      const m = l - c / 2;
+      let r1 = 0, g1 = 0, b1 = 0;
+      if (h < 60) { r1 = c; g1 = x; }
+      else if (h < 120) { r1 = x; g1 = c; }
+      else if (h < 180) { g1 = c; b1 = x; }
+      else if (h < 240) { g1 = x; b1 = c; }
+      else if (h < 300) { r1 = x; b1 = c; }
+      else { r1 = c; b1 = x; }
+      return { r: (r1 + m) * 255, g: (g1 + m) * 255, b: (b1 + m) * 255 };
+    }
+    function hexToHsl(hex) {
+      const { r, g, b } = hexToRgb(hex);
+      return rgbToHsl(r, g, b);
+    }
+    function hslToHex(h, s, l) {
+      const { r, g, b } = hslToRgb(h, s, l);
+      return rgbToHex(r, g, b);
+    }
+
+    function relLuminance(hex) {
+      const { r, g, b } = hexToRgb(hex);
+      const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+      return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+    }
+    function textColor(hex) {
+      return relLuminance(hex) > 0.4 ? '#1f2328' : '#ffffff';
+    }
+
+    function swatch(label, hex) {
+      const fg = textColor(hex);
+      const hsl = hexToHsl(hex);
+      const hslLabel = 'hsl(' + Math.round(hsl.h) + ', ' + Math.round(hsl.s) + '%, ' + Math.round(hsl.l) + '%)';
+      return '<div class="swatch" data-copy="' + hex + '" title="' + escapeHtml(hslLabel) + '">' +
+        '<div class="color" style="background:' + hex + ';color:' + fg + ';display:flex;align-items:center;justify-content:center;font-size:0.9rem;">' + escapeHtml(label) + '</div>' +
+        '<div class="meta"><span>' + hex + '</span><span class="label">' + escapeHtml(hslLabel) + '</span></div>' +
+        '</div>';
+    }
+
+    function generate() {
+      const baseHex = $('baseHex').value;
+      if (!/^#[0-9a-fA-F]{6}$/.test(baseHex)) return;
+      const { h, s, l } = hexToHsl(baseHex);
+
+      // モノクロマティック (lightness 5..95 11 段階)
+      const monoLights = [95, 90, 80, 70, 60, 50, 40, 30, 20, 15, 10];
+      $('monoOut').innerHTML = monoLights.map((ll, i) => swatch((i + 1) * 100 - 100 || 50, hslToHex(h, s, ll))).join('').replace(/data-copy="([^"]+)"\s+title="([^"]+)">[\s\S]*?<div class="color" style="([^"]+)">[^<]*<\/div>/g, (m, c, t, st) => m); // keep but allow shade label
+      // Re-render mono with Tailwind 50-900 labels
+      const monoLabels = ['50', '100', '200', '300', '400', '500', '600', '700', '800', '850', '900'];
+      $('monoOut').innerHTML = monoLights.map((ll, i) => swatch(monoLabels[i], hslToHex(h, s, ll))).join('');
+
+      // Analogous (-30, base, +30)
+      $('anaOut').innerHTML = [
+        ['-30°', hslToHex(h - 30, s, l)],
+        ['ベース', baseHex],
+        ['+30°', hslToHex(h + 30, s, l)],
+      ].map(([lab, hex]) => swatch(lab, hex)).join('');
+
+      // Complementary
+      $('compOut').innerHTML = [
+        ['ベース', baseHex],
+        ['補色 +180°', hslToHex(h + 180, s, l)],
+      ].map(([lab, hex]) => swatch(lab, hex)).join('');
+
+      // Split-complementary
+      $('splitOut').innerHTML = [
+        ['ベース', baseHex],
+        ['+150°', hslToHex(h + 150, s, l)],
+        ['+210°', hslToHex(h + 210, s, l)],
+      ].map(([lab, hex]) => swatch(lab, hex)).join('');
+
+      // Triadic (0, 120, 240)
+      $('triOut').innerHTML = [
+        ['ベース', baseHex],
+        ['+120°', hslToHex(h + 120, s, l)],
+        ['+240°', hslToHex(h + 240, s, l)],
+      ].map(([lab, hex]) => swatch(lab, hex)).join('');
+
+      // Tetradic (0, 90, 180, 270)
+      $('tetraOut').innerHTML = [
+        ['ベース', baseHex],
+        ['+90°', hslToHex(h + 90, s, l)],
+        ['+180°', hslToHex(h + 180, s, l)],
+        ['+270°', hslToHex(h + 270, s, l)],
+      ].map(([lab, hex]) => swatch(lab, hex)).join('');
+
+      renderExport();
+    }
+
+    function getActiveFmt() {
+      return document.querySelector('.tabs button.active').dataset.fmt;
+    }
+
+    function renderExport() {
+      const baseHex = $('baseHex').value;
+      const { h, s, l } = hexToHsl(baseHex);
+      const fmt = getActiveFmt();
+      const monoLabels = ['50', '100', '200', '300', '400', '500', '600', '700', '800', '850', '900'];
+      const monoLights = [95, 90, 80, 70, 60, 50, 40, 30, 20, 15, 10];
+      const palette = {};
+      monoLabels.forEach((lab, i) => { palette['primary-' + lab] = hslToHex(h, s, monoLights[i]); });
+      palette['accent']        = hslToHex(h + 180, s, l);
+      palette['accent-light']  = hslToHex(h + 180, s, Math.min(95, l + 20));
+      palette['analog-1']      = hslToHex(h - 30, s, l);
+      palette['analog-2']      = hslToHex(h + 30, s, l);
+      palette['triad-1']       = hslToHex(h + 120, s, l);
+      palette['triad-2']       = hslToHex(h + 240, s, l);
+
+      let out;
+      if (fmt === 'css') {
+        out = ':root {\n' + Object.entries(palette).map(([k, v]) => '  --color-' + k + ': ' + v + ';').join('\n') + '\n}';
+      } else if (fmt === 'scss') {
+        out = Object.entries(palette).map(([k, v]) => '$color-' + k + ': ' + v + ';').join('\n');
+      } else if (fmt === 'json') {
+        out = JSON.stringify(palette, null, 2);
+      } else { // tailwind
+        // primary-50..900 を colors.primary としてまとめる
+        const primary = {};
+        monoLabels.forEach((lab) => { primary[lab] = palette['primary-' + lab]; });
+        const tw = { primary, accent: palette.accent, 'accent-light': palette['accent-light'] };
+        out = '// tailwind.config.js (extend.colors)\nexport const colors = ' + JSON.stringify(tw, null, 2) + ';';
+      }
+      $('exportOut').textContent = out;
+    }
+
+    function syncFromColor() { $('baseHex').value = $('base').value; generate(); }
+    function syncFromHex() {
+      if (/^#[0-9a-fA-F]{6}$/.test($('baseHex').value)) { $('base').value = $('baseHex').value; generate(); }
+    }
+    $('base').addEventListener('input', syncFromColor);
+    $('baseHex').addEventListener('input', syncFromHex);
+
+    document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', function () {
+      document.querySelectorAll('.tabs button').forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      renderExport();
+    }));
+    $('copy').addEventListener('click', async function () {
+      try {
+        await navigator.clipboard.writeText($('exportOut').textContent);
+        const o = this.textContent; this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = o, 1000);
+      } catch (e) {}
+    });
+
+    // Swatch クリックでコピー
+    document.body.addEventListener('click', async function (e) {
+      const sw = e.target.closest('.swatch');
+      if (!sw) return;
+      try {
+        await navigator.clipboard.writeText(sw.dataset.copy);
+        const orig = sw.style.outline;
+        sw.style.outline = '2px solid var(--accent)';
+        setTimeout(() => sw.style.outline = orig, 500);
+      } catch (e) {}
+    });
+
+    // プリセット
+    const PRESETS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#6366f1', '#a855f7', '#ec4899', '#1f2937'];
+    $('basePresets').innerHTML = PRESETS.map((c) =>
+      '<button type="button" data-preset="' + c + '" style="width:32px;height:32px;background:' + c + ';border:1px solid var(--border);border-radius:6px;padding:0;cursor:pointer;" title="' + c + '"></button>'
+    ).join('');
+    $('basePresets').addEventListener('click', function (e) {
+      if (e.target.dataset.preset) {
+        $('base').value = e.target.dataset.preset;
+        $('baseHex').value = e.target.dataset.preset;
+        generate();
+      }
+    });
+
+    generate();
+  })();
+</script>
+</body>
+</html>
