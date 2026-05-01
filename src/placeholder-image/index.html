@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ダミー画像生成 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: プレビュー枠 */
+  .preview-wrap {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+    min-height: 240px;
+  }
+  .swatch-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+  }
+  .swatch-row button {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>ダミー画像生成</h1>
+    <p class="lead">幅と高さを指定して、デザインや動作確認用のダミー画像（プレースホルダー画像）を生成します。</p>
+  </header>
+
+  <div class="card">
+    <div style="display:grid;grid-template-columns:120px 1fr 80px;gap:10px;align-items:center;">
+      <label for="w" style="color:var(--muted);font-size:0.95rem;">幅</label>
+      <input type="number" id="w" min="1" max="4096" value="640">
+      <span style="color:var(--muted);">px</span>
+
+      <label for="h" style="color:var(--muted);font-size:0.95rem;">高さ</label>
+      <input type="number" id="h" min="1" max="4096" value="360">
+      <span style="color:var(--muted);">px</span>
+
+      <label for="bg" style="color:var(--muted);font-size:0.95rem;">背景色</label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="color" id="bg" value="#cbd5e1" style="width:60px;height:36px;padding:2px;">
+        <input type="text" id="bgHex" value="#cbd5e1" style="width:120px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">
+      </div>
+      <span></span>
+
+      <label for="fg" style="color:var(--muted);font-size:0.95rem;">文字色</label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="color" id="fg" value="#475569" style="width:60px;height:36px;padding:2px;">
+        <input type="text" id="fgHex" value="#475569" style="width:120px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">
+      </div>
+      <span></span>
+
+      <div style="grid-column:1/-1;">
+        <div class="swatch-row" id="presets"></div>
+      </div>
+
+      <label for="text" style="color:var(--muted);font-size:0.95rem;">表示文字</label>
+      <input type="text" id="text" placeholder="（空欄なら自動でサイズ表記）" style="grid-column:span 2;">
+
+      <label for="format" style="color:var(--muted);font-size:0.95rem;">フォーマット</label>
+      <select id="format" style="width:auto;">
+        <option value="image/png" selected>PNG</option>
+        <option value="image/jpeg">JPEG</option>
+        <option value="image/webp">WebP</option>
+        <option value="svg">SVG (テキスト)</option>
+      </select>
+      <span></span>
+
+      <label style="color:var(--muted);font-size:0.95rem;">オプション</label>
+      <div style="display:flex;flex-wrap:wrap;gap:14px;grid-column:span 2;">
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;"><input type="checkbox" id="showGrid" style="width:auto;"> グリッド線</label>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;"><input type="checkbox" id="showCross" style="width:auto;"> 対角線</label>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;"><input type="checkbox" id="showBorder" checked style="width:auto;"> 枠線</label>
+      </div>
+    </div>
+
+    <div class="actions" style="margin-top:14px;">
+      <button type="button" id="download" class="primary">ダウンロード</button>
+      <button type="button" id="copyImg">画像をコピー</button>
+      <button type="button" id="copyData">Data URL をコピー</button>
+    </div>
+
+    <div id="status" style="margin-top:8px;"></div>
+  </div>
+
+  <h2>プレビュー</h2>
+  <div class="preview-wrap">
+    <canvas id="canvas" style="max-width:100%;max-height:600px;"></canvas>
+  </div>
+  <div id="info" style="margin-top:8px;text-align:center;color:var(--muted);font-size:0.9rem;"></div>
+
+  <h2>よく使うサイズ</h2>
+  <div class="swatch-row" id="sizePresets" style="gap:8px;">
+    <button type="button" data-size="1280x720" style="width:auto;height:auto;padding:6px 12px;">1280×720 (16:9)</button>
+    <button type="button" data-size="1920x1080" style="width:auto;height:auto;padding:6px 12px;">1920×1080 (FHD)</button>
+    <button type="button" data-size="1200x630" style="width:auto;height:auto;padding:6px 12px;">1200×630 (OGP)</button>
+    <button type="button" data-size="800x800" style="width:auto;height:auto;padding:6px 12px;">800×800 (正方)</button>
+    <button type="button" data-size="640x360" style="width:auto;height:auto;padding:6px 12px;">640×360</button>
+    <button type="button" data-size="320x240" style="width:auto;height:auto;padding:6px 12px;">320×240</button>
+    <button type="button" data-size="100x100" style="width:auto;height:auto;padding:6px 12px;">100×100</button>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    const PRESETS = [
+      ['#cbd5e1', '#475569'],
+      ['#fee2e2', '#7f1d1d'],
+      ['#fef3c7', '#78350f'],
+      ['#dcfce7', '#14532d'],
+      ['#dbeafe', '#1e3a8a'],
+      ['#ede9fe', '#4c1d95'],
+      ['#1f2937', '#f3f4f6'],
+      ['#000000', '#ffffff'],
+    ];
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function setStatus(kind, msg) {
+      $('status').innerHTML = msg ? '<div class="banner ' + kind + '">' + escapeHtml(msg) + '</div>' : '';
+    }
+    function fmtBytes(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(2) + ' KB';
+      return (n / 1024 / 1024).toFixed(2) + ' MB';
+    }
+
+    // プリセット表示
+    const presetsEl = $('presets');
+    PRESETS.forEach(([bg, fg]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.style.background = bg;
+      b.style.borderColor = fg;
+      b.title = bg + ' / ' + fg;
+      b.addEventListener('click', () => {
+        $('bg').value = bg; $('bgHex').value = bg;
+        $('fg').value = fg; $('fgHex').value = fg;
+        render();
+      });
+      presetsEl.appendChild(b);
+    });
+
+    // color と hex の同期
+    function syncColor(colorId, hexId) {
+      $(colorId).addEventListener('input', function () {
+        $(hexId).value = this.value;
+        render();
+      });
+      $(hexId).addEventListener('input', function () {
+        if (/^#[0-9a-fA-F]{6}$/.test(this.value)) {
+          $(colorId).value = this.value;
+          render();
+        }
+      });
+    }
+    syncColor('bg', 'bgHex');
+    syncColor('fg', 'fgHex');
+
+    // サイズプリセット
+    document.querySelectorAll('#sizePresets [data-size]').forEach((b) => {
+      b.addEventListener('click', function () {
+        const [w, h] = b.dataset.size.split('x').map((n) => parseInt(n, 10));
+        $('w').value = w; $('h').value = h;
+        render();
+      });
+    });
+
+    let lastBlob = null;
+    let lastExt = 'png';
+    let lastSvgText = null;
+    let lastDataUrl = null;
+
+    async function render() {
+      const w = Math.max(1, Math.min(4096, parseInt($('w').value, 10) || 1));
+      const h = Math.max(1, Math.min(4096, parseInt($('h').value, 10) || 1));
+      const bg = $('bgHex').value;
+      const fg = $('fgHex').value;
+      const txt = $('text').value || (w + ' × ' + h);
+      const fmt = $('format').value;
+      const showGrid = $('showGrid').checked;
+      const showCross = $('showCross').checked;
+      const showBorder = $('showBorder').checked;
+
+      if (fmt === 'svg') {
+        lastSvgText = makeSvg(w, h, bg, fg, txt, showGrid, showCross, showBorder);
+        // プレビュー: Canvas にも描画
+        drawCanvas(w, h, bg, fg, txt, showGrid, showCross, showBorder);
+        const blob = new Blob([lastSvgText], { type: 'image/svg+xml' });
+        lastBlob = blob;
+        lastExt = 'svg';
+        lastDataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(lastSvgText);
+        $('info').textContent = w + ' × ' + h + ' px ・ SVG ・ ' + fmtBytes(blob.size);
+        setStatus('', '');
+        return;
+      }
+
+      drawCanvas(w, h, bg, fg, txt, showGrid, showCross, showBorder);
+      try {
+        const blob = await new Promise((res) => $('canvas').toBlob(res, fmt, 0.92));
+        if (!blob) { setStatus('error', 'このフォーマットの出力に失敗しました'); return; }
+        lastBlob = blob;
+        lastExt = fmt === 'image/jpeg' ? 'jpg' : (fmt === 'image/webp' ? 'webp' : 'png');
+        lastDataUrl = $('canvas').toDataURL(fmt, 0.92);
+        $('info').textContent = w + ' × ' + h + ' px ・ ' + fmt + ' ・ ' + fmtBytes(blob.size);
+        setStatus('', '');
+      } catch (e) {
+        setStatus('error', '出力エラー: ' + e.message);
+      }
+    }
+
+    function drawCanvas(w, h, bg, fg, txt, showGrid, showCross, showBorder) {
+      const cv = $('canvas');
+      cv.width = w; cv.height = h;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, w, h);
+
+      if (showGrid) {
+        ctx.strokeStyle = fg;
+        ctx.globalAlpha = 0.15;
+        ctx.lineWidth = 1;
+        const step = Math.max(20, Math.round(Math.min(w, h) / 20));
+        for (let x = step; x < w; x += step) {
+          ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, h); ctx.stroke();
+        }
+        for (let y = step; y < h; y += step) {
+          ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(w, y + 0.5); ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
+      if (showCross) {
+        ctx.strokeStyle = fg;
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = Math.max(1, Math.round(Math.min(w, h) / 400));
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(w, h); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(w, 0); ctx.lineTo(0, h); ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+      if (showBorder) {
+        ctx.strokeStyle = fg;
+        ctx.globalAlpha = 0.4;
+        ctx.lineWidth = Math.max(1, Math.round(Math.min(w, h) / 200));
+        ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+        ctx.globalAlpha = 1;
+      }
+
+      // テキスト
+      ctx.fillStyle = fg;
+      const fontSize = Math.max(12, Math.min(w, h) / 8);
+      ctx.font = 'bold ' + fontSize + 'px -apple-system, "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(txt, w / 2, h / 2, w * 0.9);
+    }
+
+    function makeSvg(w, h, bg, fg, txt, showGrid, showCross, showBorder) {
+      const fontSize = Math.max(12, Math.min(w, h) / 8);
+      const lines = [];
+      lines.push('<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">');
+      lines.push('<rect width="100%" height="100%" fill="' + bg + '"/>');
+      if (showGrid) {
+        const step = Math.max(20, Math.round(Math.min(w, h) / 20));
+        let path = '';
+        for (let x = step; x < w; x += step) path += 'M' + x + ' 0V' + h;
+        for (let y = step; y < h; y += step) path += 'M0 ' + y + 'H' + w;
+        lines.push('<path d="' + path + '" stroke="' + fg + '" stroke-opacity="0.15"/>');
+      }
+      if (showCross) {
+        const lw = Math.max(1, Math.round(Math.min(w, h) / 400));
+        lines.push('<path d="M0 0L' + w + ' ' + h + 'M' + w + ' 0L0 ' + h + '" stroke="' + fg + '" stroke-opacity="0.35" stroke-width="' + lw + '"/>');
+      }
+      if (showBorder) {
+        const lw = Math.max(1, Math.round(Math.min(w, h) / 200));
+        lines.push('<rect x="0.5" y="0.5" width="' + (w - 1) + '" height="' + (h - 1) + '" fill="none" stroke="' + fg + '" stroke-opacity="0.4" stroke-width="' + lw + '"/>');
+      }
+      lines.push('<text x="50%" y="50%" font-family="-apple-system, sans-serif" font-weight="bold" font-size="' + fontSize + '" fill="' + fg + '" text-anchor="middle" dominant-baseline="central">' + escapeHtml(txt) + '</text>');
+      lines.push('</svg>');
+      return lines.join('');
+    }
+
+    ['w', 'h', 'text', 'format', 'showGrid', 'showCross', 'showBorder'].forEach((id) => {
+      $(id).addEventListener('input', render);
+      $(id).addEventListener('change', render);
+    });
+
+    $('download').addEventListener('click', function () {
+      if (!lastBlob) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(lastBlob);
+      a.download = 'placeholder_' + $('w').value + 'x' + $('h').value + '.' + lastExt;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
+    $('copyImg').addEventListener('click', async function () {
+      try {
+        if (lastExt === 'svg') {
+          await navigator.clipboard.writeText(lastSvgText);
+        } else {
+          const blob = await new Promise((res) => $('canvas').toBlob(res, $('format').value, 0.92));
+          await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+        }
+        const o = this.textContent; this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = o, 1000);
+      } catch (e) { alert('コピーに失敗: ' + e.message); }
+    });
+    $('copyData').addEventListener('click', async function () {
+      if (!lastDataUrl) return;
+      try {
+        await navigator.clipboard.writeText(lastDataUrl);
+        const o = this.textContent; this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = o, 1000);
+      } catch (e) {}
+    });
+
+    render();
+  })();
+</script>
+</body>
+</html>
