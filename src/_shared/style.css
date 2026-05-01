@@ -341,6 +341,15 @@ pre.code .tk-num { color: #1d4ed8; }
 pre.code .tk-bool { color: #7c3aed; }
 pre.code .tk-null { color: var(--muted); }
 
+/* matched substring highlight (正規表現テスター等) */
+mark.match {
+  background: #fde68a;
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+}
+mark.match.alt { background: #fcd34d; }
+
 /* footer */
 footer.page-footer {
   margin-top: 48px;

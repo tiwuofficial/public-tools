@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>正規表現テスター - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>正規表現テスター</h1>
+    <p class="lead">JavaScript の RegExp で正規表現をテスト・置換します。マッチをハイライト表示。</p>
+  </header>
+
+  <div class="card" style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;">
+    <div style="display:flex;align-items:center;gap:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">
+      <span style="color:var(--muted);">/</span>
+      <input type="text" id="pattern" placeholder="例: \\b\\w+@\\w+\\.\\w+\\b" spellcheck="false" style="flex:1;border:none;padding:6px 0;font-family:inherit;font-size:1rem;">
+      <span style="color:var(--muted);">/</span>
+      <input type="text" id="flags" value="gi" maxlength="6" spellcheck="false" style="width:6em;text-align:center;font-family:inherit;font-size:1rem;">
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.85rem;color:var(--muted);"><input type="checkbox" data-flag="g" checked style="width:auto;"> g</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.85rem;color:var(--muted);"><input type="checkbox" data-flag="i" checked style="width:auto;"> i</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.85rem;color:var(--muted);"><input type="checkbox" data-flag="m" style="width:auto;"> m</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.85rem;color:var(--muted);"><input type="checkbox" data-flag="s" style="width:auto;"> s</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.85rem;color:var(--muted);"><input type="checkbox" data-flag="u" style="width:auto;"> u</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;font-size:0.85rem;color:var(--muted);"><input type="checkbox" data-flag="y" style="width:auto;"> y</label>
+    </div>
+  </div>
+
+  <div id="patternStatus" style="margin-top:8px;"></div>
+
+  <h2>テスト文字列</h2>
+  <textarea id="text" rows="10" placeholder="ここに対象テキストを貼り付け…"></textarea>
+
+  <h2>マッチ結果</h2>
+  <pre class="code" id="highlighted" style="white-space:pre-wrap;"></pre>
+  <div id="summary" style="margin-top:8px;color:var(--muted);font-size:0.9rem;"></div>
+
+  <h2>マッチ一覧</h2>
+  <ul class="plain-list" id="matches" style="display:none;"></ul>
+
+  <h2>置換</h2>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+    <input type="text" id="replacement" placeholder='置換文字列（$1, $&amp; などが使えます）' style="flex:1;">
+    <button type="button" id="doReplace" class="primary">置換実行</button>
+  </div>
+  <pre class="code" id="replaced" style="white-space:pre-wrap;margin-top:8px;"></pre>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const pattern = $('pattern');
+    const flags = $('flags');
+    const text = $('text');
+    const replacement = $('replacement');
+    const highlighted = $('highlighted');
+    const summary = $('summary');
+    const matches = $('matches');
+    const replaced = $('replaced');
+    const patternStatus = $('patternStatus');
+    const flagBoxes = document.querySelectorAll('[data-flag]');
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // flags <-> checkboxes 同期
+    function flagsToBoxes() {
+      const v = flags.value;
+      flagBoxes.forEach((b) => { b.checked = v.includes(b.dataset.flag); });
+    }
+    function boxesToFlags() {
+      let v = '';
+      flagBoxes.forEach((b) => { if (b.checked) v += b.dataset.flag; });
+      flags.value = v;
+    }
+    flagBoxes.forEach((b) => b.addEventListener('change', () => { boxesToFlags(); update(); }));
+    flags.addEventListener('input', () => { flagsToBoxes(); update(); });
+
+    function buildRegex() {
+      patternStatus.innerHTML = '';
+      const p = pattern.value;
+      if (!p) return null;
+      try {
+        return new RegExp(p, flags.value);
+      } catch (e) {
+        patternStatus.innerHTML = '<div class="banner error">' + escapeHtml('正規表現エラー: ' + e.message) + '</div>';
+        return null;
+      }
+    }
+
+    function update() {
+      const re = buildRegex();
+      const src = text.value;
+      replaced.textContent = '';
+      if (!re) {
+        highlighted.innerHTML = escapeHtml(src);
+        summary.textContent = '';
+        matches.innerHTML = '';
+        matches.style.display = 'none';
+        return;
+      }
+      if (!src) {
+        highlighted.innerHTML = '';
+        summary.textContent = 'マッチ: 0';
+        matches.innerHTML = '';
+        matches.style.display = 'none';
+        return;
+      }
+
+      // マッチ収集（global の場合は exec ループ、それ以外は 1 回）
+      const all = [];
+      const isGlobal = re.global || re.sticky;
+      const localRe = isGlobal ? re : new RegExp(re.source, re.flags + (re.flags.includes('g') ? '' : 'g'));
+      let m;
+      let safety = 0;
+      while ((m = localRe.exec(src)) !== null) {
+        if (m.index === localRe.lastIndex) localRe.lastIndex++; // 0 幅マッチ防止
+        all.push({ index: m.index, length: m[0].length, match: m[0], groups: m.slice(1), named: m.groups });
+        if (++safety > 10000) break;
+        if (!isGlobal) break;
+      }
+
+      // ハイライト
+      let html = '';
+      let cursor = 0;
+      all.forEach((mt, i) => {
+        html += escapeHtml(src.slice(cursor, mt.index));
+        const cls = i % 2 === 0 ? 'match' : 'match alt';
+        const display = mt.match === '' ? '​' : escapeHtml(mt.match);
+        html += '<mark class="' + cls + '">' + display + '</mark>';
+        cursor = mt.index + mt.length;
+      });
+      html += escapeHtml(src.slice(cursor));
+      highlighted.innerHTML = html;
+      summary.textContent = 'マッチ: ' + all.length;
+
+      // 一覧
+      if (all.length === 0) {
+        matches.innerHTML = '';
+        matches.style.display = 'none';
+      } else {
+        matches.innerHTML = all.slice(0, 200).map((mt, i) => {
+          let groupHtml = '';
+          if (mt.groups.length > 0) {
+            groupHtml = mt.groups.map((g, j) =>
+              '<div style="margin-left:1em;color:var(--muted);font-size:0.85rem;">$' + (j + 1) + ': ' + escapeHtml(g === undefined ? '(undefined)' : g) + '</div>'
+            ).join('');
+          }
+          if (mt.named) {
+            groupHtml += Object.entries(mt.named).map(([k, v]) =>
+              '<div style="margin-left:1em;color:var(--muted);font-size:0.85rem;">&lt;' + escapeHtml(k) + '&gt;: ' + escapeHtml(v === undefined ? '(undefined)' : v) + '</div>'
+            ).join('');
+          }
+          return '<li style="display:block;">' +
+            '<div style="display:flex;justify-content:space-between;">' +
+              '<span class="label">#' + (i + 1) + ' (index ' + mt.index + ')</span>' +
+              '<span>' + escapeHtml(mt.match) + '</span>' +
+            '</div>' + groupHtml +
+          '</li>';
+        }).join('') + (all.length > 200 ? '<li><span class="label">…</span><span>残り ' + (all.length - 200) + ' 件は省略</span></li>' : '');
+        matches.style.display = '';
+      }
+    }
+
+    function doReplace() {
+      const re = buildRegex();
+      if (!re) return;
+      try {
+        const r = text.value.replace(re, replacement.value);
+        replaced.textContent = r;
+      } catch (e) {
+        patternStatus.innerHTML = '<div class="banner error">' + escapeHtml('置換エラー: ' + e.message) + '</div>';
+      }
+    }
+
+    pattern.addEventListener('input', update);
+    text.addEventListener('input', update);
+    $('doReplace').addEventListener('click', doReplace);
+    replacement.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); doReplace(); }
+    });
+
+    // サンプル
+    pattern.value = '\\b\\w+@\\w+\\.\\w+\\b';
+    text.value = 'お問い合わせ: alice@example.com / sales@public-tools.dev';
+    flagsToBoxes();
+    update();
+  })();
+</script>
+</body>
+</html>
