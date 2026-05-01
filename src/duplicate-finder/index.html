@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>重複行・重複文 検出 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 重複ハイライト */
+  .dup-output {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    font-size: 0.95rem;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+  .dup-output mark {
+    background: #fde68a;
+    color: inherit;
+    padding: 0 2px;
+    border-radius: 3px;
+  }
+  .dup-output mark.color-1 { background: #fde68a; }
+  .dup-output mark.color-2 { background: #bbf7d0; }
+  .dup-output mark.color-3 { background: #bfdbfe; }
+  .dup-output mark.color-4 { background: #fbcfe8; }
+  .dup-output mark.color-5 { background: #ddd6fe; }
+  .dup-output mark.color-6 { background: #fed7aa; }
+  table.dup-list {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  table.dup-list th, table.dup-list td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  table.dup-list tr:last-child td { border-bottom: none; }
+  table.dup-list thead { background: var(--bg); }
+  table.dup-list th { color: var(--muted); font-weight: 600; font-size: 0.8rem; }
+  table.dup-list td.cnt { text-align: right; width: 70px; font-variant-numeric: tabular-nums; }
+  table.dup-list .term { word-break: break-all; }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>重複行・重複文 検出</h1>
+    <p class="lead">同じ言い回しが繰り返されていないかをチェック。記事の品質改善や校正に。</p>
+  </header>
+
+  <textarea id="input" rows="12" placeholder="ここに文章を貼り付け…"></textarea>
+
+  <h2>モード</h2>
+  <div class="card" style="display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;">
+    <label style="color:var(--muted);font-size:0.95rem;">単位</label>
+    <select id="unit" style="width:auto;">
+      <option value="line" selected>行 (改行で区切り)</option>
+      <option value="sentence">文 (。！？ で区切り)</option>
+      <option value="phrase">N 文字以上の連続フレーズ</option>
+    </select>
+
+    <label id="lengthLabel" style="color:var(--muted);font-size:0.95rem;display:none;">最小フレーズ長</label>
+    <input type="number" id="minPhrase" min="3" max="50" value="6" style="display:none;">
+
+    <label style="color:var(--muted);font-size:0.95rem;">最小重複回数</label>
+    <input type="number" id="minCount" min="2" max="20" value="2">
+
+    <label style="color:var(--muted);font-size:0.95rem;">除外</label>
+    <div style="display:flex;flex-wrap:wrap;gap:14px;">
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;">
+        <input type="checkbox" id="ignoreCase" style="width:auto;"> 大小文字を区別しない
+      </label>
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;">
+        <input type="checkbox" id="ignoreSpace" checked style="width:auto;"> 空白・改行を無視して比較
+      </label>
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;">
+        <input type="checkbox" id="ignorePunct" style="width:auto;"> 句読点を無視
+      </label>
+    </div>
+  </div>
+
+  <h2 style="margin-top:18px;">重複ハイライト</h2>
+  <div class="dup-output" id="output"></div>
+  <div id="info" style="color:var(--muted);font-size:0.85rem;margin-top:6px;"></div>
+
+  <h2>重複した箇所の一覧</h2>
+  <div id="listOut"></div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    function normalize(s) {
+      let v = s;
+      if ($('ignoreSpace').checked) v = v.replace(/\s+/g, '');
+      if ($('ignoreCase').checked) v = v.toLowerCase();
+      if ($('ignorePunct').checked) v = v.replace(/[、。，．！？!?．・…「」『』【】（）()「」"'`]/g, '');
+      return v;
+    }
+
+    function splitLines(text) {
+      const lines = text.split('\n');
+      const items = [];
+      let pos = 0;
+      for (const l of lines) {
+        const trimmed = l.trim();
+        if (trimmed) items.push({ raw: trimmed, start: text.indexOf(trimmed, pos), end: text.indexOf(trimmed, pos) + trimmed.length });
+        pos += l.length + 1;
+      }
+      return items;
+    }
+
+    function splitSentences(text) {
+      const items = [];
+      const re = /[^。！？!?\n]+[。！？!?]?/g;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        const s = m[0].trim();
+        if (s) {
+          items.push({ raw: s, start: m.index + (m[0].length - m[0].trimStart().length), end: m.index + m[0].length });
+        }
+      }
+      return items;
+    }
+
+    function findRepeatedPhrases(text, minLen) {
+      // 連続して N 文字以上一致する箇所を見つける（自分自身以外と一致）
+      // 簡易実装: 全 substring で normalize 後の出現回数を数え、長いもの優先
+      const norm = normalize(text);
+      const charMap = new Map();
+      // 元テキストのインデックスから normalize 後インデックスへのマップ
+      // 簡略化: normalize した文字列上で重複する最長 substring を貪欲に探す
+      // ただし計算量が膨大になりうるので、minLen から minLen+10 までの長さに限定
+      const maxLen = Math.max(minLen, minLen + 10);
+      const found = new Map();
+      for (let len = maxLen; len >= minLen; len--) {
+        for (let i = 0; i + len <= norm.length; i++) {
+          const sub = norm.slice(i, i + len);
+          // 既により長い親フレーズの一部なら除外（長さ降順なので、現在長より長いやつにこの substring が含まれていればスキップ）
+          let containedInLonger = false;
+          for (const k of found.keys()) {
+            if (k.length > len && k.includes(sub)) { containedInLonger = true; break; }
+          }
+          if (containedInLonger) continue;
+          if (!found.has(sub)) {
+            // count occurrences
+            let count = 0; let idx = 0;
+            while ((idx = norm.indexOf(sub, idx)) !== -1) { count++; idx++; }
+            if (count >= 2) found.set(sub, count);
+          }
+        }
+      }
+      // フレーズオブジェクトとして返す
+      return [...found.entries()].map(([s, c]) => ({ raw: s, count: c }));
+    }
+
+    function highlight(text, ranges) {
+      // ranges: [{start, end, group}] 元テキスト上の位置
+      ranges.sort((a, b) => a.start - b.start);
+      let out = '';
+      let cursor = 0;
+      for (const r of ranges) {
+        if (r.start < cursor) continue; // 重なりは無視
+        out += escapeHtml(text.slice(cursor, r.start));
+        out += '<mark class="color-' + ((r.group % 6) + 1) + '">' + escapeHtml(text.slice(r.start, r.end)) + '</mark>';
+        cursor = r.end;
+      }
+      out += escapeHtml(text.slice(cursor));
+      return out;
+    }
+
+    function update() {
+      const text = $('input').value;
+      const unit = $('unit').value;
+      const minCount = Math.max(2, parseInt($('minCount').value, 10) || 2);
+      $('lengthLabel').style.display = unit === 'phrase' ? '' : 'none';
+      $('minPhrase').style.display = unit === 'phrase' ? '' : 'none';
+
+      if (!text) { $('output').innerHTML = ''; $('listOut').innerHTML = ''; $('info').textContent = ''; return; }
+
+      let groups = []; // {raw, count, key}
+      let highlightRanges = [];
+
+      if (unit === 'line' || unit === 'sentence') {
+        const items = unit === 'line' ? splitLines(text) : splitSentences(text);
+        const map = new Map(); // key -> { raw, items: [items] }
+        items.forEach((it) => {
+          const key = normalize(it.raw);
+          if (!key) return;
+          if (!map.has(key)) map.set(key, { raw: it.raw, items: [], key });
+          map.get(key).items.push(it);
+        });
+        const dupGroups = [...map.values()].filter((g) => g.items.length >= minCount);
+        // ハイライト範囲を作る
+        let groupIdx = 0;
+        dupGroups.forEach((g) => {
+          g.items.forEach((it) => highlightRanges.push({ start: it.start, end: it.end, group: groupIdx }));
+          groupIdx++;
+        });
+        groups = dupGroups.map((g) => ({ raw: g.raw, count: g.items.length, key: g.key }));
+      } else {
+        // phrase
+        const minLen = Math.max(3, parseInt($('minPhrase').value, 10) || 6);
+        const phrases = findRepeatedPhrases(text, minLen).filter((p) => p.count >= minCount);
+        // 元テキスト上での出現位置を全て取得 (normalize しない場合のみ簡易対応)
+        // 厳密には normalize 後の文字列で検索したが、ハイライトは元の文字列で indexOf。空白無視がオンだとずれるため、ここではハイライトはオフにする旨を info に出す。
+        const useNorm = $('ignoreSpace').checked || $('ignoreCase').checked || $('ignorePunct').checked;
+        if (!useNorm) {
+          let groupIdx = 0;
+          phrases.forEach((p) => {
+            let idx = 0;
+            while ((idx = text.indexOf(p.raw, idx)) !== -1) {
+              highlightRanges.push({ start: idx, end: idx + p.raw.length, group: groupIdx });
+              idx += p.raw.length;
+            }
+            groupIdx++;
+          });
+        }
+        groups = phrases.map((p) => ({ raw: p.raw, count: p.count, key: p.raw }));
+      }
+
+      // ハイライト
+      $('output').innerHTML = highlight(text, highlightRanges) || escapeHtml(text);
+
+      // 一覧
+      groups.sort((a, b) => b.count - a.count || a.raw.localeCompare(b.raw, 'ja'));
+      if (groups.length === 0) {
+        $('listOut').innerHTML = '<div style="color:var(--muted);padding:14px;background:var(--added-bg);border:1px solid #bbf7d0;border-radius:var(--radius);">✓ 指定条件で重複は見つかりませんでした</div>';
+        $('info').textContent = '';
+      } else {
+        $('listOut').innerHTML =
+          '<table class="dup-list"><thead><tr><th>#</th><th>テキスト</th><th class="cnt">出現</th></tr></thead><tbody>' +
+          groups.map((g, i) =>
+            '<tr><td>' + (i + 1) + '</td><td class="term">' + escapeHtml(g.raw) + '</td><td class="cnt">' + g.count + '</td></tr>'
+          ).join('') +
+          '</tbody></table>';
+        $('info').textContent = groups.length + ' 種類の重複が見つかりました（合計 ' + groups.reduce((a, g) => a + g.count, 0) + ' 箇所）';
+      }
+    }
+
+    ['input', 'unit', 'minPhrase', 'minCount', 'ignoreCase', 'ignoreSpace', 'ignorePunct'].forEach((id) => {
+      $(id).addEventListener('input', update);
+      $(id).addEventListener('change', update);
+    });
+
+    // 初期サンプル
+    $('input').value =
+      'このツールは便利です。\n' +
+      'このツールは便利です。\n' +
+      'web ライターはこのツールを使うと、重複した表現に気付けます。\n' +
+      'web ライターはこのツールを使うと、重複した表現に気付けます。\n' +
+      '改善のヒントとして役立つでしょう。';
+    update();
+  })();
+</script>
+</body>
+</html>
