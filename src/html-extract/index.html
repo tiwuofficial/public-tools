@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HTML 要素抽出 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 抽出テーブル */
+  table.extract {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  table.extract th, table.extract td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9rem;
+    text-align: left;
+    vertical-align: top;
+    word-break: break-all;
+  }
+  table.extract thead { background: var(--bg); }
+  table.extract th { color: var(--muted); font-weight: 600; font-size: 0.8rem; }
+  table.extract tr:last-child td { border-bottom: none; }
+  table.extract td.idx, table.extract th.idx { width: 50px; text-align: right; color: var(--muted); }
+  table.extract .empty-flag {
+    color: var(--danger);
+    font-weight: 600;
+  }
+  .tag-badge {
+    display: inline-block;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 0 6px;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+    color: var(--accent);
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>HTML 要素抽出</h1>
+    <p class="lead">記事 HTML から見出し階層・リンク・画像 alt を一覧化します。SEO チェックや校正に。</p>
+  </header>
+
+  <div class="card">
+    <div class="pane-label" style="margin-bottom:4px;">HTML を貼り付け</div>
+    <textarea id="input" rows="10" spellcheck="false" placeholder="<article>... の HTML を貼り付け…"></textarea>
+    <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <input type="text" id="baseUrl" placeholder="ベース URL (相対リンク解決用、任意)" style="flex:1;min-width:240px;">
+    </div>
+  </div>
+
+  <div class="tabs" role="tablist" style="margin-top:16px;">
+    <button type="button" class="active" data-tab="headings">見出し <span id="cntH"></span></button>
+    <button type="button" data-tab="links">リンク <span id="cntL"></span></button>
+    <button type="button" data-tab="images">画像 <span id="cntI"></span></button>
+    <button type="button" data-tab="summary">サマリー</button>
+  </div>
+
+  <section id="tab-headings">
+    <div id="hOut"></div>
+    <div class="actions" style="margin-top:8px;">
+      <button type="button" data-export="headings">CSV で書き出し</button>
+    </div>
+  </section>
+
+  <section id="tab-links" style="display:none;">
+    <div id="lOut"></div>
+    <div class="actions" style="margin-top:8px;">
+      <button type="button" data-export="links">CSV で書き出し</button>
+    </div>
+  </section>
+
+  <section id="tab-images" style="display:none;">
+    <div id="iOut"></div>
+    <div class="actions" style="margin-top:8px;">
+      <button type="button" data-export="images">CSV で書き出し</button>
+    </div>
+  </section>
+
+  <section id="tab-summary" style="display:none;">
+    <ul class="plain-list" id="summaryList"></ul>
+  </section>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const tabs = document.querySelectorAll('.tabs button');
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function escapeCsv(s) {
+      const t = String(s ?? '');
+      if (t.includes(',') || t.includes('"') || t.includes('\n')) return '"' + t.replace(/"/g, '""') + '"';
+      return t;
+    }
+
+    let last = { headings: [], links: [], images: [] };
+
+    tabs.forEach((b) => b.addEventListener('click', function () {
+      tabs.forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      ['headings', 'links', 'images', 'summary'].forEach((t) => {
+        $('tab-' + t).style.display = b.dataset.tab === t ? '' : 'none';
+      });
+    }));
+
+    function resolve(url, base) {
+      if (!url) return '';
+      try { return new URL(url, base || 'https://example.com').toString(); }
+      catch (e) { return url; }
+    }
+
+    function isExternal(url, base) {
+      if (!url) return false;
+      try {
+        const u = new URL(url);
+        if (!base) return true;
+        const b = new URL(base);
+        return u.host !== b.host;
+      } catch (e) { return false; }
+    }
+
+    function update() {
+      const html = $('input').value;
+      const base = $('baseUrl').value.trim();
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+
+      // 見出し
+      const headings = [];
+      doc.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((h) => {
+        headings.push({ level: parseInt(h.tagName.slice(1), 10), text: (h.textContent || '').replace(/\s+/g, ' ').trim() });
+      });
+
+      // リンク
+      const links = [];
+      doc.querySelectorAll('a[href]').forEach((a) => {
+        const href = a.getAttribute('href') || '';
+        const resolved = base ? resolve(href, base) : href;
+        const text = (a.textContent || '').replace(/\s+/g, ' ').trim();
+        const rel = a.getAttribute('rel') || '';
+        const target = a.getAttribute('target') || '';
+        links.push({ href, resolved, text, rel, target, ext: isExternal(resolved.startsWith('http') ? resolved : '', base) });
+      });
+
+      // 画像
+      const images = [];
+      doc.querySelectorAll('img').forEach((img) => {
+        const src = img.getAttribute('src') || '';
+        const resolved = base ? resolve(src, base) : src;
+        const alt = img.getAttribute('alt');
+        images.push({ src, resolved, alt: alt === null ? null : alt, w: img.getAttribute('width') || '', h: img.getAttribute('height') || '', loading: img.getAttribute('loading') || '' });
+      });
+
+      last = { headings, links, images };
+      renderHeadings(headings);
+      renderLinks(links);
+      renderImages(images);
+      renderSummary({ headings, links, images });
+
+      $('cntH').textContent = headings.length ? '(' + headings.length + ')' : '';
+      $('cntL').textContent = links.length ? '(' + links.length + ')' : '';
+      $('cntI').textContent = images.length ? '(' + images.length + ')' : '';
+    }
+
+    function renderHeadings(arr) {
+      if (arr.length === 0) { $('hOut').innerHTML = '<div style="color:var(--muted);">見出しが見つかりませんでした。</div>'; return; }
+      const minL = Math.min(...arr.map((h) => h.level));
+      $('hOut').innerHTML =
+        '<table class="extract"><thead><tr><th class="idx">#</th><th>レベル</th><th>テキスト</th></tr></thead><tbody>' +
+        arr.map((h, i) =>
+          '<tr><td class="idx">' + (i + 1) + '</td>' +
+          '<td><span class="tag-badge">h' + h.level + '</span></td>' +
+          '<td style="padding-left:' + (12 + (h.level - minL) * 16) + 'px;">' + (h.text === '' ? '<span class="empty-flag">(空)</span>' : escapeHtml(h.text)) + '</td></tr>'
+        ).join('') +
+        '</tbody></table>';
+    }
+
+    function renderLinks(arr) {
+      if (arr.length === 0) { $('lOut').innerHTML = '<div style="color:var(--muted);">リンクが見つかりませんでした。</div>'; return; }
+      $('lOut').innerHTML =
+        '<table class="extract"><thead><tr><th class="idx">#</th><th>テキスト</th><th>href</th><th>属性</th></tr></thead><tbody>' +
+        arr.map((l, i) => {
+          const attrs = [];
+          if (l.target) attrs.push('target="' + escapeHtml(l.target) + '"');
+          if (l.rel) attrs.push('rel="' + escapeHtml(l.rel) + '"');
+          if (l.ext) attrs.push('<span style="color:var(--accent);">外部</span>');
+          return '<tr><td class="idx">' + (i + 1) + '</td>' +
+            '<td>' + (l.text === '' ? '<span class="empty-flag">(空)</span>' : escapeHtml(l.text)) + '</td>' +
+            '<td><a href="' + escapeHtml(l.resolved) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(l.href) + '</a></td>' +
+            '<td>' + attrs.join(' ') + '</td></tr>';
+        }).join('') +
+        '</tbody></table>';
+    }
+
+    function renderImages(arr) {
+      if (arr.length === 0) { $('iOut').innerHTML = '<div style="color:var(--muted);">画像が見つかりませんでした。</div>'; return; }
+      $('iOut').innerHTML =
+        '<table class="extract"><thead><tr><th class="idx">#</th><th>src</th><th>alt</th><th>サイズ</th><th>loading</th></tr></thead><tbody>' +
+        arr.map((img, i) => {
+          let altCell;
+          if (img.alt === null) altCell = '<span class="empty-flag">alt 属性なし</span>';
+          else if (img.alt === '') altCell = '<span style="color:var(--muted);">空 (装飾用)</span>';
+          else altCell = escapeHtml(img.alt);
+          const size = (img.w || img.h) ? (img.w || '?') + ' × ' + (img.h || '?') : '';
+          return '<tr><td class="idx">' + (i + 1) + '</td>' +
+            '<td>' + escapeHtml(img.src) + '</td>' +
+            '<td>' + altCell + '</td>' +
+            '<td>' + size + '</td>' +
+            '<td>' + escapeHtml(img.loading) + '</td></tr>';
+        }).join('') +
+        '</tbody></table>';
+    }
+
+    function renderSummary(d) {
+      const counts = { h1: 0, h2: 0, h3: 0, h4: 0, h5: 0, h6: 0 };
+      d.headings.forEach((h) => counts['h' + h.level]++);
+      const altMissing = d.images.filter((i) => i.alt === null).length;
+      const altEmpty = d.images.filter((i) => i.alt === '').length;
+      const externalLinks = d.links.filter((l) => l.ext).length;
+      const noopener = d.links.filter((l) => l.target === '_blank' && !/noopener/.test(l.rel || '')).length;
+      const items = [
+        row('見出し合計', d.headings.length + ' (h1: ' + counts.h1 + ' / h2: ' + counts.h2 + ' / h3: ' + counts.h3 + ' / h4: ' + counts.h4 + ' / h5: ' + counts.h5 + ' / h6: ' + counts.h6 + ')'),
+        row('リンク合計', d.links.length + ' (うち外部: ' + externalLinks + ')'),
+        row('target="_blank" + rel に noopener なし', noopener + ' 件' + (noopener > 0 ? ' ⚠ セキュリティ向上のため rel="noopener" を推奨' : '')),
+        row('画像合計', d.images.length + ' (alt 属性なし: ' + altMissing + ' / alt 空: ' + altEmpty + ')'),
+        row('h1 が 1 つだけか', counts.h1 === 1 ? '✓ OK' : (counts.h1 === 0 ? '⚠ h1 がありません' : '⚠ h1 が複数 (' + counts.h1 + ') あります')),
+      ];
+      $('summaryList').innerHTML = items.join('');
+    }
+    function row(label, val) {
+      return '<li><span class="label">' + escapeHtml(label) + '</span><span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">' + escapeHtml(val) + '</span></li>';
+    }
+
+    document.querySelectorAll('[data-export]').forEach((b) => {
+      b.addEventListener('click', function () {
+        const k = b.dataset.export;
+        let csv = '';
+        if (k === 'headings') {
+          csv = 'idx,level,text\n' + last.headings.map((h, i) => [i + 1, 'h' + h.level, escapeCsv(h.text)].join(',')).join('\n');
+        } else if (k === 'links') {
+          csv = 'idx,text,href,resolved,external,target,rel\n' +
+            last.links.map((l, i) => [i + 1, escapeCsv(l.text), escapeCsv(l.href), escapeCsv(l.resolved), l.ext, escapeCsv(l.target), escapeCsv(l.rel)].join(',')).join('\n');
+        } else if (k === 'images') {
+          csv = 'idx,src,resolved,alt,width,height,loading\n' +
+            last.images.map((img, i) => [i + 1, escapeCsv(img.src), escapeCsv(img.resolved), escapeCsv(img.alt === null ? '' : img.alt), img.w, img.h, escapeCsv(img.loading)].join(',')).join('\n');
+        }
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = k + '.csv';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      });
+    });
+
+    ['input', 'baseUrl'].forEach((id) => $(id).addEventListener('input', update));
+
+    // 初期サンプル
+    $('input').value =
+      '<article>\n' +
+      '  <h1>サンプル記事</h1>\n' +
+      '  <p>これは <a href="/about">概要</a> ページへのリンクと、<a href="https://example.com" target="_blank">外部リンク</a> の例です。</p>\n' +
+      '  <h2>本論</h2>\n' +
+      '  <p><img src="/img/photo.jpg" alt="風景写真" width="800" height="600"></p>\n' +
+      '  <p><img src="/img/decor.png" alt=""></p>\n' +
+      '  <p><img src="/img/missing.png"></p>\n' +
+      '  <h2>まとめ</h2>\n' +
+      '</article>';
+    update();
+  })();
+</script>
+</body>
+</html>
