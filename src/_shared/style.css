@@ -1,0 +1,183 @@
+/* public-tools shared design system
+   このファイルはルート / 各ツールから参照される共通スタイル。
+   個別ツールは原則ここで定義された変数とコンポーネントクラスのみを使う。 */
+
+:root {
+  --bg: #f7f8fa;
+  --fg: #1f2328;
+  --muted: #6b7280;
+  --accent: #2563eb;
+  --accent-weak: rgba(37, 99, 235, 0.15);
+  --card: #ffffff;
+  --border: #e5e7eb;
+  --danger: #dc2626;
+  --radius: 8px;
+  --max-width: 880px;
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
+    "Yu Gothic", Meiryo, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); }
+a:hover { text-decoration: underline; }
+
+.container {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 32px 16px 64px;
+}
+
+.nav {
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+}
+.nav a { text-decoration: none; }
+
+header.page-header { margin-bottom: 24px; }
+header.page-header h1 {
+  font-size: 1.6rem;
+  margin: 0 0 4px;
+}
+header.page-header .lead {
+  color: var(--muted);
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+h2 { font-size: 1.2rem; margin: 24px 0 12px; }
+
+/* form controls */
+input[type="text"],
+input[type="number"],
+input[type="search"],
+textarea,
+select {
+  width: 100%;
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--fg);
+}
+textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  min-height: 200px;
+  resize: vertical;
+}
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-weak);
+}
+
+button, .button {
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--fg);
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+button:hover, .button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+button.primary, .button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+button.primary:hover, .button.primary:hover {
+  filter: brightness(1.05);
+  color: #fff;
+}
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* card */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+
+/* stats grid (for counters etc.) */
+.stats {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+.stat {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.stat .label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.stat .value {
+  font-size: 1.4rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* tool list (root) */
+ul.tools {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+ul.tools li {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+ul.tools a {
+  text-decoration: none;
+  font-weight: 600;
+}
+ul.tools .desc {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-top: 4px;
+}
+
+/* footer */
+footer.page-footer {
+  margin-top: 48px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+footer.page-footer a { color: var(--muted); }
