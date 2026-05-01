@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ルーレット - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: ルーレット盤の配置のみ */
+  .roulette-stage {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 24px;
+    align-items: start;
+  }
+  .wheel-wrap {
+    position: relative;
+    width: 360px;
+    height: 360px;
+    margin: 0 auto;
+  }
+  .wheel-wrap canvas {
+    width: 360px;
+    height: 360px;
+    display: block;
+  }
+  .wheel-pointer {
+    position: absolute;
+    top: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 14px solid transparent;
+    border-right: 14px solid transparent;
+    border-top: 22px solid var(--danger);
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+    z-index: 1;
+  }
+  .winner {
+    margin-top: 16px;
+    text-align: center;
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--accent);
+    min-height: 2em;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>ルーレット</h1>
+    <p class="lead">入力した項目から 1 つをランダムに抽選します。</p>
+  </header>
+
+  <div class="roulette-stage">
+    <div>
+      <div class="wheel-wrap">
+        <div class="wheel-pointer"></div>
+        <canvas id="wheel" width="720" height="720"></canvas>
+      </div>
+      <div class="winner" id="winner">&nbsp;</div>
+      <div class="actions" style="justify-content:center;">
+        <button type="button" id="spin" class="primary">回す</button>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;color:var(--muted);">
+          <input type="checkbox" id="removeWinner" style="width:auto;"> 当選者をリストから除外
+        </label>
+      </div>
+    </div>
+
+    <div>
+      <div style="font-size:0.85rem;color:var(--muted);margin-bottom:4px;">項目（1 行 1 つ）</div>
+      <textarea id="items" rows="12" placeholder="りんご&#10;みかん&#10;ぶどう&#10;バナナ"></textarea>
+      <div class="actions">
+        <button type="button" id="shuffle">シャッフル</button>
+        <button type="button" id="clearAll">クリア</button>
+      </div>
+
+      <h2 style="margin-top:24px;">結果履歴</h2>
+      <ul class="plain-list" id="history" style="display:none;"></ul>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const canvas = document.getElementById('wheel');
+    const ctx = canvas.getContext('2d');
+    const items = document.getElementById('items');
+    const winner = document.getElementById('winner');
+    const spinBtn = document.getElementById('spin');
+    const shuffleBtn = document.getElementById('shuffle');
+    const clearBtn = document.getElementById('clearAll');
+    const removeWinner = document.getElementById('removeWinner');
+    const history = document.getElementById('history');
+
+    const PALETTE = [
+      '#60a5fa', '#f472b6', '#34d399', '#fbbf24', '#a78bfa',
+      '#fb923c', '#22d3ee', '#f87171', '#a3e635', '#e879f9',
+    ];
+
+    const CSIZE = 720;       // canvas internal size (CSS は 360 でスケール)
+    const CENTER = CSIZE / 2;
+    const RADIUS = CENTER - 8;
+
+    // 初期サンプル
+    items.value = ['りんご', 'みかん', 'ぶどう', 'バナナ', 'メロン', 'もも'].join('\n');
+
+    let rotation = 0; // ラジアン
+    let spinning = false;
+
+    function getItems() {
+      return items.value
+        .split('\n')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, CSIZE, CSIZE);
+      const list = getItems();
+      const n = list.length;
+
+      // 背景円
+      ctx.save();
+      ctx.translate(CENTER, CENTER);
+      ctx.beginPath();
+      ctx.arc(0, 0, RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.restore();
+
+      if (n === 0) {
+        ctx.save();
+        ctx.translate(CENTER, CENTER);
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = 'bold 28px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('項目を入力してください', 0, 0);
+        ctx.restore();
+        return;
+      }
+
+      ctx.save();
+      ctx.translate(CENTER, CENTER);
+      ctx.rotate(rotation);
+      const seg = (Math.PI * 2) / n;
+      for (let i = 0; i < n; i++) {
+        const start = i * seg - Math.PI / 2; // 上(12時)を 0 度起点
+        const end = start + seg;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, RADIUS, start, end);
+        ctx.closePath();
+        ctx.fillStyle = PALETTE[i % PALETTE.length];
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // ラベル
+        ctx.save();
+        ctx.rotate(start + seg / 2);
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#1f2328';
+        ctx.font = 'bold 22px -apple-system, "Hiragino Sans", "Yu Gothic", sans-serif';
+        const text = list[i].length > 12 ? list[i].slice(0, 11) + '…' : list[i];
+        ctx.fillText(text, RADIUS - 16, 0);
+        ctx.restore();
+      }
+
+      // 中央の小円
+      ctx.beginPath();
+      ctx.arc(0, 0, 28, 0, Math.PI * 2);
+      ctx.fillStyle = '#1f2328';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0, 0, 22, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function selectedIndex() {
+      const list = getItems();
+      if (list.length === 0) return -1;
+      const seg = (Math.PI * 2) / list.length;
+      // ポインタは上 (-PI/2) を指す。盤を rotation 回転させた状態で上に来ているセグメントを求める。
+      // セグメント i の中心角 = i*seg - PI/2 + seg/2 (rotation=0 の時)
+      // 回転後、画面上で上方向 (-PI/2) に位置するためには
+      //   i*seg - PI/2 + seg/2 + rotation ≡ -PI/2  (mod 2PI)
+      // → i*seg + seg/2 + rotation ≡ 0 (mod 2PI)
+      // → i = (-rotation - seg/2) / seg  (mod n)
+      const n = list.length;
+      let raw = (-rotation - seg / 2) / seg;
+      raw = ((raw % n) + n) % n;
+      return Math.floor(raw);
+    }
+
+    function appendHistory(name) {
+      const li = document.createElement('li');
+      const time = new Date();
+      const hh = String(time.getHours()).padStart(2, '0');
+      const mm = String(time.getMinutes()).padStart(2, '0');
+      const ss = String(time.getSeconds()).padStart(2, '0');
+      li.innerHTML =
+        '<span class="label">' + hh + ':' + mm + ':' + ss + '</span>' +
+        '<span>' + name.replace(/[<&>]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c])) + '</span>';
+      history.prepend(li);
+      history.style.display = '';
+    }
+
+    function spin() {
+      if (spinning) return;
+      const list = getItems();
+      if (list.length === 0) return;
+      spinning = true;
+      spinBtn.disabled = true;
+      winner.textContent = ' ';
+
+      // 5〜8 周 + ランダム位置で停止
+      const turns = 5 + Math.random() * 3;
+      const target = rotation + Math.PI * 2 * turns + Math.random() * Math.PI * 2;
+      const start = rotation;
+      const dur = 4500 + Math.random() * 1000;
+      const t0 = performance.now();
+
+      function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+      function frame(now) {
+        const t = Math.min(1, (now - t0) / dur);
+        rotation = start + (target - start) * easeOutCubic(t);
+        draw();
+        if (t < 1) {
+          requestAnimationFrame(frame);
+        } else {
+          spinning = false;
+          spinBtn.disabled = false;
+          const idx = selectedIndex();
+          const name = getItems()[idx];
+          if (name != null) {
+            winner.textContent = '🎉 ' + name;
+            appendHistory(name);
+            if (removeWinner.checked) {
+              const list2 = getItems();
+              list2.splice(idx, 1);
+              items.value = list2.join('\n');
+              // 回転位置を維持しつつ再描画
+              draw();
+            }
+          }
+        }
+      }
+      requestAnimationFrame(frame);
+    }
+
+    spinBtn.addEventListener('click', spin);
+
+    items.addEventListener('input', function () {
+      if (!spinning) draw();
+    });
+
+    shuffleBtn.addEventListener('click', function () {
+      const list = getItems();
+      for (let i = list.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [list[i], list[j]] = [list[j], list[i]];
+      }
+      items.value = list.join('\n');
+      draw();
+    });
+
+    clearBtn.addEventListener('click', function () {
+      items.value = '';
+      winner.textContent = ' ';
+      history.innerHTML = '';
+      history.style.display = 'none';
+      draw();
+    });
+
+    draw();
+  })();
+</script>
+</body>
+</html>
