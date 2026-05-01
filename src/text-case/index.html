@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文字種変換 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 変換ボタン群 */
+  .case-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .case-grid button { text-align: left; padding: 10px 12px; }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>文字種変換</h1>
+    <p class="lead">大文字⇄小文字・全角⇄半角・ひらがな⇄カタカナ・命名規則の変換をボタン 1 つで実行します。</p>
+  </header>
+
+  <div class="split-2">
+    <div class="pane">
+      <div class="pane-label">入力</div>
+      <textarea id="input" rows="12" placeholder="変換したいテキストを入力…"></textarea>
+    </div>
+    <div class="pane">
+      <div class="pane-label">出力</div>
+      <textarea id="output" rows="12" readonly></textarea>
+    </div>
+  </div>
+
+  <div class="actions" style="margin-top:12px;">
+    <button type="button" id="copy" class="primary">出力をコピー</button>
+    <button type="button" id="swap">出力を入力に戻す</button>
+    <button type="button" id="clear">クリア</button>
+  </div>
+
+  <h2>英字の大小</h2>
+  <div class="case-grid">
+    <button type="button" data-op="upper">UPPER（すべて大文字）</button>
+    <button type="button" data-op="lower">lower（すべて小文字）</button>
+    <button type="button" data-op="title">Title Case（単語頭を大文字）</button>
+    <button type="button" data-op="sentence">Sentence case（文頭のみ）</button>
+    <button type="button" data-op="invertCase">aBc ⇄ AbC（反転）</button>
+  </div>
+
+  <h2>全角・半角</h2>
+  <div class="case-grid">
+    <button type="button" data-op="toHalfAlnum">全角英数字 → 半角</button>
+    <button type="button" data-op="toFullAlnum">半角英数字 → 全角</button>
+    <button type="button" data-op="toHalfKana">全角カタカナ → 半角ｶﾅ</button>
+    <button type="button" data-op="toFullKana">半角ｶﾅ → 全角カタカナ</button>
+    <button type="button" data-op="toHalfAll">すべて半角化（英数記号 + カナ）</button>
+    <button type="button" data-op="toFullAll">すべて全角化（英数記号 + カナ）</button>
+  </div>
+
+  <h2>ひらがな・カタカナ</h2>
+  <div class="case-grid">
+    <button type="button" data-op="hiraToKana">ひらがな → カタカナ</button>
+    <button type="button" data-op="kanaToHira">カタカナ → ひらがな</button>
+  </div>
+
+  <h2>プログラム命名規則</h2>
+  <div class="case-grid">
+    <button type="button" data-op="camel">camelCase</button>
+    <button type="button" data-op="pascal">PascalCase</button>
+    <button type="button" data-op="snake">snake_case</button>
+    <button type="button" data-op="kebab">kebab-case</button>
+    <button type="button" data-op="constant">CONSTANT_CASE</button>
+  </div>
+
+  <h2>その他</h2>
+  <div class="case-grid">
+    <button type="button" data-op="reverse">文字順を反転</button>
+    <button type="button" data-op="reverseLines">行を反転</button>
+    <button type="button" data-op="sortLines">行をソート（昇順）</button>
+    <button type="button" data-op="sortLinesDesc">行をソート（降順）</button>
+    <button type="button" data-op="uniqueLines">重複行を削除</button>
+    <button type="button" data-op="trimLines">各行の前後空白を削除</button>
+    <button type="button" data-op="collapseSpaces">連続空白を 1 つにまとめる</button>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    // ====== 変換ロジック ======
+    function upper(s) { return s.toUpperCase(); }
+    function lower(s) { return s.toLowerCase(); }
+    function title(s) {
+      return s.replace(/\b([a-zA-Z])([a-zA-Z]*)\b/g, (_, a, b) => a.toUpperCase() + b.toLowerCase());
+    }
+    function sentence(s) {
+      return s.toLowerCase().replace(/(^\s*|[.!?]\s+)([a-z])/g, (_, p, c) => p + c.toUpperCase());
+    }
+    function invertCase(s) {
+      return s.replace(/[a-zA-Z]/g, (c) => c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase());
+    }
+
+    // 全角英数記号 ⇄ 半角
+    function toHalfAlnum(s) {
+      return s.replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+              .replace(/　/g, ' ');
+    }
+    function toFullAlnum(s) {
+      return s.replace(/[!-~]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0xFEE0))
+              .replace(/ /g, '　');
+    }
+
+    // 全角カタカナ ⇄ 半角カタカナ
+    const FULL_TO_HALF_KANA = (function () {
+      const map = {
+        'ガ': 'ｶﾞ', 'ギ': 'ｷﾞ', 'グ': 'ｸﾞ', 'ゲ': 'ｹﾞ', 'ゴ': 'ｺﾞ',
+        'ザ': 'ｻﾞ', 'ジ': 'ｼﾞ', 'ズ': 'ｽﾞ', 'ゼ': 'ｾﾞ', 'ゾ': 'ｿﾞ',
+        'ダ': 'ﾀﾞ', 'ヂ': 'ﾁﾞ', 'ヅ': 'ﾂﾞ', 'デ': 'ﾃﾞ', 'ド': 'ﾄﾞ',
+        'バ': 'ﾊﾞ', 'ビ': 'ﾋﾞ', 'ブ': 'ﾌﾞ', 'ベ': 'ﾍﾞ', 'ボ': 'ﾎﾞ',
+        'パ': 'ﾊﾟ', 'ピ': 'ﾋﾟ', 'プ': 'ﾌﾟ', 'ペ': 'ﾍﾟ', 'ポ': 'ﾎﾟ',
+        'ヴ': 'ｳﾞ',
+        'ア': 'ｱ', 'イ': 'ｲ', 'ウ': 'ｳ', 'エ': 'ｴ', 'オ': 'ｵ',
+        'カ': 'ｶ', 'キ': 'ｷ', 'ク': 'ｸ', 'ケ': 'ｹ', 'コ': 'ｺ',
+        'サ': 'ｻ', 'シ': 'ｼ', 'ス': 'ｽ', 'セ': 'ｾ', 'ソ': 'ｿ',
+        'タ': 'ﾀ', 'チ': 'ﾁ', 'ツ': 'ﾂ', 'テ': 'ﾃ', 'ト': 'ﾄ',
+        'ナ': 'ﾅ', 'ニ': 'ﾆ', 'ヌ': 'ﾇ', 'ネ': 'ﾈ', 'ノ': 'ﾉ',
+        'ハ': 'ﾊ', 'ヒ': 'ﾋ', 'フ': 'ﾌ', 'ヘ': 'ﾍ', 'ホ': 'ﾎ',
+        'マ': 'ﾏ', 'ミ': 'ﾐ', 'ム': 'ﾑ', 'メ': 'ﾒ', 'モ': 'ﾓ',
+        'ヤ': 'ﾔ', 'ユ': 'ﾕ', 'ヨ': 'ﾖ',
+        'ラ': 'ﾗ', 'リ': 'ﾘ', 'ル': 'ﾙ', 'レ': 'ﾚ', 'ロ': 'ﾛ',
+        'ワ': 'ﾜ', 'ヲ': 'ｦ', 'ン': 'ﾝ',
+        'ァ': 'ｧ', 'ィ': 'ｨ', 'ゥ': 'ｩ', 'ェ': 'ｪ', 'ォ': 'ｫ',
+        'ッ': 'ｯ', 'ャ': 'ｬ', 'ュ': 'ｭ', 'ョ': 'ｮ',
+        'ー': 'ｰ', '。': '｡', '、': '､', '・': '･',
+        '「': '｢', '」': '｣',
+      };
+      return map;
+    })();
+    function toHalfKana(s) {
+      return s.replace(/[ぁ-んァ-ヶー。、・「」]/g, (c) => FULL_TO_HALF_KANA[c] || c);
+    }
+    function toFullKana(s) {
+      const dakuten = { 'ｶ': 'ガ','ｷ':'ギ','ｸ':'グ','ｹ':'ゲ','ｺ':'ゴ',
+                        'ｻ': 'ザ','ｼ':'ジ','ｽ':'ズ','ｾ':'ゼ','ｿ':'ゾ',
+                        'ﾀ': 'ダ','ﾁ':'ヂ','ﾂ':'ヅ','ﾃ':'デ','ﾄ':'ド',
+                        'ﾊ': 'バ','ﾋ':'ビ','ﾌ':'ブ','ﾍ':'ベ','ﾎ':'ボ',
+                        'ｳ': 'ヴ' };
+      const handakuten = { 'ﾊ':'パ','ﾋ':'ピ','ﾌ':'プ','ﾍ':'ペ','ﾎ':'ポ' };
+      const single = {
+        'ｱ':'ア','ｲ':'イ','ｳ':'ウ','ｴ':'エ','ｵ':'オ',
+        'ｶ':'カ','ｷ':'キ','ｸ':'ク','ｹ':'ケ','ｺ':'コ',
+        'ｻ':'サ','ｼ':'シ','ｽ':'ス','ｾ':'セ','ｿ':'ソ',
+        'ﾀ':'タ','ﾁ':'チ','ﾂ':'ツ','ﾃ':'テ','ﾄ':'ト',
+        'ﾅ':'ナ','ﾆ':'ニ','ﾇ':'ヌ','ﾈ':'ネ','ﾉ':'ノ',
+        'ﾊ':'ハ','ﾋ':'ヒ','ﾌ':'フ','ﾍ':'ヘ','ﾎ':'ホ',
+        'ﾏ':'マ','ﾐ':'ミ','ﾑ':'ム','ﾒ':'メ','ﾓ':'モ',
+        'ﾔ':'ヤ','ﾕ':'ユ','ﾖ':'ヨ',
+        'ﾗ':'ラ','ﾘ':'リ','ﾙ':'ル','ﾚ':'レ','ﾛ':'ロ',
+        'ﾜ':'ワ','ｦ':'ヲ','ﾝ':'ン',
+        'ｧ':'ァ','ｨ':'ィ','ｩ':'ゥ','ｪ':'ェ','ｫ':'ォ',
+        'ｯ':'ッ','ｬ':'ャ','ｭ':'ュ','ｮ':'ョ',
+        'ｰ':'ー','｡':'。','､':'、','･':'・','｢':'「','｣':'」',
+      };
+      let out = '';
+      for (let i = 0; i < s.length; i++) {
+        const c = s[i], n = s[i + 1];
+        if (n === 'ﾞ' && dakuten[c]) { out += dakuten[c]; i++; }
+        else if (n === 'ﾟ' && handakuten[c]) { out += handakuten[c]; i++; }
+        else out += single[c] || c;
+      }
+      return out;
+    }
+    function toHalfAll(s) { return toHalfAlnum(toHalfKana(s)); }
+    function toFullAll(s) { return toFullAlnum(toFullKana(s)); }
+
+    // ひらがな ⇄ カタカナ
+    function hiraToKana(s) { return s.replace(/[ぁ-ゖ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60)); }
+    function kanaToHira(s) { return s.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60)); }
+
+    // 命名規則
+    function tokenize(s) {
+      // 単語境界で分割: 空白, ハイフン, アンダースコア, キャメルの境目
+      return s
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+        .split(/[\s_\-]+/)
+        .filter(Boolean);
+    }
+    function camel(s) {
+      const t = tokenize(s).map((w) => w.toLowerCase());
+      return t.map((w, i) => i === 0 ? w : w[0].toUpperCase() + w.slice(1)).join('');
+    }
+    function pascal(s) {
+      return tokenize(s).map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join('');
+    }
+    function snake(s) { return tokenize(s).map((w) => w.toLowerCase()).join('_'); }
+    function kebab(s) { return tokenize(s).map((w) => w.toLowerCase()).join('-'); }
+    function constant(s) { return tokenize(s).map((w) => w.toUpperCase()).join('_'); }
+
+    // その他
+    function reverse(s) { return Array.from(s).reverse().join(''); }
+    function reverseLines(s) { return s.split('\n').reverse().join('\n'); }
+    function sortLines(s) { return s.split('\n').sort((a, b) => a.localeCompare(b, 'ja')).join('\n'); }
+    function sortLinesDesc(s) { return s.split('\n').sort((a, b) => b.localeCompare(a, 'ja')).join('\n'); }
+    function uniqueLines(s) {
+      const seen = new Set(), out = [];
+      s.split('\n').forEach((l) => { if (!seen.has(l)) { seen.add(l); out.push(l); } });
+      return out.join('\n');
+    }
+    function trimLines(s) { return s.split('\n').map((l) => l.trim()).join('\n'); }
+    function collapseSpaces(s) { return s.replace(/[ \t]+/g, ' '); }
+
+    const OPS = {
+      upper, lower, title, sentence, invertCase,
+      toHalfAlnum, toFullAlnum, toHalfKana, toFullKana, toHalfAll, toFullAll,
+      hiraToKana, kanaToHira,
+      camel, pascal, snake, kebab, constant,
+      reverse, reverseLines, sortLines, sortLinesDesc, uniqueLines, trimLines, collapseSpaces,
+    };
+
+    document.querySelectorAll('[data-op]').forEach((b) => {
+      b.addEventListener('click', function () {
+        const fn = OPS[b.dataset.op];
+        if (!fn) return;
+        $('output').value = fn($('input').value);
+      });
+    });
+
+    $('copy').addEventListener('click', async function () {
+      if (!$('output').value) return;
+      try {
+        await navigator.clipboard.writeText($('output').value);
+        const o = this.textContent; this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = o, 1000);
+      } catch (e) {}
+    });
+    $('swap').addEventListener('click', function () {
+      $('input').value = $('output').value;
+      $('output').value = '';
+    });
+    $('clear').addEventListener('click', function () {
+      $('input').value = ''; $('output').value = ''; $('input').focus();
+    });
+
+    // 初期サンプル
+    $('input').value = 'Hello World\nｶﾀｶﾅ ＡＢＣ１２３\nuser_name';
+  })();
+</script>
+</body>
+</html>
