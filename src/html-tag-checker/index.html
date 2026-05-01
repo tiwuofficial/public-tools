@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HTML 閉じタグチェッカ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 問題箇所の表示 */
+  .issue-row {
+    display: grid;
+    grid-template-columns: 90px 1fr;
+    gap: 12px;
+    align-items: start;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .issue-row:last-child { border-bottom: none; }
+  .issue-row .pos {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .issue-row.error { background: var(--removed-bg); }
+  .issue-row.warn { background: var(--added-bg); }
+  .issue-row .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-right: 6px;
+  }
+  .issue-row.error .badge { background: var(--removed-fg); color: #fff; }
+  .issue-row.warn .badge { background: #d97706; color: #fff; }
+  .ok-banner {
+    background: var(--added-bg);
+    color: var(--added-fg);
+    border: 1px solid #bbf7d0;
+    padding: 14px;
+    border-radius: var(--radius);
+    text-align: center;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>HTML 閉じタグチェッカ</h1>
+    <p class="lead">HTML を貼り付けると、閉じ忘れ・対応していない閉じタグ・余分な閉じタグを行番号つきで指摘します。</p>
+  </header>
+
+  <textarea id="input" rows="14" spellcheck="false" placeholder="ここに HTML を貼り付け…"></textarea>
+
+  <div class="actions" style="margin-top:8px;">
+    <button type="button" id="check" class="primary">チェック</button>
+    <button type="button" id="sample">サンプル (壊れた HTML)</button>
+    <button type="button" id="clear">クリア</button>
+  </div>
+
+  <h2>結果</h2>
+  <div id="summary" style="margin-bottom:8px;"></div>
+  <div id="issues"></div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    void 要素 (<code>img br hr input meta link</code> 等) と自己終了タグ <code>&lt;br /&gt;</code> は閉じ不要として扱います。<code>&lt;script&gt;</code> / <code>&lt;style&gt;</code> の内側のテキストは検証対象外です。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    const VOID = new Set([
+      'area','base','br','col','embed','hr','img','input','link','meta','param','source','track','wbr',
+      'doctype'
+    ]);
+    const RAW = new Set(['script','style']);
+    // 任意でオプションタグ扱いのもの (HTML 仕様では閉じタグ省略可能)
+    const OPTIONAL_CLOSING = new Set(['p','li','dt','dd','tr','td','th','tbody','thead','tfoot','option','colgroup','rt','rp']);
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    function lineCol(src, idx) {
+      let line = 1, lastNL = -1;
+      for (let i = 0; i < idx && i < src.length; i++) {
+        if (src[i] === '\n') { line++; lastNL = i; }
+      }
+      return { line, col: idx - lastNL };
+    }
+
+    function tokenize(src) {
+      const tokens = [];
+      let i = 0;
+      while (i < src.length) {
+        if (src.startsWith('<!--', i)) {
+          const end = src.indexOf('-->', i + 4);
+          const e = end < 0 ? src.length : end + 3;
+          tokens.push({ type: 'comment', start: i, end: e });
+          i = e;
+          continue;
+        }
+        if (src.startsWith('<!', i) || src.startsWith('<?', i)) {
+          const end = src.indexOf('>', i);
+          const e = end < 0 ? src.length : end + 1;
+          tokens.push({ type: 'doctype', start: i, end: e });
+          i = e;
+          continue;
+        }
+        if (src[i] === '<') {
+          const end = src.indexOf('>', i);
+          if (end < 0) {
+            tokens.push({ type: 'malformed', start: i, end: src.length });
+            break;
+          }
+          const raw = src.slice(i, end + 1);
+          const isClosing = raw.startsWith('</');
+          const isSelfClose = raw.endsWith('/>');
+          const m = raw.match(/^<\/?([a-zA-Z][a-zA-Z0-9-]*)/);
+          const name = m ? m[1].toLowerCase() : '';
+          if (!name) {
+            tokens.push({ type: 'malformed', start: i, end: end + 1, raw });
+          } else {
+            tokens.push({ type: 'tag', start: i, end: end + 1, raw, name, isClosing, isSelfClose });
+          }
+          i = end + 1;
+          // RAW (script/style) の中身を読み飛ばす
+          const t = tokens[tokens.length - 1];
+          if (t.type === 'tag' && !t.isClosing && !t.isSelfClose && RAW.has(t.name)) {
+            const closeStr = '</' + t.name;
+            const lower = src.toLowerCase();
+            const ce = lower.indexOf(closeStr, i);
+            i = ce < 0 ? src.length : ce;
+          }
+          continue;
+        }
+        const next = src.indexOf('<', i);
+        i = next < 0 ? src.length : next;
+      }
+      return tokens;
+    }
+
+    function check(src) {
+      const tokens = tokenize(src);
+      const issues = [];
+      const stack = []; // { name, start }
+
+      for (const t of tokens) {
+        if (t.type === 'comment' || t.type === 'doctype') continue;
+        if (t.type === 'malformed') {
+          const lc = lineCol(src, t.start);
+          issues.push({ kind: 'error', line: lc.line, col: lc.col, message: '不正なタグ', detail: t.raw || src.slice(t.start, t.end) });
+          continue;
+        }
+        if (t.type !== 'tag') continue;
+        if (t.isSelfClose || VOID.has(t.name)) continue;
+
+        if (t.isClosing) {
+          // 対応する開きタグを stack から探す
+          const idx = (() => {
+            for (let i = stack.length - 1; i >= 0; i--) {
+              if (stack[i].name === t.name) return i;
+            }
+            return -1;
+          })();
+          if (idx === -1) {
+            const lc = lineCol(src, t.start);
+            issues.push({ kind: 'error', line: lc.line, col: lc.col, message: '対応する開きタグが見つかりません: </' + t.name + '>', detail: t.raw });
+          } else {
+            // ネスト不一致を検出: idx より上にあるタグはこの閉じで暗黙に閉じられたことになる
+            const between = stack.slice(idx + 1);
+            for (const b of between) {
+              if (!OPTIONAL_CLOSING.has(b.name)) {
+                const lc = lineCol(src, b.start);
+                issues.push({
+                  kind: 'error',
+                  line: lc.line, col: lc.col,
+                  message: '<' + b.name + '> が閉じられる前に </' + t.name + '> が現れました',
+                  detail: '開き: ' + b.raw,
+                });
+              }
+            }
+            stack.length = idx; // ここまで pop
+          }
+        } else {
+          stack.push({ name: t.name, start: t.start, raw: t.raw });
+        }
+      }
+
+      // 残ったものは閉じ忘れ
+      stack.forEach((b) => {
+        if (OPTIONAL_CLOSING.has(b.name)) return;
+        const lc = lineCol(src, b.start);
+        issues.push({
+          kind: 'error',
+          line: lc.line, col: lc.col,
+          message: '<' + b.name + '> が閉じられていません',
+          detail: b.raw,
+        });
+      });
+
+      return { issues, tagCount: tokens.filter((t) => t.type === 'tag').length };
+    }
+
+    function render() {
+      const src = $('input').value;
+      if (!src.trim()) {
+        $('summary').innerHTML = '';
+        $('issues').innerHTML = '';
+        return;
+      }
+      const { issues, tagCount } = check(src);
+      const errorCount = issues.filter((x) => x.kind === 'error').length;
+
+      if (issues.length === 0) {
+        $('summary').innerHTML = '<div class="ok-banner">✓ 開閉タグの対応に問題は見つかりませんでした (' + tagCount + ' 個のタグを確認)</div>';
+        $('issues').innerHTML = '';
+        return;
+      }
+      $('summary').innerHTML = '<div class="banner error">' +
+        errorCount + ' 件の問題が見つかりました (' + tagCount + ' 個のタグを確認)' +
+      '</div>';
+      // line 順にソート
+      issues.sort((a, b) => a.line - b.line || a.col - b.col);
+      $('issues').innerHTML = issues.map((it) =>
+        '<div class="issue-row ' + it.kind + '">' +
+          '<div class="pos">行 ' + it.line + ' / 列 ' + it.col + '</div>' +
+          '<div>' +
+            '<span class="badge">' + (it.kind === 'error' ? 'ERROR' : 'WARN') + '</span>' +
+            escapeHtml(it.message) +
+            (it.detail ? '<div style="margin-top:4px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.85rem;">' + escapeHtml(it.detail) + '</div>' : '') +
+          '</div>' +
+        '</div>'
+      ).join('');
+    }
+
+    $('check').addEventListener('click', render);
+    $('input').addEventListener('input', render);
+    $('clear').addEventListener('click', function () { $('input').value = ''; render(); $('input').focus(); });
+    $('sample').addEventListener('click', function () {
+      $('input').value =
+        '<!DOCTYPE html>\n' +
+        '<html lang="ja">\n' +
+        '<head>\n' +
+        '  <meta charset="UTF-8">\n' +
+        '  <title>サンプル</title>\n' +
+        '</head>\n' +
+        '<body>\n' +
+        '  <div class="card">\n' +
+        '    <h1>タイトル</h1>\n' +
+        '    <p>本文の途中で <strong>閉じ忘れ</p>\n' +
+        '    <ul>\n' +
+        '      <li>1\n' +
+        '      <li>2</li>\n' +
+        '    </ul>\n' +
+        '  </div>\n' +
+        '</body>\n' +
+        '</html>\n' +
+        '<span>余分な閉じ</div>\n';
+      render();
+    });
+
+    render();
+  })();
+</script>
+</body>
+</html>
