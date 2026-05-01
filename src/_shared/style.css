@@ -11,8 +11,13 @@
   --card: #ffffff;
   --border: #e5e7eb;
   --danger: #dc2626;
+  --added-bg: #e6ffed;
+  --added-fg: #14532d;
+  --removed-bg: #ffeef0;
+  --removed-fg: #7f1d1d;
   --radius: 8px;
   --max-width: 880px;
+  --max-width-wide: 1200px;
 }
 
 * { box-sizing: border-box; }
@@ -172,6 +177,65 @@ ul.tools .desc {
   color: var(--muted);
   font-size: 0.9rem;
   margin-top: 4px;
+}
+
+/* split grid (2-column layout for editors / inputs) */
+.split-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.split-2 > .pane {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.split-2 .pane-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+/* container variant for wider tools */
+.container.wide { max-width: var(--max-width-wide); }
+
+/* diff output (line-based) */
+.diff-output {
+  margin-top: 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9rem;
+  overflow: hidden;
+}
+.diff-output .diff-line {
+  display: flex;
+  padding: 2px 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  border-left: 3px solid transparent;
+}
+.diff-output .diff-line.same  { background: transparent; }
+.diff-output .diff-line.added {
+  background: var(--added-bg);
+  color: var(--added-fg);
+  border-left-color: #16a34a;
+}
+.diff-output .diff-line.removed {
+  background: var(--removed-bg);
+  color: var(--removed-fg);
+  border-left-color: var(--danger);
+}
+.diff-output .diff-line .marker {
+  width: 1.5em;
+  flex: 0 0 auto;
+  color: var(--muted);
+  user-select: none;
+}
+.diff-output .diff-empty {
+  padding: 16px;
+  color: var(--muted);
+  text-align: center;
 }
 
 /* footer */

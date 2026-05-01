@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>差分比較 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>差分比較</h1>
+    <p class="lead">2 つの文章を行単位で比較し、追加・削除された行をハイライト表示します。</p>
+  </header>
+
+  <div class="split-2">
+    <div class="pane">
+      <div class="pane-label">変更前 (A)</div>
+      <textarea id="left" placeholder="変更前のテキストを貼り付け…"></textarea>
+    </div>
+    <div class="pane">
+      <div class="pane-label">変更後 (B)</div>
+      <textarea id="right" placeholder="変更後のテキストを貼り付け…"></textarea>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="compare" type="button" class="primary">比較する</button>
+    <button id="swap" type="button">A と B を入れ替え</button>
+    <button id="clear" type="button">クリア</button>
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;color:var(--muted);">
+      <input type="checkbox" id="ignoreWs" style="width:auto;"> 行末の空白を無視
+    </label>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="label">追加された行</div><div class="value" id="cntAdded">0</div></div>
+    <div class="stat"><div class="label">削除された行</div><div class="value" id="cntRemoved">0</div></div>
+    <div class="stat"><div class="label">変更なしの行</div><div class="value" id="cntSame">0</div></div>
+  </div>
+
+  <div class="diff-output" id="output">
+    <div class="diff-empty">「比較する」を押すとここに結果が表示されます。</div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const left = document.getElementById('left');
+    const right = document.getElementById('right');
+    const output = document.getElementById('output');
+    const ignoreWs = document.getElementById('ignoreWs');
+    const cntAdded = document.getElementById('cntAdded');
+    const cntRemoved = document.getElementById('cntRemoved');
+    const cntSame = document.getElementById('cntSame');
+
+    function escape(s) {
+      return s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    // Longest Common Subsequence based line diff.
+    // O(n*m) time/space — adequate for typical text comparisons.
+    function lineDiff(a, b) {
+      const n = a.length, m = b.length;
+      // dp[i][j] = LCS length of a[0..i) and b[0..j)
+      const dp = new Array(n + 1);
+      for (let i = 0; i <= n; i++) {
+        dp[i] = new Int32Array(m + 1);
+      }
+      for (let i = 1; i <= n; i++) {
+        for (let j = 1; j <= m; j++) {
+          if (a[i - 1] === b[j - 1]) {
+            dp[i][j] = dp[i - 1][j - 1] + 1;
+          } else {
+            dp[i][j] = dp[i - 1][j] >= dp[i][j - 1] ? dp[i - 1][j] : dp[i][j - 1];
+          }
+        }
+      }
+      const out = [];
+      let i = n, j = m;
+      while (i > 0 || j > 0) {
+        if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+          out.push({ type: 'same', text: a[i - 1] });
+          i--; j--;
+        } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+          out.push({ type: 'added', text: b[j - 1] });
+          j--;
+        } else {
+          out.push({ type: 'removed', text: a[i - 1] });
+          i--;
+        }
+      }
+      out.reverse();
+      return out;
+    }
+
+    function normalizeLines(text) {
+      const lines = text.split('\n');
+      if (ignoreWs.checked) {
+        return lines.map((l) => l.replace(/[ \t]+$/, ''));
+      }
+      return lines;
+    }
+
+    function compare() {
+      const a = normalizeLines(left.value);
+      const b = normalizeLines(right.value);
+      const diff = lineDiff(a, b);
+
+      let added = 0, removed = 0, same = 0;
+      const html = diff.map((d) => {
+        let marker = ' ';
+        if (d.type === 'added') { added++; marker = '+'; }
+        else if (d.type === 'removed') { removed++; marker = '−'; }
+        else { same++; }
+        return (
+          '<div class="diff-line ' + d.type + '">' +
+            '<span class="marker">' + marker + '</span>' +
+            '<span>' + escape(d.text) + '</span>' +
+          '</div>'
+        );
+      }).join('');
+
+      cntAdded.textContent = added.toLocaleString('ja-JP');
+      cntRemoved.textContent = removed.toLocaleString('ja-JP');
+      cntSame.textContent = same.toLocaleString('ja-JP');
+
+      if (diff.length === 0) {
+        output.innerHTML = '<div class="diff-empty">入力が空です。</div>';
+      } else {
+        output.innerHTML = html;
+      }
+    }
+
+    document.getElementById('compare').addEventListener('click', compare);
+
+    document.getElementById('swap').addEventListener('click', function () {
+      const tmp = left.value;
+      left.value = right.value;
+      right.value = tmp;
+      compare();
+    });
+
+    document.getElementById('clear').addEventListener('click', function () {
+      left.value = '';
+      right.value = '';
+      cntAdded.textContent = '0';
+      cntRemoved.textContent = '0';
+      cntSame.textContent = '0';
+      output.innerHTML = '<div class="diff-empty">「比較する」を押すとここに結果が表示されます。</div>';
+      left.focus();
+    });
+
+    // Ctrl/Cmd+Enter で比較
+    [left, right].forEach((el) => {
+      el.addEventListener('keydown', function (e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          compare();
+        }
+      });
+    });
+  })();
+</script>
+</body>
+</html>
