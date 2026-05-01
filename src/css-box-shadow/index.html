@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CSS Box Shadow ジェネレータ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: ジェネレータ専用レイアウト */
+  .bs-layout {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 24px;
+    align-items: start;
+  }
+  .preview-stage {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 320px;
+  }
+  .preview-box {
+    width: 220px;
+    height: 140px;
+    background: #ffffff;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #374151;
+    font-weight: 600;
+  }
+  .shadow-row {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+  .shadow-row .row-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .shadow-row .row-head h3 {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  .shadow-field {
+    display: grid;
+    grid-template-columns: 80px 1fr 60px;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .shadow-field label { font-size: 0.85rem; color: var(--muted); }
+  .shadow-field .val {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+    text-align: right;
+    color: var(--muted);
+  }
+  .stage-bg-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    align-items: center;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>CSS Box Shadow ジェネレータ</h1>
+    <p class="lead">スライダで影を編集すると、リアルタイムでプレビューと CSS が更新されます。複数の影を重ねることもできます。</p>
+  </header>
+
+  <div class="bs-layout">
+    <div>
+      <div class="preview-stage" id="stage">
+        <div class="preview-box" id="box">プレビュー</div>
+      </div>
+      <div class="stage-bg-row">
+        <span style="color:var(--muted);font-size:0.85rem;">背景色</span>
+        <input type="color" id="stageBg" value="#f7f8fa" style="width:48px;height:32px;padding:2px;">
+        <span style="color:var(--muted);font-size:0.85rem;">ボックス色</span>
+        <input type="color" id="boxBg" value="#ffffff" style="width:48px;height:32px;padding:2px;">
+        <span style="color:var(--muted);font-size:0.85rem;">角丸</span>
+        <input type="range" id="boxRadius" min="0" max="80" value="12" style="flex:1;">
+        <span class="val" id="boxRadiusVal" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.85rem;color:var(--muted);">12px</span>
+      </div>
+
+      <h2>CSS 出力</h2>
+      <pre class="code" id="output" style="white-space:pre-wrap;"></pre>
+      <div class="actions">
+        <button type="button" id="copy" class="primary">コピー</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="actions" style="margin-bottom:8px;">
+        <button type="button" id="addShadow">＋ 影を追加</button>
+        <button type="button" id="reset">リセット</button>
+      </div>
+      <div id="shadowList"></div>
+    </div>
+  </div>
+
+  <h2>プリセット</h2>
+  <div class="actions" id="presets" style="flex-wrap:wrap;"></div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    function defaultShadow() {
+      return { x: 0, y: 4, blur: 12, spread: 0, color: '#000000', alpha: 25, inset: false };
+    }
+
+    let shadows = [defaultShadow()];
+
+    function rgbaFromHexAlpha(hex, alphaPct) {
+      const h = hex.replace('#', '');
+      const r = parseInt(h.slice(0, 2), 16);
+      const g = parseInt(h.slice(2, 4), 16);
+      const b = parseInt(h.slice(4, 6), 16);
+      const a = (alphaPct / 100).toFixed(2).replace(/\.?0+$/, '') || '0';
+      return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + a + ')';
+    }
+    function shadowCss(s) {
+      return (s.inset ? 'inset ' : '') +
+        s.x + 'px ' + s.y + 'px ' + s.blur + 'px ' + s.spread + 'px ' +
+        rgbaFromHexAlpha(s.color, s.alpha);
+    }
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    function renderList() {
+      const list = $('shadowList');
+      list.innerHTML = '';
+      shadows.forEach((s, i) => {
+        const row = document.createElement('div');
+        row.className = 'shadow-row';
+        row.innerHTML =
+          '<div class="row-head">' +
+            '<h3>影 ' + (i + 1) + (s.inset ? ' (inset)' : '') + '</h3>' +
+            '<div style="display:flex;gap:6px;">' +
+              (shadows.length > 1 ? '<button type="button" data-del="' + i + '" style="font-size:0.8rem;padding:3px 8px;">削除</button>' : '') +
+            '</div>' +
+          '</div>' +
+          field(i, 'x',     'X 軸',   -100, 100, 1, 'px') +
+          field(i, 'y',     'Y 軸',   -100, 100, 1, 'px') +
+          field(i, 'blur',  'ぼかし', 0,    200, 1, 'px') +
+          field(i, 'spread','広がり', -50,  100, 1, 'px') +
+          colorField(i, s) +
+          field(i, 'alpha', '不透明',  0,    100, 1, '%') +
+          '<label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;margin-top:4px;">' +
+            '<input type="checkbox" data-i="' + i + '" data-prop="inset" ' + (s.inset ? 'checked' : '') + ' style="width:auto;"> インセット (内側の影)' +
+          '</label>';
+        list.appendChild(row);
+      });
+    }
+
+    function field(i, prop, label, min, max, step, unit) {
+      const v = shadows[i][prop];
+      return '<div class="shadow-field">' +
+        '<label>' + label + '</label>' +
+        '<input type="range" data-i="' + i + '" data-prop="' + prop + '" min="' + min + '" max="' + max + '" step="' + step + '" value="' + v + '">' +
+        '<span class="val">' + v + unit + '</span>' +
+      '</div>';
+    }
+    function colorField(i, s) {
+      return '<div class="shadow-field">' +
+        '<label>色</label>' +
+        '<input type="color" data-i="' + i + '" data-prop="color" value="' + s.color + '" style="height:30px;">' +
+        '<span class="val">' + s.color + '</span>' +
+      '</div>';
+    }
+
+    function refreshAll() {
+      renderList();
+      renderPreview();
+    }
+
+    function renderPreview() {
+      const css = shadows.map(shadowCss).join(', ');
+      const radius = parseInt($('boxRadius').value, 10);
+      $('box').style.boxShadow = css;
+      $('box').style.background = $('boxBg').value;
+      $('box').style.borderRadius = radius + 'px';
+      $('stage').style.background = $('stageBg').value;
+      $('boxRadiusVal').textContent = radius + 'px';
+
+      const lines = ['box-shadow:'];
+      shadows.forEach((s, i) => {
+        const sep = i < shadows.length - 1 ? ',' : ';';
+        lines.push('  ' + shadowCss(s) + sep);
+      });
+      $('output').textContent = lines.join('\n');
+    }
+
+    // List input/changes
+    $('shadowList').addEventListener('input', function (e) {
+      const i = +e.target.dataset.i;
+      const prop = e.target.dataset.prop;
+      if (prop === undefined || isNaN(i)) return;
+      const t = e.target;
+      if (t.type === 'checkbox') {
+        shadows[i][prop] = t.checked;
+      } else if (t.type === 'color') {
+        shadows[i][prop] = t.value;
+      } else {
+        shadows[i][prop] = parseInt(t.value, 10);
+      }
+      // ラベル即時更新（範囲スライダ）
+      const valEl = t.parentElement.querySelector('.val');
+      if (valEl) {
+        if (t.type === 'color') valEl.textContent = t.value;
+        else if (t.type === 'range') {
+          const unit = (prop === 'alpha') ? '%' : 'px';
+          valEl.textContent = t.value + unit;
+        }
+      }
+      renderPreview();
+      // タイトル更新 (inset)
+      if (prop === 'inset') {
+        const head = t.closest('.shadow-row').querySelector('.row-head h3');
+        if (head) head.textContent = '影 ' + (i + 1) + (shadows[i].inset ? ' (inset)' : '');
+      }
+    });
+    $('shadowList').addEventListener('click', function (e) {
+      if (e.target.dataset.del !== undefined) {
+        shadows.splice(+e.target.dataset.del, 1);
+        refreshAll();
+      }
+    });
+
+    $('addShadow').addEventListener('click', function () {
+      shadows.push(defaultShadow());
+      refreshAll();
+    });
+    $('reset').addEventListener('click', function () {
+      shadows = [defaultShadow()];
+      refreshAll();
+    });
+
+    ['stageBg', 'boxBg', 'boxRadius'].forEach((id) =>
+      $(id).addEventListener('input', renderPreview)
+    );
+
+    $('copy').addEventListener('click', async function () {
+      try {
+        await navigator.clipboard.writeText($('output').textContent);
+        const o = this.textContent; this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = o, 1000);
+      } catch (e) {}
+    });
+
+    // ===== プリセット =====
+    const PRESETS = [
+      { name: 'なし', shadows: [] },
+      { name: 'ライト', shadows: [{ x: 0, y: 1, blur: 3, spread: 0, color: '#000000', alpha: 12, inset: false }] },
+      { name: 'カード', shadows: [{ x: 0, y: 4, blur: 12, spread: 0, color: '#000000', alpha: 15, inset: false }] },
+      { name: '浮遊', shadows: [{ x: 0, y: 12, blur: 24, spread: -8, color: '#000000', alpha: 25, inset: false }] },
+      { name: 'ハード', shadows: [{ x: 4, y: 4, blur: 0, spread: 0, color: '#000000', alpha: 100, inset: false }] },
+      { name: 'グロー', shadows: [{ x: 0, y: 0, blur: 24, spread: 4, color: '#3b82f6', alpha: 60, inset: false }] },
+      { name: 'インセット', shadows: [{ x: 0, y: 2, blur: 6, spread: 0, color: '#000000', alpha: 30, inset: true }] },
+      { name: '二重 (Material)', shadows: [
+        { x: 0, y: 2, blur: 4, spread: -1, color: '#000000', alpha: 20, inset: false },
+        { x: 0, y: 4, blur: 6, spread: -1, color: '#000000', alpha: 12, inset: false },
+      ] },
+      { name: 'ニューモーフィズム', shadows: [
+        { x: -8, y: -8, blur: 16, spread: 0, color: '#ffffff', alpha: 90, inset: false },
+        { x: 8, y: 8, blur: 16, spread: 0, color: '#000000', alpha: 18, inset: false },
+      ] },
+    ];
+    const presetsEl = $('presets');
+    PRESETS.forEach((p) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = p.name;
+      b.addEventListener('click', () => {
+        shadows = p.shadows.length > 0 ? p.shadows.map((s) => ({ ...s })) : [defaultShadow()];
+        if (p.name === 'ニューモーフィズム') {
+          $('stageBg').value = '#e0e5ec';
+          $('boxBg').value = '#e0e5ec';
+        }
+        refreshAll();
+      });
+      presetsEl.appendChild(b);
+    });
+
+    refreshAll();
+  })();
+</script>
+</body>
+</html>
