@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>単位換算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 換算行 */
+  .conv-row {
+    display: grid;
+    grid-template-columns: 1fr 220px;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .conv-row input {
+    text-align: right;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .conv-row .unit {
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .unit-name { font-weight: 600; }
+  .unit-sub { color: var(--muted); font-size: 0.8rem; margin-left: 6px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>単位換算</h1>
+    <p class="lead">長さ・重さ・温度・面積・体積・速度・データサイズの単位を相互に換算します。</p>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button type="button" class="active" data-cat="length">長さ</button>
+    <button type="button" data-cat="weight">重さ</button>
+    <button type="button" data-cat="temp">温度</button>
+    <button type="button" data-cat="area">面積</button>
+    <button type="button" data-cat="volume">体積</button>
+    <button type="button" data-cat="speed">速度</button>
+    <button type="button" data-cat="data">データ</button>
+  </div>
+
+  <div class="card" id="rows"></div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    どの行に数字を入力しても、他の単位に同時換算されます。坪 / ヤード / フィート / 海里 などの非 SI 単位にも対応。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    // 線形換算: factor は base 単位 (m / kg / m² / m³ / m/s / B) に対する係数
+    const CATEGORIES = {
+      length: {
+        base: 'm',
+        units: [
+          ['mm', 'ミリメートル', 0.001],
+          ['cm', 'センチメートル', 0.01],
+          ['m', 'メートル', 1],
+          ['km', 'キロメートル', 1000],
+          ['in', 'インチ', 0.0254],
+          ['ft', 'フィート', 0.3048],
+          ['yd', 'ヤード', 0.9144],
+          ['mi', 'マイル', 1609.344],
+          ['nmi', '海里', 1852],
+        ],
+      },
+      weight: {
+        base: 'kg',
+        units: [
+          ['mg', 'ミリグラム', 0.000001],
+          ['g', 'グラム', 0.001],
+          ['kg', 'キログラム', 1],
+          ['t', 'トン', 1000],
+          ['oz', 'オンス', 0.028349523125],
+          ['lb', 'ポンド', 0.45359237],
+        ],
+      },
+      area: {
+        base: 'm²',
+        units: [
+          ['cm²', '平方センチメートル', 0.0001],
+          ['m²', '平方メートル', 1],
+          ['a', 'アール', 100],
+          ['ha', 'ヘクタール', 10000],
+          ['km²', '平方キロメートル', 1000000],
+          ['坪', '坪', 3.305785124],
+          ['畳', '畳 (江戸間)', 1.5488],
+          ['ac', 'エーカー', 4046.8564224],
+          ['ft²', '平方フィート', 0.09290304],
+        ],
+      },
+      volume: {
+        base: 'L',
+        units: [
+          ['mL', 'ミリリットル', 0.001],
+          ['L', 'リットル', 1],
+          ['m³', '立方メートル', 1000],
+          ['cup', 'カップ (200 mL)', 0.2],
+          ['tsp', '小さじ (5 mL)', 0.005],
+          ['tbsp', '大さじ (15 mL)', 0.015],
+          ['fl_oz', '液量オンス (US)', 0.0295735296],
+          ['gal', 'ガロン (US)', 3.785411784],
+        ],
+      },
+      speed: {
+        base: 'm/s',
+        units: [
+          ['m/s', 'メートル毎秒', 1],
+          ['km/h', 'キロメートル毎時', 1 / 3.6],
+          ['mph', 'マイル毎時', 0.44704],
+          ['ft/s', 'フィート毎秒', 0.3048],
+          ['kn', 'ノット (海里/時)', 0.514444444],
+          ['mach', 'マッハ (海面標準)', 340.29],
+        ],
+      },
+      data: {
+        base: 'B',
+        units: [
+          ['bit', 'ビット', 0.125],
+          ['B', 'バイト', 1],
+          ['KB', 'KB (10進)', 1000],
+          ['KiB', 'KiB (2進)', 1024],
+          ['MB', 'MB (10進)', 1000000],
+          ['MiB', 'MiB (2進)', 1048576],
+          ['GB', 'GB (10進)', 1e9],
+          ['GiB', 'GiB (2進)', Math.pow(1024, 3)],
+          ['TB', 'TB (10進)', 1e12],
+          ['TiB', 'TiB (2進)', Math.pow(1024, 4)],
+        ],
+      },
+      // 温度は線形でないので別扱い
+      temp: null,
+    };
+
+    function fmt(n) {
+      if (n === '' || n === null || !Number.isFinite(n)) return '';
+      // 小さい数も大きい数も読みやすく
+      const abs = Math.abs(n);
+      let s;
+      if (abs !== 0 && (abs < 1e-4 || abs >= 1e15)) s = n.toExponential(6);
+      else {
+        s = (Math.round(n * 1e10) / 1e10).toString();
+        if (s.includes('.')) s = s.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+      }
+      // 桁区切り
+      const neg = s.startsWith('-');
+      if (neg) s = s.slice(1);
+      const [i, f] = s.split('.');
+      const grouped = i.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      return (neg ? '-' : '') + grouped + (f ? '.' + f : '');
+    }
+    function parseNum(s) {
+      const t = String(s).replace(/[,\s]/g, '');
+      if (t === '' || t === '-' || t === '.') return null;
+      const v = parseFloat(t);
+      return Number.isFinite(v) ? v : null;
+    }
+
+    let currentCat = 'length';
+
+    function renderRows() {
+      const rowsEl = $('rows');
+      rowsEl.innerHTML = '';
+      if (currentCat === 'temp') {
+        ['℃', '℉', 'K'].forEach((u, i) => {
+          const row = document.createElement('div');
+          row.className = 'conv-row';
+          row.innerHTML =
+            '<input type="text" class="t-input" data-unit="' + u + '" placeholder="0">' +
+            '<div class="unit"><span class="unit-name">' + u + '</span><span class="unit-sub">' +
+              ['摂氏', '華氏', 'ケルビン'][i] + '</span></div>';
+          rowsEl.appendChild(row);
+        });
+        rowsEl.querySelectorAll('.t-input').forEach((inp) => {
+          inp.addEventListener('input', function () {
+            const v = parseNum(this.value);
+            if (v === null) {
+              rowsEl.querySelectorAll('.t-input').forEach((x) => { if (x !== inp) x.value = ''; });
+              return;
+            }
+            const u = this.dataset.unit;
+            let c;
+            if (u === '℃') c = v;
+            else if (u === '℉') c = (v - 32) * 5 / 9;
+            else c = v - 273.15;
+            const f = c * 9 / 5 + 32;
+            const k = c + 273.15;
+            rowsEl.querySelectorAll('.t-input').forEach((x) => {
+              if (x === inp) return;
+              const xu = x.dataset.unit;
+              x.value = fmt(xu === '℃' ? c : xu === '℉' ? f : k);
+            });
+          });
+        });
+        return;
+      }
+      const cat = CATEGORIES[currentCat];
+      cat.units.forEach((u) => {
+        const [code, name, factor] = u;
+        const row = document.createElement('div');
+        row.className = 'conv-row';
+        row.innerHTML =
+          '<input type="text" class="u-input" data-factor="' + factor + '" placeholder="0">' +
+          '<div class="unit"><span class="unit-name">' + code + '</span><span class="unit-sub">' + name + '</span></div>';
+        rowsEl.appendChild(row);
+      });
+      rowsEl.querySelectorAll('.u-input').forEach((inp) => {
+        inp.addEventListener('input', function () {
+          const v = parseNum(this.value);
+          if (v === null) {
+            rowsEl.querySelectorAll('.u-input').forEach((x) => { if (x !== inp) x.value = ''; });
+            return;
+          }
+          const factor = parseFloat(this.dataset.factor);
+          const baseVal = v * factor;
+          rowsEl.querySelectorAll('.u-input').forEach((x) => {
+            if (x === inp) return;
+            const f = parseFloat(x.dataset.factor);
+            x.value = fmt(baseVal / f);
+          });
+        });
+      });
+    }
+
+    document.querySelectorAll('.tabs button').forEach((b) => {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('.tabs button').forEach((x) => x.classList.remove('active'));
+        b.classList.add('active');
+        currentCat = b.dataset.cat;
+        renderRows();
+      });
+    });
+
+    renderRows();
+  })();
+</script>
+</body>
+</html>
