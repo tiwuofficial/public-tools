@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>進数変換 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>進数変換</h1>
+    <p class="lead">2 進数・8 進数・10 進数・16 進数を相互変換します。BigInt を使うので任意精度で扱えます。</p>
+  </header>
+
+  <h2>相互変換</h2>
+  <div class="card">
+    <div style="display:grid;grid-template-columns:90px 1fr 80px;gap:10px;align-items:center;">
+      <label for="bin" style="color:var(--muted);font-size:0.9rem;">2 進数</label>
+      <input type="text" id="bin" spellcheck="false" placeholder="例: 11111111">
+      <button type="button" data-copy="bin">コピー</button>
+
+      <label for="oct" style="color:var(--muted);font-size:0.9rem;">8 進数</label>
+      <input type="text" id="oct" spellcheck="false" placeholder="例: 377">
+      <button type="button" data-copy="oct">コピー</button>
+
+      <label for="dec" style="color:var(--muted);font-size:0.9rem;">10 進数</label>
+      <input type="text" id="dec" spellcheck="false" placeholder="例: 255">
+      <button type="button" data-copy="dec">コピー</button>
+
+      <label for="hex" style="color:var(--muted);font-size:0.9rem;">16 進数</label>
+      <input type="text" id="hex" spellcheck="false" placeholder="例: ff">
+      <button type="button" data-copy="hex">コピー</button>
+    </div>
+
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;color:var(--muted);">
+        <input type="checkbox" id="hexUpper" style="width:auto;"> 16 進を大文字
+      </label>
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;color:var(--muted);">
+        <input type="checkbox" id="grouping" checked style="width:auto;"> 桁区切り表示 (2 進 4 桁 / 10 進 3 桁)
+      </label>
+      <button type="button" id="clear">クリア</button>
+    </div>
+
+    <div id="status" style="margin-top:8px;"></div>
+  </div>
+
+  <h2>ビット演算 (符号なし 32 / 64 bit)</h2>
+  <div class="card">
+    <div style="display:grid;grid-template-columns:60px 1fr;gap:10px;align-items:center;">
+      <label for="aIn" style="color:var(--muted);font-size:0.9rem;">A</label>
+      <input type="text" id="aIn" spellcheck="false" placeholder="例: 0xff or 11111111b or 255">
+      <label for="bIn" style="color:var(--muted);font-size:0.9rem;">B</label>
+      <input type="text" id="bIn" spellcheck="false" placeholder="例: 0x0f">
+      <label for="op" style="color:var(--muted);font-size:0.9rem;">演算</label>
+      <select id="op" style="width:auto;">
+        <option value="and">AND (&amp;)</option>
+        <option value="or">OR (|)</option>
+        <option value="xor">XOR (^)</option>
+        <option value="not">NOT (~A)</option>
+        <option value="shl">A &lt;&lt; B</option>
+        <option value="shr">A &gt;&gt; B (論理右シフト)</option>
+      </select>
+    </div>
+
+    <ul class="plain-list" id="bitOut" style="margin-top:12px;display:none;"></ul>
+  </div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    入力では <code>0x</code>/<code>0b</code>/<code>0o</code> プレフィックスや末尾の <code>h</code>/<code>b</code>/<code>o</code> も解釈します。負の値は 2 進・16 進では 2 の補数として扱いません（10 進のみ符号付き表示）。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    function setStatus(kind, msg) {
+      $('status').innerHTML = msg ? '<div class="banner ' + kind + '">' + escapeHtml(msg) + '</div>' : '';
+    }
+
+    // 入力 → BigInt
+    function parseAny(text) {
+      if (!text) return null;
+      let s = text.trim().replace(/[\s_,]/g, '');
+      if (s === '') return null;
+      let neg = false;
+      if (s.startsWith('-')) { neg = true; s = s.slice(1); }
+      else if (s.startsWith('+')) s = s.slice(1);
+      let radix = 10;
+      // prefix
+      if (/^0x/i.test(s)) { radix = 16; s = s.slice(2); }
+      else if (/^0o/i.test(s)) { radix = 8; s = s.slice(2); }
+      else if (/^0b/i.test(s)) { radix = 2; s = s.slice(2); }
+      else if (/[hH]$/.test(s) && /^[0-9a-fA-F]+[hH]$/.test(s)) { radix = 16; s = s.slice(0, -1); }
+      else if (/[oO]$/.test(s) && /^[0-7]+[oO]$/.test(s)) { radix = 8; s = s.slice(0, -1); }
+      else if (/[bB]$/.test(s) && /^[01]+[bB]$/.test(s)) { radix = 2; s = s.slice(0, -1); }
+      if (s === '') return null;
+      // 妥当性
+      const validRe = { 2: /^[01]+$/, 8: /^[0-7]+$/, 10: /^\d+$/, 16: /^[0-9a-fA-F]+$/ };
+      if (!validRe[radix].test(s)) throw new Error('「' + text + '」を ' + radix + ' 進数として解釈できません');
+      let n = 0n;
+      const base = BigInt(radix);
+      for (const c of s) {
+        let d;
+        if (c >= '0' && c <= '9') d = BigInt(c.charCodeAt(0) - 48);
+        else d = BigInt((c.toLowerCase().charCodeAt(0) - 97) + 10);
+        n = n * base + d;
+      }
+      return neg ? -n : n;
+    }
+
+    function parseRadix(text, radix) {
+      if (!text) return null;
+      let s = text.trim().replace(/[\s_,]/g, '');
+      if (s === '') return null;
+      let neg = false;
+      if (s.startsWith('-')) { neg = true; s = s.slice(1); }
+      const validRe = { 2: /^[01]+$/, 8: /^[0-7]+$/, 10: /^\d+$/, 16: /^[0-9a-fA-F]+$/ };
+      if (!validRe[radix].test(s)) throw new Error('入力が ' + radix + ' 進として無効です');
+      let n = 0n;
+      const base = BigInt(radix);
+      for (const c of s) {
+        let d;
+        if (c >= '0' && c <= '9') d = BigInt(c.charCodeAt(0) - 48);
+        else d = BigInt((c.toLowerCase().charCodeAt(0) - 97) + 10);
+        n = n * base + d;
+      }
+      return neg ? -n : n;
+    }
+
+    function group(s, n, sep) {
+      // 末尾から n 桁ごとに区切り
+      const parts = [];
+      for (let i = s.length; i > 0; i -= n) parts.unshift(s.slice(Math.max(0, i - n), i));
+      return parts.join(sep);
+    }
+
+    function format(n) {
+      if (n === null) return { bin: '', oct: '', dec: '', hex: '' };
+      const neg = n < 0n;
+      const abs = neg ? -n : n;
+      const grouping = $('grouping').checked;
+      const upper = $('hexUpper').checked;
+      let bin = abs.toString(2);
+      let oct = abs.toString(8);
+      let dec = abs.toString(10);
+      let hex = abs.toString(16);
+      if (upper) hex = hex.toUpperCase();
+      if (grouping) {
+        bin = group(bin, 4, ' ');
+        dec = group(dec, 3, ',');
+      }
+      if (neg) { bin = '-' + bin; oct = '-' + oct; dec = '-' + dec; hex = '-' + hex; }
+      return { bin, oct, dec, hex };
+    }
+
+    let updating = false;
+    function refreshAll(value) {
+      updating = true;
+      const f = format(value);
+      $('bin').value = f.bin;
+      $('oct').value = f.oct;
+      $('dec').value = f.dec;
+      $('hex').value = f.hex;
+      updating = false;
+    }
+
+    function bind(id, radix) {
+      $(id).addEventListener('input', function () {
+        if (updating) return;
+        if (this.value.trim() === '') {
+          updating = true;
+          ['bin', 'oct', 'dec', 'hex'].forEach((x) => { if (x !== id) $(x).value = ''; });
+          updating = false;
+          setStatus('', '');
+          return;
+        }
+        try {
+          const n = parseRadix(this.value, radix);
+          if (n === null) return;
+          updating = true;
+          const f = format(n);
+          if (id !== 'bin') $('bin').value = f.bin;
+          if (id !== 'oct') $('oct').value = f.oct;
+          if (id !== 'dec') $('dec').value = f.dec;
+          if (id !== 'hex') $('hex').value = f.hex;
+          updating = false;
+          setStatus('', '');
+        } catch (e) {
+          setStatus('error', e.message);
+        }
+      });
+    }
+    bind('bin', 2); bind('oct', 8); bind('dec', 10); bind('hex', 16);
+
+    ['hexUpper', 'grouping'].forEach((id) => $(id).addEventListener('change', function () {
+      // 現在値を再フォーマット
+      try {
+        const v = parseRadix($('dec').value || '0', 10);
+        refreshAll(v);
+      } catch (e) {}
+    }));
+
+    $('clear').addEventListener('click', function () {
+      ['bin', 'oct', 'dec', 'hex'].forEach((id) => $(id).value = '');
+      setStatus('', '');
+      $('dec').focus();
+    });
+
+    document.querySelectorAll('[data-copy]').forEach((b) => {
+      b.addEventListener('click', async function () {
+        const v = $(b.dataset.copy).value;
+        if (!v) return;
+        try {
+          await navigator.clipboard.writeText(v);
+          const orig = b.textContent;
+          b.textContent = 'コピー済';
+          setTimeout(() => b.textContent = orig, 800);
+        } catch (e) {}
+      });
+    });
+
+    // ---- ビット演算 ----
+    function toBigUInt(n, bits) {
+      const mask = (1n << BigInt(bits)) - 1n;
+      return ((n % mask) + mask) & mask;
+    }
+
+    function bitop() {
+      try {
+        const op = $('op').value;
+        const a = parseAny($('aIn').value);
+        const b = parseAny($('bIn').value);
+        if (a === null && op !== 'not') { $('bitOut').style.display = 'none'; return; }
+        if (a === null) { $('bitOut').style.display = 'none'; return; }
+        let r;
+        if (op === 'and') r = a & (b ?? 0n);
+        else if (op === 'or') r = a | (b ?? 0n);
+        else if (op === 'xor') r = a ^ (b ?? 0n);
+        else if (op === 'not') r = ~a;
+        else if (op === 'shl') r = a << (b ?? 0n);
+        else if (op === 'shr') {
+          // 符号なし右シフト相当: 64bit と仮定
+          const u = toBigUInt(a, 64);
+          r = u >> (b ?? 0n);
+        }
+        const r32 = toBigUInt(r, 32);
+        const r64 = toBigUInt(r, 64);
+        const items = [
+          row('結果 (符号付き)', r),
+          row('結果 (32 bit 符号なし)', r32),
+          row('結果 (64 bit 符号なし)', r64),
+          row('結果 (16 進)', '0x' + ($('hexUpper').checked ? r64.toString(16).toUpperCase() : r64.toString(16))),
+          row('結果 (2 進, 64 bit)', group(r64.toString(2).padStart(64, '0'), 4, ' ')),
+        ];
+        $('bitOut').innerHTML = items.join('');
+        $('bitOut').style.display = '';
+      } catch (e) {
+        $('bitOut').innerHTML = '<li><span class="label">エラー</span><span>' + escapeHtml(e.message) + '</span></li>';
+        $('bitOut').style.display = '';
+      }
+    }
+    function row(label, val) {
+      return '<li><span class="label">' + escapeHtml(label) + '</span><span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">' + escapeHtml(String(val)) + '</span></li>';
+    }
+    ['aIn', 'bIn', 'op', 'hexUpper'].forEach((id) => {
+      $(id).addEventListener('input', bitop);
+      $(id).addEventListener('change', bitop);
+    });
+
+    // 初期サンプル
+    $('dec').value = '255';
+    refreshAll(255n);
+    $('aIn').value = '0xff';
+    $('bIn').value = '0x0f';
+    bitop();
+  })();
+</script>
+</body>
+</html>
