@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>読了時間 / SEO 文字数チェッカ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: バーゲージ */
+  .target-row {
+    display: grid;
+    grid-template-columns: 220px 1fr 110px;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .target-row .name {
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+  .target-row .name .sub {
+    font-size: 0.75rem;
+    color: var(--muted);
+    font-weight: 400;
+    margin-left: 6px;
+  }
+  .bar {
+    position: relative;
+    height: 18px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    overflow: hidden;
+  }
+  .bar .fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.15s ease, background 0.15s ease;
+  }
+  .bar .fill.over { background: var(--danger); }
+  .bar .fill.warn { background: #d97706; }
+  .bar .fill.good { background: #16a34a; }
+  .bar .marker {
+    position: absolute;
+    top: -3px;
+    width: 2px;
+    height: 24px;
+    background: var(--fg);
+    opacity: 0.5;
+  }
+  .target-row .count {
+    text-align: right;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.95rem;
+  }
+  .target-row .count .delta {
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>読了時間 / SEO 文字数チェッカ</h1>
+    <p class="lead">記事文字数から読了時間を計算し、SEO タイトル・メタディスクリプション・Twitter などの目標バーを表示します。</p>
+  </header>
+
+  <textarea id="input" rows="14" placeholder="ここに記事本文を貼り付け…"></textarea>
+  <div style="display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:0.85rem;margin-top:6px;">
+    <span><span id="charCount">0</span> 文字</span>
+    <span><span id="charNoSpace">0</span> 文字 (空白除く)</span>
+    <span><span id="lineCount">0</span> 行</span>
+    <span><span id="paraCount">0</span> 段落</span>
+    <span><span id="kanjiPct">0</span>% 漢字</span>
+    <span><span id="hiraPct">0</span>% ひらがな</span>
+  </div>
+
+  <h2>読了時間</h2>
+  <div class="card">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+      <div>
+        <div style="color:var(--muted);font-size:0.85rem;">黙読 (約 600 字/分)</div>
+        <div style="font-size:1.6rem;font-weight:700;font-variant-numeric:tabular-nums;" id="readSilent">0 分</div>
+      </div>
+      <div>
+        <div style="color:var(--muted);font-size:0.85rem;">音読 (約 300 字/分)</div>
+        <div style="font-size:1.6rem;font-weight:700;font-variant-numeric:tabular-nums;" id="readAloud">0 分</div>
+      </div>
+      <div>
+        <div style="color:var(--muted);font-size:0.85rem;">スピーチ (約 250 字/分)</div>
+        <div style="font-size:1.6rem;font-weight:700;font-variant-numeric:tabular-nums;" id="readSpeech">0 分</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>目標との比較</h2>
+  <div class="card" id="targets"></div>
+
+  <h2>長すぎる文の検出</h2>
+  <div class="card" id="longSentences">
+    <div style="color:var(--muted);font-size:0.9rem;">100 文字を超える文があれば一覧表示します。読みづらいと感じる目安です。</div>
+  </div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    読了速度や目標値はあくまで目安です。SEO タイトルは検索結果での表示文字数（PC で 30〜35 字程度）、メタディスクリプションは 120 字前後が目安とされています（媒体・デバイスにより前後します）。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const input = $('input');
+
+    const TARGETS = [
+      { name: 'SEO タイトル',          sub: 'PC 30〜35 字',  target: 32, max: 60 },
+      { name: 'SEO メタディスクリプション', sub: '目安 120 字', target: 120, max: 160 },
+      { name: 'Twitter / X',            sub: '上限 140 字',  target: 140, max: 280 },
+      { name: 'Instagram キャプション', sub: '推奨 〜125 字',  target: 125, max: 2200 },
+      { name: 'Facebook 投稿',          sub: '推奨 〜80 字 (40 字最適)', target: 80, max: 2000 },
+      { name: 'YouTube 説明欄 上部',    sub: '可視 〜100 字',  target: 100, max: 5000 },
+      { name: '記事本文 (SEO ロング)',  sub: '目安 2,000 字以上', target: 2000, max: 20000 },
+    ];
+
+    function classifyChar(c) {
+      const code = c.codePointAt(0);
+      if (code >= 0x4E00 && code <= 0x9FFF) return 'kanji';
+      if (code >= 0x3041 && code <= 0x309F) return 'hira';
+      if (code >= 0x30A0 && code <= 0x30FF) return 'kata';
+      if (code >= 0x0030 && code <= 0x0039) return 'digit';
+      if ((code >= 0x0041 && code <= 0x005A) || (code >= 0x0061 && code <= 0x007A)) return 'alpha';
+      return 'other';
+    }
+
+    function update() {
+      const text = input.value;
+      const charCount = Array.from(text).length;
+      const noSpace = Array.from(text.replace(/\s/g, '')).length;
+      const lines = text === '' ? 0 : text.split('\n').length;
+      const paras = text.trim() === '' ? 0 : text.trim().split(/\n{2,}/).length;
+
+      // 文字種比率
+      const counts = { kanji: 0, hira: 0, kata: 0, digit: 0, alpha: 0, other: 0 };
+      for (const c of text.replace(/\s/g, '')) counts[classifyChar(c)]++;
+      const denom = noSpace || 1;
+      const kanjiPct = Math.round(counts.kanji / denom * 100);
+      const hiraPct = Math.round(counts.hira / denom * 100);
+
+      $('charCount').textContent = charCount.toLocaleString('ja-JP');
+      $('charNoSpace').textContent = noSpace.toLocaleString('ja-JP');
+      $('lineCount').textContent = lines.toLocaleString('ja-JP');
+      $('paraCount').textContent = paras.toLocaleString('ja-JP');
+      $('kanjiPct').textContent = kanjiPct;
+      $('hiraPct').textContent = hiraPct;
+
+      // 読了時間 (空白除く文字数)
+      function fmtMinutes(min) {
+        if (min < 1) return '< 1 分';
+        if (min < 60) return Math.ceil(min) + ' 分';
+        const h = Math.floor(min / 60);
+        const m = Math.ceil(min % 60);
+        return h + ' 時間 ' + m + ' 分';
+      }
+      $('readSilent').textContent = fmtMinutes(noSpace / 600);
+      $('readAloud').textContent = fmtMinutes(noSpace / 300);
+      $('readSpeech').textContent = fmtMinutes(noSpace / 250);
+
+      // 目標バー
+      const targetsHtml = TARGETS.map((t) => {
+        const isLong = t.target >= 1000;
+        // 長文系 (記事本文) は target で 100% 扱い (達成バー), 短文系は target で 100% (overflow が問題)
+        const pct = Math.max(0, Math.min(100, charCount / Math.max(t.target, 1) * 100));
+        const markerPct = Math.min(100, t.target / Math.max(t.target, t.max) * 100);
+        let cls = '';
+        if (isLong) {
+          if (charCount >= t.target) cls = 'good';
+          else if (charCount >= t.target * 0.5) cls = 'warn';
+        } else {
+          if (charCount > t.target) cls = (charCount > t.max ? 'over' : 'warn');
+          else if (charCount >= t.target * 0.6) cls = 'good';
+        }
+        const fillW = isLong ? Math.min(100, charCount / t.target * 100) : Math.min(100, charCount / t.max * 100);
+        const delta = isLong
+          ? (charCount >= t.target ? '達成' : (t.target - charCount) + ' 字不足')
+          : (charCount > t.target ? '+' + (charCount - t.target) : (t.target - charCount) + ' 字残り');
+        return (
+          '<div class="target-row">' +
+            '<div class="name">' + t.name + '<span class="sub">' + t.sub + '</span></div>' +
+            '<div class="bar">' +
+              '<div class="fill ' + cls + '" style="width:' + fillW + '%;"></div>' +
+              (isLong ? '' : '<div class="marker" style="left:' + (t.target / t.max * 100) + '%;"></div>') +
+            '</div>' +
+            '<div class="count">' + charCount + ' / ' + t.target + ' 字<div class="delta">' + delta + '</div></div>' +
+          '</div>'
+        );
+      }).join('');
+      $('targets').innerHTML = targetsHtml;
+
+      // 長すぎる文の検出
+      const sentences = text.replace(/\n/g, '').split(/(?<=[。！？!?])\s*/).filter((s) => s.trim() !== '');
+      const long = sentences
+        .map((s, i) => ({ idx: i + 1, text: s.trim(), len: Array.from(s.trim()).length }))
+        .filter((s) => s.len > 100)
+        .sort((a, b) => b.len - a.len);
+      if (long.length === 0) {
+        $('longSentences').innerHTML = '<div style="color:var(--muted);font-size:0.9rem;">100 文字を超える文はありませんでした。</div>';
+      } else {
+        $('longSentences').innerHTML = '<ul class="plain-list">' + long.map((s) =>
+          '<li><span class="label">' + s.len + ' 字</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:600px;display:inline-block;">' + escapeHtml(s.text) + '</span></li>'
+        ).join('') + '</ul>';
+      }
+    }
+    function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    input.addEventListener('input', update);
+
+    // 初期サンプル
+    input.value = '記事のサンプル文を入れて、目標との比較バーを確認できます。\n\nWeb ライターは原稿の文字数や、SEO タイトル・メタディスクリプションの長さに気を配ります。本ツールはそれをひと目で把握するためのものです。';
+    update();
+  })();
+</script>
+</body>
+</html>
