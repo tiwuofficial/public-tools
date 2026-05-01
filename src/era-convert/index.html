@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>西暦・和暦変換 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 大きい結果表示 */
+  .era-result {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    text-align: center;
+  }
+  .era-main {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .era-sub {
+    color: var(--muted);
+    margin-top: 4px;
+    font-size: 0.95rem;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>西暦・和暦変換</h1>
+    <p class="lead">西暦と和暦（元号）を相互変換します。明治以降に対応、月・日も入れると正確に判定。</p>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button type="button" class="active" data-tab="ad">西暦 → 和暦</button>
+    <button type="button" data-tab="jp">和暦 → 西暦</button>
+    <button type="button" data-tab="table">元号一覧</button>
+  </div>
+
+  <!-- 西暦 → 和暦 -->
+  <section id="tab-ad">
+    <div class="card">
+      <div style="display:grid;grid-template-columns:120px 1fr 60px;gap:10px;align-items:center;">
+        <label for="adYear" style="color:var(--muted);font-size:0.95rem;">西暦</label>
+        <input type="number" id="adYear" min="1868" max="2200" value="2025">
+        <span style="color:var(--muted);">年</span>
+
+        <label for="adMonth" style="color:var(--muted);font-size:0.95rem;">月</label>
+        <input type="number" id="adMonth" min="1" max="12" value="1">
+        <span style="color:var(--muted);">月</span>
+
+        <label for="adDay" style="color:var(--muted);font-size:0.95rem;">日</label>
+        <input type="number" id="adDay" min="1" max="31" value="1">
+        <span style="color:var(--muted);">日</span>
+      </div>
+      <div style="margin-top:8px;color:var(--muted);font-size:0.85rem;">月日は元号切替の境目（例: 平成 31 年 4 月 30 日 / 令和元年 5 月 1 日）の判定に使います。</div>
+    </div>
+
+    <h2>和暦</h2>
+    <div class="era-result">
+      <div class="era-main" id="adOut">-</div>
+      <div class="era-sub" id="adOutSub"></div>
+    </div>
+
+    <h2>関連情報</h2>
+    <ul class="plain-list" id="adInfo"></ul>
+  </section>
+
+  <!-- 和暦 → 西暦 -->
+  <section id="tab-jp" style="display:none;">
+    <div class="card">
+      <div style="display:grid;grid-template-columns:120px 1fr 60px;gap:10px;align-items:center;">
+        <label for="jpEra" style="color:var(--muted);font-size:0.95rem;">元号</label>
+        <select id="jpEra" style="grid-column:span 2;">
+          <option value="令和" selected>令和</option>
+          <option value="平成">平成</option>
+          <option value="昭和">昭和</option>
+          <option value="大正">大正</option>
+          <option value="明治">明治</option>
+        </select>
+
+        <label for="jpYear" style="color:var(--muted);font-size:0.95rem;">年</label>
+        <input type="number" id="jpYear" min="1" max="100" value="7">
+        <span style="color:var(--muted);">年</span>
+
+        <label for="jpMonth" style="color:var(--muted);font-size:0.95rem;">月</label>
+        <input type="number" id="jpMonth" min="1" max="12" value="1">
+        <span style="color:var(--muted);">月</span>
+
+        <label for="jpDay" style="color:var(--muted);font-size:0.95rem;">日</label>
+        <input type="number" id="jpDay" min="1" max="31" value="1">
+        <span style="color:var(--muted);">日</span>
+      </div>
+    </div>
+
+    <h2>西暦</h2>
+    <div class="era-result">
+      <div class="era-main" id="jpOut">-</div>
+      <div class="era-sub" id="jpOutSub"></div>
+    </div>
+
+    <h2>関連情報</h2>
+    <ul class="plain-list" id="jpInfo"></ul>
+  </section>
+
+  <!-- 元号一覧 -->
+  <section id="tab-table" style="display:none;">
+    <ul class="plain-list" id="eraTable"></ul>
+  </section>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const tabs = document.querySelectorAll('.tabs button');
+
+    // 元号 (新しい順): start = [year, month, day]
+    const ERAS = [
+      { name: '令和', start: [2019, 5, 1], yomi: 'れいわ' },
+      { name: '平成', start: [1989, 1, 8], yomi: 'へいせい', end: [2019, 4, 30] },
+      { name: '昭和', start: [1926, 12, 25], yomi: 'しょうわ', end: [1989, 1, 7] },
+      { name: '大正', start: [1912, 7, 30], yomi: 'たいしょう', end: [1926, 12, 25] },
+      { name: '明治', start: [1868, 1, 25], yomi: 'めいじ', end: [1912, 7, 30] },
+    ];
+    const ZODIAC = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
+    const ZODIAC_KANA = ['ね', 'うし', 'とら', 'う', 'たつ', 'み', 'うま', 'ひつじ', 'さる', 'とり', 'いぬ', 'い'];
+
+    function pad(n, w) { return String(n).padStart(w || 2, '0'); }
+
+    function compareYMD(a, b) {
+      if (a[0] !== b[0]) return a[0] - b[0];
+      if (a[1] !== b[1]) return a[1] - b[1];
+      return a[2] - b[2];
+    }
+
+    function findEra(y, m, d) {
+      for (const e of ERAS) {
+        if (compareYMD([y, m, d], e.start) >= 0) return e;
+      }
+      return null;
+    }
+
+    function adToJp(y, m, d) {
+      const e = findEra(y, m, d);
+      if (!e) return null;
+      const yy = y - e.start[0] + 1;
+      const label = (yy === 1) ? (e.name + '元年') : (e.name + ' ' + yy + ' 年');
+      return { era: e, year: yy, label };
+    }
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function row(label, val) {
+      return '<li><span class="label">' + escapeHtml(label) + '</span><span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">' + escapeHtml(val) + '</span></li>';
+    }
+    function dowKanji(d) { return ['日', '月', '火', '水', '木', '金', '土'][d.getDay()]; }
+
+    // タブ
+    tabs.forEach((b) => b.addEventListener('click', function () {
+      tabs.forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      ['ad', 'jp', 'table'].forEach((t) => $('tab-' + t).style.display = t === b.dataset.tab ? '' : 'none');
+    }));
+
+    // ===== 西暦 → 和暦 =====
+    function renderAd() {
+      const y = parseInt($('adYear').value, 10);
+      const m = parseInt($('adMonth').value, 10) || 1;
+      const d = parseInt($('adDay').value, 10) || 1;
+      if (!Number.isFinite(y) || y < 1868) {
+        $('adOut').textContent = '-';
+        $('adOutSub').textContent = '明治以降に対応しています（1868 年 1 月 25 日〜）';
+        $('adInfo').innerHTML = '';
+        return;
+      }
+      const r = adToJp(y, m, d);
+      if (!r) { $('adOut').textContent = '-'; $('adOutSub').textContent = ''; $('adInfo').innerHTML = ''; return; }
+      $('adOut').textContent = r.label;
+      $('adOutSub').textContent = r.era.name + '（' + r.era.yomi + '）の ' + r.year + ' 年目';
+
+      const date = new Date(y, m - 1, d);
+      const idx = ((y - 4) % 12 + 12) % 12;
+      const items = [
+        row('西暦', y + ' 年 ' + m + ' 月 ' + d + ' 日'),
+        row('曜日', dowKanji(date) + ' 曜日'),
+        row('和暦', r.label),
+        row('元号期間', r.era.start.join('-') + (r.era.end ? ' 〜 ' + r.era.end.join('-') : ' 〜 (現行)')),
+        row('干支', ZODIAC[idx] + '（' + ZODIAC_KANA[idx] + '年）'),
+      ];
+      $('adInfo').innerHTML = items.join('');
+    }
+    ['adYear', 'adMonth', 'adDay'].forEach((id) => $(id).addEventListener('input', renderAd));
+
+    // ===== 和暦 → 西暦 =====
+    function renderJp() {
+      const eraName = $('jpEra').value;
+      const yy = parseInt($('jpYear').value, 10);
+      const m = parseInt($('jpMonth').value, 10) || 1;
+      const d = parseInt($('jpDay').value, 10) || 1;
+      const era = ERAS.find((e) => e.name === eraName);
+      if (!era || !Number.isFinite(yy) || yy < 1) {
+        $('jpOut').textContent = '-'; $('jpOutSub').textContent = ''; $('jpInfo').innerHTML = ''; return;
+      }
+      const adYear = era.start[0] + (yy - 1);
+      // 期間チェック (1 年目は元号開始日以降のみ有効)
+      let warning = '';
+      const dateAD = [adYear, m, d];
+      if (compareYMD(dateAD, era.start) < 0) {
+        warning = '※ ' + era.name + ' ' + yy + ' 年 ' + m + ' 月 ' + d + ' 日は元号開始 (' + era.start.join('-') + ') 以前です';
+      }
+      if (era.end && compareYMD(dateAD, era.end) > 0) {
+        warning = '※ ' + era.name + ' ' + yy + ' 年 ' + m + ' 月 ' + d + ' 日は元号終了 (' + era.end.join('-') + ') 以後です';
+      }
+      const label = adYear + ' 年 ' + m + ' 月 ' + d + ' 日';
+      $('jpOut').textContent = label;
+      $('jpOutSub').textContent = warning || '';
+      $('jpOutSub').style.color = warning ? 'var(--danger)' : 'var(--muted)';
+
+      const date = new Date(adYear, m - 1, d);
+      const idx = ((adYear - 4) % 12 + 12) % 12;
+      const items = [
+        row('和暦', era.name + ' ' + yy + ' 年 ' + m + ' 月 ' + d + ' 日'),
+        row('西暦', label),
+        row('曜日', dowKanji(date) + ' 曜日'),
+        row('元号期間', era.start.join('-') + (era.end ? ' 〜 ' + era.end.join('-') : ' 〜 (現行)')),
+        row('干支', ZODIAC[idx] + '（' + ZODIAC_KANA[idx] + '年）'),
+      ];
+      $('jpInfo').innerHTML = items.join('');
+    }
+    ['jpEra', 'jpYear', 'jpMonth', 'jpDay'].forEach((id) => {
+      $(id).addEventListener('input', renderJp);
+      $(id).addEventListener('change', renderJp);
+    });
+
+    // ===== 元号一覧 =====
+    function renderTable() {
+      const items = ERAS.map((e) => {
+        const range = e.start.join('-') + ' 〜 ' + (e.end ? e.end.join('-') : '現在');
+        const total = e.end
+          ? (e.end[0] - e.start[0] + (e.end[1] > e.start[1] || (e.end[1] === e.start[1] && e.end[2] >= e.start[2]) ? 1 : 0))
+          : (new Date().getFullYear() - e.start[0] + 1);
+        return row(e.name + '（' + e.yomi + '）', range + ' ・ ' + total + ' 年');
+      });
+      $('eraTable').innerHTML = items.join('');
+    }
+
+    renderAd();
+    renderJp();
+    renderTable();
+  })();
+</script>
+</body>
+</html>
