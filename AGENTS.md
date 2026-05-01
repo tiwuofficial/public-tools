@@ -77,13 +77,13 @@
 4. ルートの `index.html` のツール一覧 `<ul class="tools">` にリンクと `.desc` を追加
 5. HTML 構文と JS の明らかな誤りを目視チェック
 6. `git add` で対象ファイルだけステージ → `git commit -m "Add <tool name> tool"`
-7. **push はしない**
+7. `git push` する（コミットごとに都度 push してよい）
 8. 1 イテレーションで **1 ツールだけ** 追加する
 
 ## やってはいけないこと
 
 - `.claude/` 配下のファイルをコミットする
-- `git push` する
+- `git push --force` などの破壊的 push
 - 既存ツールのスタイルを壊すような共通 CSS の破壊的変更
 - 同じツールを別名で重複追加する
 - 外部依存（CDN, fonts, npm, fetch 先 API）を持ち込む
