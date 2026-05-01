@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文字数カウンタ - public-tools</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --fg: #1f2328;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --card: #ffffff;
+    --border: #e5e7eb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
+      "Yu Gothic", Meiryo, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.6;
+  }
+  .container {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 24px 16px 64px;
+  }
+  header { margin-bottom: 24px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0; font-size: 0.95rem; }
+  .nav { margin-bottom: 16px; font-size: 0.9rem; }
+  .nav a { color: var(--accent); text-decoration: none; }
+  .nav a:hover { text-decoration: underline; }
+  textarea {
+    width: 100%;
+    min-height: 220px;
+    padding: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.95rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--fg);
+    resize: vertical;
+  }
+  textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  }
+  .stats {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+  }
+  .stat {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .stat .label {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .stat .value {
+    font-size: 1.4rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .actions {
+    margin-top: 12px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  button {
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--fg);
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header>
+    <h1>文字数カウンタ</h1>
+    <p class="lead">テキストの文字数・単語数・行数などをリアルタイムにカウントします。</p>
+  </header>
+
+  <textarea id="input" placeholder="ここにテキストを入力してください…"></textarea>
+
+  <div class="actions">
+    <button id="clear" type="button">クリア</button>
+    <button id="paste" type="button">クリップボードから貼り付け</button>
+  </div>
+
+  <div class="stats" id="stats">
+    <div class="stat"><div class="label">文字数</div><div class="value" id="chars">0</div></div>
+    <div class="stat"><div class="label">文字数（空白除く）</div><div class="value" id="charsNoSpace">0</div></div>
+    <div class="stat"><div class="label">単語数</div><div class="value" id="words">0</div></div>
+    <div class="stat"><div class="label">行数</div><div class="value" id="lines">0</div></div>
+    <div class="stat"><div class="label">バイト数 (UTF-8)</div><div class="value" id="bytes">0</div></div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const input = document.getElementById('input');
+    const out = {
+      chars: document.getElementById('chars'),
+      charsNoSpace: document.getElementById('charsNoSpace'),
+      words: document.getElementById('words'),
+      lines: document.getElementById('lines'),
+      bytes: document.getElementById('bytes'),
+    };
+    const fmt = (n) => n.toLocaleString('ja-JP');
+    const encoder = new TextEncoder();
+
+    function update() {
+      const text = input.value;
+      const chars = Array.from(text).length;
+      const charsNoSpace = Array.from(text.replace(/\s/g, '')).length;
+      const trimmed = text.trim();
+      const words = trimmed === '' ? 0 : trimmed.split(/\s+/).length;
+      const lines = text === '' ? 0 : text.split('\n').length;
+      const bytes = encoder.encode(text).length;
+
+      out.chars.textContent = fmt(chars);
+      out.charsNoSpace.textContent = fmt(charsNoSpace);
+      out.words.textContent = fmt(words);
+      out.lines.textContent = fmt(lines);
+      out.bytes.textContent = fmt(bytes);
+    }
+
+    input.addEventListener('input', update);
+
+    document.getElementById('clear').addEventListener('click', function () {
+      input.value = '';
+      update();
+      input.focus();
+    });
+
+    document.getElementById('paste').addEventListener('click', async function () {
+      try {
+        const text = await navigator.clipboard.readText();
+        input.value = text;
+        update();
+      } catch (e) {
+        alert('クリップボードの読み取りに失敗しました: ' + e.message);
+      }
+    });
+
+    update();
+  })();
+</script>
+</body>
+</html>
