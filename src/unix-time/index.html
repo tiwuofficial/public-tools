@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unix time 変換 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>Unix time 変換</h1>
+    <p class="lead">Unix タイムスタンプ ⇄ 人間が読める日時 を相互変換します。</p>
+  </header>
+
+  <h2>現在時刻</h2>
+  <div class="card" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:center;">
+    <div>
+      <div style="color:var(--muted);font-size:0.85rem;">秒 (epoch seconds)</div>
+      <div id="nowSec" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:1.3rem;font-weight:600;font-variant-numeric:tabular-nums;">-</div>
+    </div>
+    <div>
+      <div style="color:var(--muted);font-size:0.85rem;">ミリ秒 (epoch ms)</div>
+      <div id="nowMs" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:1.3rem;font-weight:600;font-variant-numeric:tabular-nums;">-</div>
+    </div>
+    <div style="grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;">
+      <button type="button" data-copy-now="sec">秒をコピー</button>
+      <button type="button" data-copy-now="ms">ミリ秒をコピー</button>
+    </div>
+  </div>
+
+  <h2>Unix time → 日時</h2>
+  <div class="card">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <input type="text" id="tsIn" placeholder="例: 1735689600 / 1735689600000" style="flex:1;">
+      <select id="tsUnit" style="width:auto;">
+        <option value="auto" selected>自動判定</option>
+        <option value="sec">秒</option>
+        <option value="ms">ミリ秒</option>
+      </select>
+      <button type="button" id="tsSet">現在時刻</button>
+    </div>
+    <ul class="plain-list" id="tsOut" style="margin-top:12px;display:none;"></ul>
+  </div>
+
+  <h2>日時 → Unix time</h2>
+  <div class="card">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <input type="text" id="dtIn" placeholder="例: 2025-01-01 09:00:00, 2025-01-01T00:00:00Z" style="flex:1;">
+      <button type="button" id="dtSet">現在時刻</button>
+    </div>
+    <ul class="plain-list" id="dtOut" style="margin-top:12px;display:none;"></ul>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    function pad(n, w) { return String(n).padStart(w || 2, '0'); }
+
+    function fmtLocal(d) {
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+        ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    }
+    function fmtUTC(d) {
+      return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()) +
+        ' ' + pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ':' + pad(d.getUTCSeconds()) + ' UTC';
+    }
+    function tzOffsetStr(d) {
+      const off = -d.getTimezoneOffset();
+      const sign = off >= 0 ? '+' : '-';
+      const abs = Math.abs(off);
+      return 'UTC' + sign + pad(Math.floor(abs / 60)) + ':' + pad(abs % 60);
+    }
+    function relative(now, then) {
+      const diff = Math.round((then - now) / 1000); // 秒
+      const abs = Math.abs(diff);
+      const future = diff > 0;
+      const units = [
+        [60, '秒'],
+        [60, '分'],
+        [24, '時間'],
+        [7, '日'],
+        [4.345, '週'],
+        [12, '月'],
+        [Infinity, '年'],
+      ];
+      let v = abs;
+      for (let i = 0; i < units.length; i++) {
+        const [step, label] = units[i];
+        if (v < step) {
+          if (i === 0) return future ? v + ' 秒後' : v + ' 秒前';
+          return Math.round(v) + ' ' + label + (future ? '後' : '前');
+        }
+        v = v / step;
+      }
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function row(label, value, copyable) {
+      const cls = copyable ? ' style="cursor:pointer;" data-copy="' + escapeHtml(value) + '" title="クリックでコピー"' : '';
+      return '<li' + cls + '><span class="label">' + escapeHtml(label) + '</span><span>' + escapeHtml(value) + '</span></li>';
+    }
+
+    // ---- Now ticker ----
+    function updateNow() {
+      const ms = Date.now();
+      const sec = Math.floor(ms / 1000);
+      $('nowSec').textContent = sec.toLocaleString('ja-JP');
+      $('nowMs').textContent = ms.toLocaleString('ja-JP');
+    }
+    setInterval(updateNow, 250);
+    updateNow();
+
+    document.querySelectorAll('[data-copy-now]').forEach((b) => {
+      b.addEventListener('click', async function () {
+        const k = b.dataset.copyNow;
+        const ms = Date.now();
+        const text = String(k === 'sec' ? Math.floor(ms / 1000) : ms);
+        try {
+          await navigator.clipboard.writeText(text);
+          const orig = b.textContent;
+          b.textContent = 'コピー済';
+          setTimeout(() => b.textContent = orig, 1000);
+        } catch (e) {}
+      });
+    });
+
+    // ---- TS -> Date ----
+    function parseTs() {
+      const raw = $('tsIn').value.trim();
+      if (raw === '') { $('tsOut').style.display = 'none'; return; }
+      const n = Number(raw.replace(/[_,]/g, ''));
+      if (!Number.isFinite(n)) {
+        $('tsOut').innerHTML = '<li><span class="label">エラー</span><span>数値ではありません</span></li>';
+        $('tsOut').style.display = '';
+        return;
+      }
+      const unit = $('tsUnit').value;
+      let ms;
+      if (unit === 'sec') ms = n * 1000;
+      else if (unit === 'ms') ms = n;
+      else {
+        // 自動判定: 13 桁以上は ms、それ未満は秒
+        ms = String(Math.trunc(Math.abs(n))).length >= 12 ? n : n * 1000;
+      }
+      const d = new Date(ms);
+      if (isNaN(d.getTime())) {
+        $('tsOut').innerHTML = '<li><span class="label">エラー</span><span>変換できませんでした</span></li>';
+        $('tsOut').style.display = '';
+        return;
+      }
+      const items = [
+        row('ローカル', fmtLocal(d) + ' (' + tzOffsetStr(d) + ')', true),
+        row('UTC', fmtUTC(d), true),
+        row('ISO 8601', d.toISOString(), true),
+        row('Epoch 秒', String(Math.floor(d.getTime() / 1000)), true),
+        row('Epoch ms', String(d.getTime()), true),
+        row('相対', relative(Date.now(), d.getTime())),
+      ];
+      $('tsOut').innerHTML = items.join('');
+      $('tsOut').style.display = '';
+    }
+    $('tsIn').addEventListener('input', parseTs);
+    $('tsUnit').addEventListener('change', parseTs);
+    $('tsSet').addEventListener('click', function () {
+      $('tsIn').value = String(Math.floor(Date.now() / 1000));
+      $('tsUnit').value = 'sec';
+      parseTs();
+    });
+
+    // ---- Date -> TS ----
+    function parseDt() {
+      const raw = $('dtIn').value.trim();
+      if (raw === '') { $('dtOut').style.display = 'none'; return; }
+      // 「YYYY-MM-DD HH:MM:SS」(TZ なし) を local として解釈、それ以外は Date に委ねる
+      let d;
+      const localMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/.exec(raw);
+      if (localMatch) {
+        const [, y, mo, da, h, mi, s] = localMatch;
+        d = new Date(+y, +mo - 1, +da, +(h || 0), +(mi || 0), +(s || 0));
+      } else {
+        d = new Date(raw);
+      }
+      if (isNaN(d.getTime())) {
+        $('dtOut').innerHTML = '<li><span class="label">エラー</span><span>解釈できませんでした</span></li>';
+        $('dtOut').style.display = '';
+        return;
+      }
+      const items = [
+        row('Epoch 秒', String(Math.floor(d.getTime() / 1000)), true),
+        row('Epoch ms', String(d.getTime()), true),
+        row('ISO 8601', d.toISOString(), true),
+        row('ローカル', fmtLocal(d) + ' (' + tzOffsetStr(d) + ')', true),
+        row('UTC', fmtUTC(d), true),
+        row('相対', relative(Date.now(), d.getTime())),
+      ];
+      $('dtOut').innerHTML = items.join('');
+      $('dtOut').style.display = '';
+    }
+    $('dtIn').addEventListener('input', parseDt);
+    $('dtSet').addEventListener('click', function () {
+      $('dtIn').value = fmtLocal(new Date());
+      parseDt();
+    });
+
+    // ---- 行クリックでコピー ----
+    document.body.addEventListener('click', async function (e) {
+      const li = e.target.closest('li[data-copy]');
+      if (!li) return;
+      try {
+        await navigator.clipboard.writeText(li.dataset.copy);
+        const orig = li.style.background;
+        li.style.background = 'var(--added-bg)';
+        setTimeout(() => { li.style.background = orig; }, 600);
+      } catch (e) {}
+    });
+  })();
+</script>
+</body>
+</html>
