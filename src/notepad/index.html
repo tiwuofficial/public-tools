@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>メモ帳 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: メモ帳の 2 カラムレイアウト */
+  .pad-layout {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  .note-list {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+  .note-item {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .note-item:last-child { border-bottom: none; }
+  .note-item:hover { background: var(--bg); }
+  .note-item.active {
+    background: var(--accent-weak);
+  }
+  .note-item .title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .note-item .meta {
+    color: var(--muted);
+    font-size: 0.75rem;
+    margin-top: 2px;
+  }
+  .pad-area {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .pad-area textarea {
+    min-height: 60vh;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.95rem;
+  }
+  .save-state {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .save-state.dirty { color: #d97706; }
+  .save-state.saved { color: #16a34a; }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>メモ帳</h1>
+    <p class="lead">ブラウザ内に保存されるシンプルなメモ帳です。複数のノートを切り替えて使えます（外部送信なし）。</p>
+  </header>
+
+  <div class="pad-layout">
+    <div>
+      <div class="actions" style="margin-bottom:8px;">
+        <button type="button" id="newNote" class="primary">＋ 新規</button>
+        <button type="button" id="exportAll">全部書き出し</button>
+      </div>
+      <div class="note-list" id="noteList"></div>
+    </div>
+
+    <div class="pad-area">
+      <input type="text" id="title" placeholder="タイトル（空欄なら自動）">
+      <textarea id="body" placeholder="ここにメモを書く…"></textarea>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <span class="save-state saved" id="saveState">保存済</span>
+        <span style="color:var(--muted);font-size:0.85rem;">
+          <span id="charCount">0</span> 文字 ・ <span id="lineCount">0</span> 行
+        </span>
+        <span style="flex:1;"></span>
+        <button type="button" id="export">テキスト書き出し</button>
+        <button type="button" id="duplicate">複製</button>
+        <button type="button" id="del" style="color:var(--danger);">削除</button>
+      </div>
+    </div>
+  </div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    保存先はあなたのブラウザの <code>localStorage</code> です。シークレットウィンドウや、ブラウザの履歴削除を行うと消えます。重要なメモはダウンロードでバックアップしてください。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const KEY = 'public-tools.notepad.v1';
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(KEY);
+        if (!raw) return { notes: [], activeId: null };
+        const data = JSON.parse(raw);
+        if (!Array.isArray(data.notes)) return { notes: [], activeId: null };
+        return data;
+      } catch (e) {
+        return { notes: [], activeId: null };
+      }
+    }
+    function save() {
+      try { localStorage.setItem(KEY, JSON.stringify(state)); }
+      catch (e) {}
+    }
+    let state = load();
+
+    function uid() {
+      return 'n_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
+    }
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    function fmtDate(ts) {
+      const d = new Date(ts);
+      const pad = (n) => String(n).padStart(2, '0');
+      return d.getFullYear() + '/' + pad(d.getMonth() + 1) + '/' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    }
+
+    function autoTitle(body) {
+      const first = (body || '').split('\n').find((l) => l.trim() !== '');
+      if (!first) return '無題のメモ';
+      return first.trim().slice(0, 30);
+    }
+
+    function activeNote() {
+      return state.notes.find((n) => n.id === state.activeId) || null;
+    }
+
+    function renderList() {
+      const list = $('noteList');
+      if (state.notes.length === 0) {
+        list.innerHTML = '<div style="padding:14px;color:var(--muted);font-size:0.9rem;">メモがありません。「＋ 新規」を押してください。</div>';
+        return;
+      }
+      // 更新日時降順
+      const sorted = [...state.notes].sort((a, b) => b.updated - a.updated);
+      list.innerHTML = sorted.map((n) =>
+        '<div class="note-item' + (n.id === state.activeId ? ' active' : '') + '" data-id="' + n.id + '">' +
+          '<div class="title">' + escapeHtml(n.title || autoTitle(n.body)) + '</div>' +
+          '<div class="meta">' + fmtDate(n.updated) + ' ・ ' + (n.body || '').length + ' 文字</div>' +
+        '</div>'
+      ).join('');
+    }
+
+    function renderEditor() {
+      const n = activeNote();
+      if (!n) {
+        $('title').value = '';
+        $('body').value = '';
+        $('charCount').textContent = '0';
+        $('lineCount').textContent = '0';
+        return;
+      }
+      $('title').value = n.title || '';
+      $('body').value = n.body || '';
+      updateCounts();
+    }
+
+    function updateCounts() {
+      const v = $('body').value;
+      $('charCount').textContent = Array.from(v).length.toLocaleString('ja-JP');
+      $('lineCount').textContent = (v === '' ? 0 : v.split('\n').length).toLocaleString('ja-JP');
+    }
+
+    function setSaved(state) {
+      const el = $('saveState');
+      if (state === 'dirty') {
+        el.textContent = '編集中…';
+        el.className = 'save-state dirty';
+      } else {
+        el.textContent = '保存済';
+        el.className = 'save-state saved';
+      }
+    }
+
+    function newNote() {
+      const n = { id: uid(), title: '', body: '', created: Date.now(), updated: Date.now() };
+      state.notes.push(n);
+      state.activeId = n.id;
+      save();
+      renderList();
+      renderEditor();
+      $('title').focus();
+    }
+
+    function deleteNote() {
+      const n = activeNote();
+      if (!n) return;
+      if (!confirm('このメモを削除します。よろしいですか？')) return;
+      state.notes = state.notes.filter((x) => x.id !== n.id);
+      state.activeId = state.notes.length > 0 ? state.notes[0].id : null;
+      save();
+      renderList();
+      renderEditor();
+    }
+
+    function duplicate() {
+      const n = activeNote();
+      if (!n) return;
+      const copy = { ...n, id: uid(), title: (n.title || autoTitle(n.body)) + ' (コピー)', created: Date.now(), updated: Date.now() };
+      state.notes.push(copy);
+      state.activeId = copy.id;
+      save();
+      renderList();
+      renderEditor();
+    }
+
+    function exportNote() {
+      const n = activeNote();
+      if (!n) return;
+      const text = (n.title || autoTitle(n.body)) + '\n\n' + (n.body || '');
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = (n.title || autoTitle(n.body)).replace(/[\/\\?%*:|"<>]/g, '_') + '.txt';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+
+    function exportAll() {
+      if (state.notes.length === 0) return;
+      const lines = state.notes.map((n) =>
+        '===== ' + (n.title || autoTitle(n.body)) + ' (' + fmtDate(n.updated) + ') =====\n' + (n.body || '')
+      );
+      const blob = new Blob([lines.join('\n\n\n')], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'notepad-export-' + new Date().toISOString().slice(0, 10) + '.txt';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+
+    let saveTimer = null;
+    function scheduleSave() {
+      setSaved('dirty');
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+        const n = activeNote();
+        if (!n) { setSaved('saved'); return; }
+        n.title = $('title').value;
+        n.body = $('body').value;
+        n.updated = Date.now();
+        save();
+        renderList();
+        setSaved('saved');
+      }, 350);
+    }
+
+    $('newNote').addEventListener('click', newNote);
+    $('del').addEventListener('click', deleteNote);
+    $('duplicate').addEventListener('click', duplicate);
+    $('export').addEventListener('click', exportNote);
+    $('exportAll').addEventListener('click', exportAll);
+
+    $('title').addEventListener('input', scheduleSave);
+    $('body').addEventListener('input', function () {
+      updateCounts();
+      scheduleSave();
+    });
+
+    document.body.addEventListener('click', function (e) {
+      const item = e.target.closest('.note-item');
+      if (!item) return;
+      // 切り替え前に保留があれば即時保存
+      clearTimeout(saveTimer);
+      const n = activeNote();
+      if (n) { n.title = $('title').value; n.body = $('body').value; n.updated = Date.now(); save(); }
+      state.activeId = item.dataset.id;
+      save();
+      renderList();
+      renderEditor();
+      setSaved('saved');
+    });
+
+    // Ctrl/Cmd+S で即時保存
+    document.addEventListener('keydown', function (e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        clearTimeout(saveTimer);
+        const n = activeNote();
+        if (n) { n.title = $('title').value; n.body = $('body').value; n.updated = Date.now(); save(); }
+        renderList();
+        setSaved('saved');
+      }
+    });
+
+    // 起動時にメモが無ければサンプル
+    if (state.notes.length === 0) {
+      const welcome = {
+        id: uid(),
+        title: 'はじめに',
+        body:
+          'メモ帳へようこそ。\n\n' +
+          '・入力すると自動でブラウザに保存されます\n' +
+          '・左側のリストから別のメモに切り替えられます\n' +
+          '・タイトル欄を空欄にすると本文の最初の行が自動でタイトルになります\n' +
+          '・Ctrl/Cmd+S で即時保存できます\n',
+        created: Date.now(),
+        updated: Date.now(),
+      };
+      state.notes.push(welcome);
+      state.activeId = welcome.id;
+      save();
+    }
+    if (!activeNote()) state.activeId = state.notes[0].id;
+    renderList();
+    renderEditor();
+    setSaved('saved');
+  })();
+</script>
+</body>
+</html>
