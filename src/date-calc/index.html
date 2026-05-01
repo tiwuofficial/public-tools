@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>日付計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>日付計算</h1>
+    <p class="lead">2 つの日付の間の期間を計算したり、日付に日数を足し引きします。営業日（月〜金）モードにも対応。</p>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button type="button" class="active" data-tab="diff">期間計算</button>
+    <button type="button" data-tab="add">◯日後 / ◯日前</button>
+  </div>
+
+  <!-- 期間計算 -->
+  <section id="tab-diff">
+    <div class="card">
+      <div style="display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;">
+        <label for="start" style="color:var(--muted);font-size:0.95rem;">開始日</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="date" id="start" style="flex:1;">
+          <button type="button" class="set-today" data-target="start">今日</button>
+        </div>
+        <label for="end" style="color:var(--muted);font-size:0.95rem;">終了日</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="date" id="end" style="flex:1;">
+          <button type="button" class="set-today" data-target="end">今日</button>
+        </div>
+        <label style="color:var(--muted);font-size:0.95rem;">含める日</label>
+        <select id="diffMode" style="width:auto;">
+          <option value="all" selected>すべての日</option>
+          <option value="weekday">平日のみ（月〜金）</option>
+        </select>
+      </div>
+    </div>
+
+    <h2>期間</h2>
+    <ul class="plain-list" id="diffOut"></ul>
+  </section>
+
+  <!-- 加減算 -->
+  <section id="tab-add" style="display:none;">
+    <div class="card">
+      <div style="display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;">
+        <label for="base" style="color:var(--muted);font-size:0.95rem;">基準日</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="date" id="base" style="flex:1;">
+          <button type="button" class="set-today" data-target="base">今日</button>
+        </div>
+        <label for="amount" style="color:var(--muted);font-size:0.95rem;">日数</label>
+        <input type="number" id="amount" value="30" step="1">
+        <label for="dir" style="color:var(--muted);font-size:0.95rem;">方向</label>
+        <select id="dir" style="width:auto;">
+          <option value="after" selected>後 (足し算)</option>
+          <option value="before">前 (引き算)</option>
+        </select>
+        <label style="color:var(--muted);font-size:0.95rem;">数える日</label>
+        <select id="addMode" style="width:auto;">
+          <option value="all" selected>すべての日</option>
+          <option value="weekday">平日のみ（月〜金）</option>
+        </select>
+      </div>
+    </div>
+
+    <h2>結果</h2>
+    <ul class="plain-list" id="addOut"></ul>
+  </section>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const tabs = document.querySelectorAll('.tabs button');
+
+    function pad(n, w) { return String(n).padStart(w || 2, '0'); }
+    function todayStr() {
+      const d = new Date();
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    }
+    function parseDate(s) {
+      if (!s) return null;
+      const [y, m, d] = s.split('-').map((x) => parseInt(x, 10));
+      const dt = new Date(y, m - 1, d);
+      return isNaN(dt.getTime()) ? null : dt;
+    }
+    function fmtDate(d) {
+      const wd = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' (' + wd + ')';
+    }
+
+    function diffYMD(a, b) {
+      // a <= b
+      let y = b.getFullYear() - a.getFullYear();
+      let mo = b.getMonth() - a.getMonth();
+      let d = b.getDate() - a.getDate();
+      if (d < 0) {
+        const prev = new Date(b.getFullYear(), b.getMonth(), 0);
+        d += prev.getDate();
+        mo -= 1;
+      }
+      if (mo < 0) { mo += 12; y -= 1; }
+      return { y, mo, d };
+    }
+
+    function countWeekdays(a, b) {
+      // [a, b] 区間の平日 (月-金) の日数。a, b は 00:00:00 の Date
+      const ms = b - a;
+      const days = Math.round(ms / 86400000) + 1;
+      let w = 0;
+      const start = a.getDay();
+      for (let i = 0; i < days; i++) {
+        const dow = (start + i) % 7;
+        if (dow >= 1 && dow <= 5) w++;
+      }
+      return w;
+    }
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function row(label, val) {
+      return '<li><span class="label">' + escapeHtml(label) + '</span><span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">' + escapeHtml(val) + '</span></li>';
+    }
+
+    // ---- タブ ----
+    tabs.forEach((b) => b.addEventListener('click', function () {
+      tabs.forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      const t = b.dataset.tab;
+      $('tab-diff').style.display = t === 'diff' ? '' : 'none';
+      $('tab-add').style.display = t === 'add' ? '' : 'none';
+    }));
+
+    // ---- 「今日」ボタン ----
+    document.querySelectorAll('.set-today').forEach((b) => {
+      b.addEventListener('click', function () {
+        $(b.dataset.target).value = todayStr();
+        renderAll();
+      });
+    });
+
+    // ---- 期間計算 ----
+    function renderDiff() {
+      const a = parseDate($('start').value);
+      const b = parseDate($('end').value);
+      if (!a || !b) { $('diffOut').innerHTML = ''; return; }
+      const reversed = a > b;
+      const lo = reversed ? b : a;
+      const hi = reversed ? a : b;
+      const totalDays = Math.round((hi - lo) / 86400000);
+      const ymd = diffYMD(lo, hi);
+      const weeks = Math.floor(totalDays / 7);
+      const remDays = totalDays % 7;
+      const sign = reversed ? '-' : '';
+      const items = [
+        row('開始日', fmtDate(a)),
+        row('終了日', fmtDate(b)),
+        row('日数差', sign + totalDays.toLocaleString('ja-JP') + ' 日'),
+        row('年月日換算', sign + ymd.y + ' 年 ' + ymd.mo + ' ヶ月 ' + ymd.d + ' 日'),
+        row('週換算', sign + weeks + ' 週 ' + remDays + ' 日'),
+      ];
+      if ($('diffMode').value === 'weekday') {
+        const wd = countWeekdays(lo, hi);
+        // 端を含む両端日が同じならその日の判定を維持。両端含む計算で 0 になる場合あり (start=end の土日)
+        items.push(row('平日のみ (両端含む)', sign + wd + ' 日'));
+        // 両端を除く場合: 内側のみ
+        if (totalDays > 1) {
+          const a1 = new Date(lo); a1.setDate(a1.getDate() + 1);
+          const b1 = new Date(hi); b1.setDate(b1.getDate() - 1);
+          const wdInner = countWeekdays(a1, b1);
+          items.push(row('平日のみ (両端を除く)', sign + wdInner + ' 日'));
+        }
+      }
+      $('diffOut').innerHTML = items.join('');
+    }
+
+    // ---- 加減算 ----
+    function renderAdd() {
+      const base = parseDate($('base').value);
+      const n = parseInt($('amount').value, 10);
+      if (!base || !Number.isFinite(n)) { $('addOut').innerHTML = ''; return; }
+      const dir = $('dir').value === 'after' ? 1 : -1;
+      const mode = $('addMode').value;
+      let result;
+      if (mode === 'weekday') {
+        result = new Date(base);
+        let added = 0;
+        while (added < Math.abs(n)) {
+          result.setDate(result.getDate() + dir);
+          const dow = result.getDay();
+          if (dow >= 1 && dow <= 5) added++;
+        }
+      } else {
+        result = new Date(base);
+        result.setDate(result.getDate() + dir * n);
+      }
+      const items = [
+        row('基準日', fmtDate(base)),
+        row('結果', fmtDate(result)),
+        row('差分', (dir === 1 ? '+' : '-') + n + ' ' + (mode === 'weekday' ? '営業日' : '日')),
+      ];
+      if (mode === 'weekday') {
+        const totalDays = Math.round((result - base) / 86400000) * (dir === 1 ? 1 : -1);
+        items.push(row('実日数 (差)', (dir === 1 ? '+' : '-') + Math.abs(totalDays) + ' 日'));
+      }
+      $('addOut').innerHTML = items.join('');
+    }
+
+    function renderAll() { renderDiff(); renderAdd(); }
+    ['start', 'end', 'diffMode', 'base', 'amount', 'dir', 'addMode'].forEach((id) => {
+      $(id).addEventListener('input', renderAll);
+      $(id).addEventListener('change', renderAll);
+    });
+
+    // 初期値
+    $('start').value = todayStr();
+    const fut = new Date(); fut.setDate(fut.getDate() + 30);
+    $('end').value = fut.getFullYear() + '-' + pad(fut.getMonth() + 1) + '-' + pad(fut.getDate());
+    $('base').value = todayStr();
+    renderAll();
+  })();
+</script>
+</body>
+</html>
