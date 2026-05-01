@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>パスワード生成 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>パスワード生成</h1>
+    <p class="lead">crypto.getRandomValues を使った安全な乱数で、用途に応じたパスワードを生成します。</p>
+  </header>
+
+  <div class="card">
+    <div style="display:grid;grid-template-columns:90px 1fr 80px;gap:12px;align-items:center;">
+      <label for="len" style="color:var(--muted);font-size:0.9rem;">長さ</label>
+      <input type="range" id="len" min="4" max="64" value="16" step="1">
+      <input type="number" id="lenNum" min="4" max="128" value="16" style="text-align:right;">
+    </div>
+
+    <div style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.95rem;"><input type="checkbox" id="cLower" checked style="width:auto;"> 小文字 (a-z)</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.95rem;"><input type="checkbox" id="cUpper" checked style="width:auto;"> 大文字 (A-Z)</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.95rem;"><input type="checkbox" id="cDigit" checked style="width:auto;"> 数字 (0-9)</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.95rem;"><input type="checkbox" id="cSymbol" style="width:auto;"> 記号 (!@#$%^&amp;*…)</label>
+    </div>
+
+    <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;color:var(--muted);"><input type="checkbox" id="excludeSimilar" checked style="width:auto;"> 紛らわしい文字を除外 (0Oo1lI)</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;color:var(--muted);"><input type="checkbox" id="ensureEachSet" checked style="width:auto;"> 選択した各種類を最低 1 文字含める</label>
+    </div>
+
+    <div style="margin-top:10px;display:grid;grid-template-columns:120px 1fr;gap:12px;align-items:center;">
+      <label for="count" style="color:var(--muted);font-size:0.9rem;">生成する個数</label>
+      <input type="number" id="count" min="1" max="50" value="5">
+    </div>
+
+    <div class="actions" style="margin-top:14px;">
+      <button type="button" id="generate" class="primary">生成</button>
+      <button type="button" id="copyAll">すべてコピー</button>
+    </div>
+
+    <div id="strength" style="margin-top:12px;color:var(--muted);font-size:0.9rem;"></div>
+    <div id="status"></div>
+  </div>
+
+  <h2>生成結果</h2>
+  <ul class="plain-list" id="results" style="display:none;"></ul>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    const SIMILAR = new Set(['0', 'O', 'o', '1', 'l', 'I']);
+    const SETS = {
+      cLower: 'abcdefghijklmnopqrstuvwxyz',
+      cUpper: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      cDigit: '0123456789',
+      cSymbol: '!@#$%^&*()-_=+[]{};:,.<>/?',
+    };
+
+    function pickPool() {
+      const exclude = $('excludeSimilar').checked;
+      const pools = {};
+      let combined = '';
+      Object.keys(SETS).forEach((id) => {
+        if ($(id).checked) {
+          let s = SETS[id];
+          if (exclude) s = s.split('').filter((c) => !SIMILAR.has(c)).join('');
+          if (s) {
+            pools[id] = s;
+            combined += s;
+          }
+        }
+      });
+      return { pools, combined };
+    }
+
+    function randInt(max) {
+      // 偏りなく [0, max) の整数を返す
+      const limit = Math.floor(0xFFFFFFFF / max) * max;
+      const buf = new Uint32Array(1);
+      let r;
+      do {
+        crypto.getRandomValues(buf);
+        r = buf[0];
+      } while (r >= limit);
+      return r % max;
+    }
+
+    function pickFrom(s) {
+      return s[randInt(s.length)];
+    }
+
+    function shuffle(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = randInt(i + 1);
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+    }
+
+    function generateOne(length) {
+      const { pools, combined } = pickPool();
+      if (!combined) return null;
+      const chars = [];
+      if ($('ensureEachSet').checked) {
+        Object.values(pools).forEach((s) => {
+          if (chars.length < length) chars.push(pickFrom(s));
+        });
+      }
+      while (chars.length < length) chars.push(pickFrom(combined));
+      shuffle(chars);
+      return chars.join('');
+    }
+
+    function entropyBits(length) {
+      const { combined } = pickPool();
+      if (!combined) return 0;
+      return Math.round(length * Math.log2(combined.length) * 10) / 10;
+    }
+
+    function strengthLabel(bits) {
+      if (bits < 28) return ['弱い', 'var(--danger)'];
+      if (bits < 60) return ['普通', '#d97706'];
+      if (bits < 100) return ['強い', '#16a34a'];
+      return ['非常に強い', '#16a34a'];
+    }
+
+    function setStatus(kind, msg) {
+      $('status').innerHTML = msg ? '<div class="banner ' + kind + '">' + msg + '</div>' : '';
+    }
+
+    function generate() {
+      const length = Math.max(4, Math.min(128, parseInt($('lenNum').value, 10) || 16));
+      const count = Math.max(1, Math.min(50, parseInt($('count').value, 10) || 1));
+      const { combined } = pickPool();
+      if (!combined) {
+        setStatus('error', '少なくとも 1 種類の文字種を選択してください。');
+        $('results').innerHTML = '';
+        $('results').style.display = 'none';
+        $('strength').textContent = '';
+        return;
+      }
+      setStatus('', '');
+      const list = [];
+      for (let i = 0; i < count; i++) list.push(generateOne(length));
+      $('results').innerHTML = list.map((p) =>
+        '<li>' +
+          '<span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:1rem;flex:1;overflow:auto;">' + escapeHtml(p) + '</span>' +
+          '<button type="button" class="copy-one" data-pw="' + escapeAttr(p) + '" style="margin-left:12px;">コピー</button>' +
+        '</li>'
+      ).join('');
+      $('results').style.display = '';
+
+      const bits = entropyBits(length);
+      const [label, color] = strengthLabel(bits);
+      $('strength').innerHTML = '推定エントロピー: <strong>' + bits + ' bit</strong> ・ <span style="color:' + color + ';font-weight:600;">' + label + '</span>';
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function escapeAttr(s) {
+      return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // スライダ <-> 数値同期
+    $('len').addEventListener('input', function () { $('lenNum').value = this.value; });
+    $('lenNum').addEventListener('input', function () {
+      const v = Math.max(4, Math.min(128, parseInt(this.value, 10) || 4));
+      if (v <= 64) $('len').value = v;
+    });
+
+    $('generate').addEventListener('click', generate);
+    document.querySelectorAll('input[type="checkbox"]').forEach((b) => {
+      b.addEventListener('change', generate);
+    });
+    $('lenNum').addEventListener('input', generate);
+    $('len').addEventListener('input', generate);
+    $('count').addEventListener('input', generate);
+
+    document.body.addEventListener('click', async function (e) {
+      const btn = e.target.closest('.copy-one');
+      if (!btn) return;
+      try {
+        await navigator.clipboard.writeText(btn.dataset.pw);
+        const orig = btn.textContent;
+        btn.textContent = 'コピー済';
+        setTimeout(() => btn.textContent = orig, 1000);
+      } catch (e) {}
+    });
+
+    $('copyAll').addEventListener('click', async function () {
+      const items = Array.from($('results').querySelectorAll('.copy-one')).map((b) => b.dataset.pw);
+      if (items.length === 0) return;
+      try {
+        await navigator.clipboard.writeText(items.join('\n'));
+        const orig = this.textContent;
+        this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = orig, 1000);
+      } catch (e) {}
+    });
+
+    generate();
+  })();
+</script>
+</body>
+</html>
