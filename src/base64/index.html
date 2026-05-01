@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Base64 エンコード / デコード - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>Base64 エンコード / デコード</h1>
+    <p class="lead">UTF-8 文字列と Base64 を相互変換します。URL safe / 改行挿入にも対応。</p>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button type="button" class="active" data-mode="encode">エンコード</button>
+    <button type="button" data-mode="decode">デコード</button>
+  </div>
+
+  <div class="split-2">
+    <div class="pane">
+      <div class="pane-label" id="leftLabel">入力 (テキスト)</div>
+      <textarea id="left" rows="14" placeholder=""></textarea>
+    </div>
+    <div class="pane">
+      <div class="pane-label" id="rightLabel">出力 (Base64)</div>
+      <textarea id="right" rows="14" placeholder="" readonly></textarea>
+    </div>
+  </div>
+
+  <div class="actions" style="margin-top:12px;">
+    <button type="button" id="run" class="primary">変換</button>
+    <button type="button" id="swap">入出力を入れ替え</button>
+    <button type="button" id="copy">出力をコピー</button>
+    <button type="button" id="clear">クリア</button>
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;color:var(--muted);">
+      <input type="checkbox" id="urlSafe" style="width:auto;"> URL safe (- _, パディング無)
+    </label>
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;color:var(--muted);">
+      <input type="checkbox" id="wrap" style="width:auto;"> 76 文字で改行
+    </label>
+  </div>
+
+  <div id="status"></div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const tabs = document.querySelectorAll('.tabs button');
+    const leftLabel = $('leftLabel');
+    const rightLabel = $('rightLabel');
+    const left = $('left');
+    const right = $('right');
+    const status = $('status');
+    let mode = 'encode';
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function ok(msg) { status.innerHTML = '<div class="banner ok">' + escapeHtml(msg) + '</div>'; }
+    function err(msg) { status.innerHTML = '<div class="banner error">' + escapeHtml(msg) + '</div>'; }
+    function clearStatus() { status.innerHTML = ''; }
+
+    // UTF-8 ⇄ Base64
+    function utf8ToBase64(str) {
+      const bytes = new TextEncoder().encode(str);
+      let bin = '';
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      return btoa(bin);
+    }
+    function base64ToUtf8(b64) {
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+    }
+
+    function applyOptions(b64) {
+      let out = b64;
+      if ($('urlSafe').checked) {
+        out = out.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      }
+      if ($('wrap').checked) {
+        out = out.replace(/(.{76})/g, '$1\n');
+      }
+      return out;
+    }
+    function normalizeForDecode(b64) {
+      let s = b64.replace(/\s+/g, '');
+      // URL safe を標準形式に戻す
+      s = s.replace(/-/g, '+').replace(/_/g, '/');
+      // パディング補完
+      const mod = s.length % 4;
+      if (mod === 2) s += '==';
+      else if (mod === 3) s += '=';
+      else if (mod === 1) throw new Error('Base64 文字列の長さが不正です');
+      return s;
+    }
+
+    function setMode(m) {
+      mode = m;
+      tabs.forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
+      if (m === 'encode') {
+        leftLabel.textContent = '入力 (テキスト)';
+        rightLabel.textContent = '出力 (Base64)';
+        left.placeholder = 'エンコードしたい文字列を入力…';
+        right.placeholder = '';
+      } else {
+        leftLabel.textContent = '入力 (Base64)';
+        rightLabel.textContent = '出力 (テキスト)';
+        left.placeholder = 'デコードしたい Base64 を入力…';
+        right.placeholder = '';
+      }
+      run();
+    }
+
+    function run() {
+      clearStatus();
+      const src = left.value;
+      if (!src.trim()) { right.value = ''; return; }
+      try {
+        if (mode === 'encode') {
+          const b64 = applyOptions(utf8ToBase64(src));
+          right.value = b64;
+          const bytes = new TextEncoder().encode(src).length;
+          ok('OK ・ 入力 ' + bytes.toLocaleString('ja-JP') + ' bytes → 出力 ' + b64.length.toLocaleString('ja-JP') + ' 文字');
+        } else {
+          const norm = normalizeForDecode(src);
+          const text = base64ToUtf8(norm);
+          right.value = text;
+          ok('OK ・ ' + text.length.toLocaleString('ja-JP') + ' 文字に復号');
+        }
+      } catch (e) {
+        right.value = '';
+        err((mode === 'encode' ? 'エンコード' : 'デコード') + 'に失敗: ' + e.message);
+      }
+    }
+
+    tabs.forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+    $('run').addEventListener('click', run);
+    left.addEventListener('input', run);
+    $('urlSafe').addEventListener('change', run);
+    $('wrap').addEventListener('change', run);
+
+    $('swap').addEventListener('click', function () {
+      // 出力結果を入力に持ち込み、モードを反転
+      left.value = right.value;
+      setMode(mode === 'encode' ? 'decode' : 'encode');
+    });
+
+    $('copy').addEventListener('click', async function () {
+      if (!right.value) return;
+      try {
+        await navigator.clipboard.writeText(right.value);
+        const orig = this.textContent;
+        this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = orig, 1200);
+      } catch (e) { alert('コピーできませんでした: ' + e.message); }
+    });
+    $('clear').addEventListener('click', function () {
+      left.value = ''; right.value = ''; clearStatus(); left.focus();
+    });
+
+    left.addEventListener('keydown', function (e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); }
+    });
+
+    setMode('encode');
+  })();
+</script>
+</body>
+</html>
