@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>.gitignore ジェネレータ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 選択チップ */
+  .chip-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+  .chip {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 12px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .chip input { width: auto; }
+  .chip:hover { border-color: var(--accent); }
+  .chip.selected {
+    background: var(--accent-weak);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .cat-label {
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin: 4px 0 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>.gitignore ジェネレータ</h1>
+    <p class="lead">対象の OS・エディタ・言語・フレームワークを選ぶと、組み合わせた .gitignore を生成します。</p>
+  </header>
+
+  <div class="card" style="margin-bottom:18px;">
+    <div class="cat-label">OS</div>
+    <div class="chip-grid" id="os"></div>
+
+    <div class="cat-label">エディタ・IDE</div>
+    <div class="chip-grid" id="editor"></div>
+
+    <div class="cat-label">言語</div>
+    <div class="chip-grid" id="lang"></div>
+
+    <div class="cat-label">フレームワーク・ランタイム</div>
+    <div class="chip-grid" id="framework"></div>
+
+    <div class="cat-label">その他</div>
+    <div class="chip-grid" id="other"></div>
+  </div>
+
+  <div class="card" style="margin-bottom:18px;">
+    <div class="cat-label">追加ルール (任意)</div>
+    <textarea id="custom" rows="4" placeholder="独自に追加したい無視ルールを 1 行ずつ&#10;例:&#10;config/local.json&#10;tmp/&#10;*.bak"></textarea>
+  </div>
+
+  <h2>生成された .gitignore</h2>
+  <pre class="code" id="output" style="white-space:pre;max-height:60vh;"></pre>
+
+  <div class="actions">
+    <button type="button" id="copy" class="primary">コピー</button>
+    <button type="button" id="download">.gitignore でダウンロード</button>
+    <button type="button" id="clear">選択をクリア</button>
+  </div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    ※ 選択肢の組み合わせは網羅的なものではなく、よく使われるルールのまとまりです。プロジェクト固有のルールは「追加ルール」に書いてください。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    const TEMPLATES = {
+      os: {
+        macos: { name: 'macOS', body: '# macOS\n.DS_Store\n.AppleDouble\n.LSOverride\n._*\n.Spotlight-V100\n.Trashes\n' },
+        windows: { name: 'Windows', body: '# Windows\nThumbs.db\nehthumbs.db\nDesktop.ini\n$RECYCLE.BIN/\n*.cab\n*.msi\n*.msm\n*.msp\n*.lnk\n' },
+        linux: { name: 'Linux', body: '# Linux\n*~\n.fuse_hidden*\n.directory\n.Trash-*\n.nfs*\n' },
+      },
+      editor: {
+        vscode: { name: 'VS Code', body: '# VS Code\n.vscode/\n!.vscode/settings.json\n!.vscode/tasks.json\n!.vscode/launch.json\n!.vscode/extensions.json\n*.code-workspace\n' },
+        jetbrains: { name: 'JetBrains (IntelliJ/PyCharm/WebStorm 等)', body: '# JetBrains IDEs\n.idea/\n*.iml\n*.iws\n*.ipr\nout/\n' },
+        vim: { name: 'Vim', body: '# Vim\n[._]*.s[a-v][a-z]\n[._]*.sw[a-p]\n[._]s[a-rt-v][a-z]\n[._]ss[a-gi-z]\n[._]sw[a-p]\nSession.vim\n.netrwhist\ntags\n' },
+        emacs: { name: 'Emacs', body: '# Emacs\n*~\n\\#*\\#\n.\\#*\n.elc\nauto-save-list\n.tramp_history\n' },
+        sublime: { name: 'Sublime Text', body: '# Sublime Text\n*.sublime-workspace\n*.sublime-project\n' },
+      },
+      lang: {
+        node: { name: 'Node.js', body: '# Node\nnode_modules/\nnpm-debug.log*\nyarn-debug.log*\nyarn-error.log*\npnpm-debug.log*\nlerna-debug.log*\n.pnp.*\n.npm/\n.yarn/cache/\n.yarn/unplugged/\n.yarn/build-state.yml\n.yarn/install-state.gz\n*.tsbuildinfo\n' },
+        python: { name: 'Python', body: '# Python\n__pycache__/\n*.py[cod]\n*$py.class\n*.so\n.Python\nbuild/\ndevelop-eggs/\ndist/\ndownloads/\neggs/\n.eggs/\nlib/\nlib64/\nparts/\nsdist/\nvar/\nwheels/\n*.egg-info/\n*.egg\nMANIFEST\n.pytest_cache/\n.mypy_cache/\n.tox/\n.coverage\nhtmlcov/\n.venv/\nvenv/\nENV/\nenv/\n' },
+        go: { name: 'Go', body: '# Go\n*.exe\n*.exe~\n*.dll\n*.so\n*.dylib\n*.test\n*.out\nvendor/\ngo.work\n' },
+        rust: { name: 'Rust', body: '# Rust\ntarget/\nCargo.lock\n**/*.rs.bk\n' },
+        java: { name: 'Java', body: '# Java\n*.class\n*.log\n*.ctxt\n.mtj.tmp/\n*.jar\n*.war\n*.nar\n*.ear\n*.zip\n*.tar.gz\n*.rar\nhs_err_pid*\n# Maven\ntarget/\n# Gradle\n.gradle/\nbuild/\n!gradle-wrapper.jar\n' },
+        ruby: { name: 'Ruby', body: '# Ruby\n*.gem\n*.rbc\n/.config\n/coverage/\n/InstalledFiles\n/pkg/\n/spec/reports/\n/spec/examples.txt\n/test/tmp/\n/test/version_tmp/\n/tmp/\n.bundle/\nvendor/bundle\nlib/bundler/man/\nGemfile.lock\n' },
+        php: { name: 'PHP', body: '# PHP\nvendor/\ncomposer.phar\n*.log\n.phpunit.result.cache\n' },
+        cpp: { name: 'C / C++', body: '# C / C++\n*.o\n*.obj\n*.so\n*.so.*\n*.a\n*.lib\n*.dll\n*.exe\n*.out\n*.app\n*.gch\n*.pch\nbuild/\n' },
+        dotnet: { name: '.NET / C#', body: '# .NET\nbin/\nobj/\n*.user\n*.suo\n*.userosscache\n*.sln.docstates\n.vs/\n' },
+        swift: { name: 'Swift / Xcode', body: '# Swift / Xcode\nDerivedData/\nbuild/\n*.xcodeproj/*\n!*.xcodeproj/project.pbxproj\n!*.xcodeproj/xcshareddata/\n*.xcuserstate\nPackages/\n.build/\n.swiftpm/\n' },
+      },
+      framework: {
+        react: { name: 'React', body: '# React (CRA など)\nbuild/\n.env.local\n.env.development.local\n.env.test.local\n.env.production.local\n' },
+        next: { name: 'Next.js', body: '# Next.js\n.next/\nout/\n.vercel\n.next/cache/\n' },
+        vue: { name: 'Vue / Vite', body: '# Vue / Vite\ndist/\ndist-ssr/\n*.local\n.vite/\n' },
+        nuxt: { name: 'Nuxt', body: '# Nuxt\n.nuxt/\n.output/\n.nitro/\n.cache/\ndist/\n' },
+        angular: { name: 'Angular', body: '# Angular\ndist/\ntmp/\nout-tsc/\nbazel-out/\n.angular/cache/\n' },
+        django: { name: 'Django', body: '# Django\n*.log\n*.pot\n*.pyc\nlocal_settings.py\ndb.sqlite3\ndb.sqlite3-journal\nmedia/\nstaticfiles/\n' },
+        rails: { name: 'Rails', body: '# Rails\n/.bundle\n/log/*\n/tmp/*\n!/log/.keep\n!/tmp/.keep\n/storage/*\n!/storage/.keep\n/public/assets\n/coverage/\n/node_modules\n/yarn-error.log\nyarn-debug.log*\n.byebug_history\n' },
+        laravel: { name: 'Laravel', body: '# Laravel\n/vendor/\n/node_modules/\n/public/hot\n/public/storage\n/storage/*.key\n.env\n.env.backup\nHomestead.json\nHomestead.yaml\nnpm-debug.log\nyarn-error.log\n' },
+        flutter: { name: 'Flutter / Dart', body: '# Flutter\n.dart_tool/\n.flutter-plugins\n.flutter-plugins-dependencies\n.packages\n.pub-cache/\n.pub/\nbuild/\nios/Flutter/App.framework\nios/Flutter/Flutter.framework\nios/Flutter/flutter_assets/\n' },
+      },
+      other: {
+        env: { name: '.env / 秘密情報', body: '# Env / 秘密情報\n.env\n.env.*\n!.env.example\n!.env.sample\n*.pem\n*.key\nsecrets.yml\n' },
+        log: { name: 'ログ', body: '# Logs\nlogs/\n*.log\nlog/\n' },
+        sass: { name: 'Sass / Less', body: '# Sass / Less\n.sass-cache/\n*.css.map\n*.sass.map\n*.scss.map\n' },
+        terraform: { name: 'Terraform', body: '# Terraform\n.terraform/\n.terraform.lock.hcl\n*.tfstate\n*.tfstate.*\n*.tfvars\n!example.tfvars\ncrash.log\noverride.tf\noverride.tf.json\n*_override.tf\n*_override.tf.json\n' },
+        docker: { name: 'Docker', body: '# Docker\n*.pid\n.docker/\ndocker-compose.override.yml\n' },
+        backup: { name: 'バックアップ・一時ファイル', body: '# Backup / temp\n*.bak\n*.tmp\n*.swp\n*.swo\n*~\n*.orig\n' },
+      },
+    };
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    function renderChips() {
+      ['os', 'editor', 'lang', 'framework', 'other'].forEach((cat) => {
+        $(cat).innerHTML = Object.entries(TEMPLATES[cat]).map(([key, t]) =>
+          '<label class="chip" data-cat="' + cat + '" data-key="' + key + '">' +
+            '<input type="checkbox"> ' + escapeHtml(t.name) +
+          '</label>'
+        ).join('');
+      });
+    }
+
+    function getSelected() {
+      const sel = [];
+      document.querySelectorAll('.chip input[type="checkbox"]').forEach((cb) => {
+        if (cb.checked) {
+          const chip = cb.closest('.chip');
+          sel.push({ cat: chip.dataset.cat, key: chip.dataset.key });
+        }
+      });
+      return sel;
+    }
+
+    function update() {
+      const selected = getSelected();
+      // 選択スタイル
+      document.querySelectorAll('.chip').forEach((c) => {
+        const cb = c.querySelector('input');
+        c.classList.toggle('selected', cb.checked);
+      });
+
+      // 順序: OS → Editor → Language → Framework → Other → Custom
+      const order = ['os', 'editor', 'lang', 'framework', 'other'];
+      const blocks = [];
+      order.forEach((cat) => {
+        selected.filter((s) => s.cat === cat).forEach((s) => {
+          blocks.push(TEMPLATES[cat][s.key].body.trimEnd());
+        });
+      });
+      const custom = $('custom').value.trim();
+      if (custom) blocks.push('# カスタムルール\n' + custom);
+      const out = blocks.length === 0
+        ? '# 何も選択されていません。OS・エディタ・言語などをチェックしてください。'
+        : blocks.join('\n\n') + '\n';
+      $('output').textContent = out;
+    }
+
+    document.body.addEventListener('click', function (e) {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      // チェックボックスを直接クリックしていない場合はトグル
+      if (e.target.tagName !== 'INPUT') {
+        const cb = chip.querySelector('input');
+        cb.checked = !cb.checked;
+      }
+      update();
+    });
+    $('custom').addEventListener('input', update);
+
+    $('copy').addEventListener('click', async function () {
+      try {
+        await navigator.clipboard.writeText($('output').textContent);
+        const o = this.textContent; this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = o, 1000);
+      } catch (e) {}
+    });
+    $('download').addEventListener('click', function () {
+      const blob = new Blob([$('output').textContent], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = '.gitignore';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
+    $('clear').addEventListener('click', function () {
+      document.querySelectorAll('.chip input').forEach((cb) => { cb.checked = false; });
+      $('custom').value = '';
+      update();
+    });
+
+    renderChips();
+    // 初期: macOS + VS Code + Node + .env を選択しておく
+    [['os', 'macos'], ['editor', 'vscode'], ['lang', 'node'], ['other', 'env']].forEach(([cat, key]) => {
+      const chip = document.querySelector('.chip[data-cat="' + cat + '"][data-key="' + key + '"]');
+      if (chip) chip.querySelector('input').checked = true;
+    });
+    update();
+  })();
+</script>
+</body>
+</html>
