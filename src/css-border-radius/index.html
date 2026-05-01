@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CSS Border Radius ジェネレータ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: ジェネレータレイアウト */
+  .br-layout {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 24px;
+    align-items: start;
+  }
+  .br-stage {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 420px;
+  }
+  .br-box {
+    width: 320px;
+    height: 240px;
+    background: linear-gradient(135deg, #3b82f6, #ec4899);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  }
+  .corner-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .corner-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+  }
+  .corner-card h3 {
+    margin: 0 0 8px;
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .corner-card .field {
+    display: grid;
+    grid-template-columns: 16px 1fr 50px;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+  .corner-card .field label { color: var(--muted); font-size: 0.85rem; }
+  .corner-card .val {
+    text-align: right;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>CSS Border Radius ジェネレータ</h1>
+    <p class="lead">4 隅の角丸を独立に編集して、楕円形の border-radius も含めた CSS を生成します。</p>
+  </header>
+
+  <div class="br-layout">
+    <div>
+      <div class="br-stage">
+        <div class="br-box" id="box"></div>
+      </div>
+
+      <div style="margin-top:12px;display:grid;grid-template-columns:120px 1fr 70px;gap:10px;align-items:center;">
+        <label for="bw" style="color:var(--muted);font-size:0.9rem;">幅</label>
+        <input type="range" id="bw" min="100" max="600" step="10" value="320">
+        <span class="val" id="bwVal" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.85rem;color:var(--muted);">320 px</span>
+
+        <label for="bh" style="color:var(--muted);font-size:0.9rem;">高さ</label>
+        <input type="range" id="bh" min="80" max="500" step="10" value="240">
+        <span class="val" id="bhVal" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.85rem;color:var(--muted);">240 px</span>
+      </div>
+
+      <h2>CSS</h2>
+      <pre class="code" id="output" style="white-space:pre-wrap;"></pre>
+      <div class="actions">
+        <button type="button" id="copy" class="primary">コピー</button>
+      </div>
+    </div>
+
+    <div>
+      <h2 style="margin-top:0;">単位</h2>
+      <div class="actions" style="margin-bottom:12px;">
+        <button type="button" data-unit="px" class="primary">px</button>
+        <button type="button" data-unit="%">%</button>
+      </div>
+
+      <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:0.95rem;">
+          <input type="checkbox" id="elliptical" style="width:auto;"> 楕円 (X / Y を別々に)
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:0.95rem;">
+          <input type="checkbox" id="syncCorners" style="width:auto;"> 4 隅を同期
+        </label>
+      </div>
+
+      <h2>各隅</h2>
+      <div class="corner-grid">
+        <div class="corner-card" data-corner="tl">
+          <h3>左上 (top-left)</h3>
+          <div class="field">
+            <label>X</label>
+            <input type="range" data-axis="x" min="0" max="200" value="20">
+            <span class="val">20</span>
+          </div>
+          <div class="field y-row">
+            <label>Y</label>
+            <input type="range" data-axis="y" min="0" max="200" value="20">
+            <span class="val">20</span>
+          </div>
+        </div>
+        <div class="corner-card" data-corner="tr">
+          <h3>右上 (top-right)</h3>
+          <div class="field">
+            <label>X</label>
+            <input type="range" data-axis="x" min="0" max="200" value="20">
+            <span class="val">20</span>
+          </div>
+          <div class="field y-row">
+            <label>Y</label>
+            <input type="range" data-axis="y" min="0" max="200" value="20">
+            <span class="val">20</span>
+          </div>
+        </div>
+        <div class="corner-card" data-corner="bl">
+          <h3>左下 (bottom-left)</h3>
+          <div class="field">
+            <label>X</label>
+            <input type="range" data-axis="x" min="0" max="200" value="20">
+            <span class="val">20</span>
+          </div>
+          <div class="field y-row">
+            <label>Y</label>
+            <input type="range" data-axis="y" min="0" max="200" value="20">
+            <span class="val">20</span>
+          </div>
+        </div>
+        <div class="corner-card" data-corner="br">
+          <h3>右下 (bottom-right)</h3>
+          <div class="field">
+            <label>X</label>
+            <input type="range" data-axis="x" min="0" max="200" value="20">
+            <span class="val">20</span>
+          </div>
+          <div class="field y-row">
+            <label>Y</label>
+            <input type="range" data-axis="y" min="0" max="200" value="20">
+            <span class="val">20</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2>プリセット</h2>
+  <div class="actions" id="presets" style="flex-wrap:wrap;"></div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    let unit = 'px';
+    let elliptical = false;
+    let syncOn = false;
+
+    const corners = ['tl', 'tr', 'br', 'bl']; // CSS 順 (top-left, top-right, bottom-right, bottom-left)
+    const state = { tl: { x: 20, y: 20 }, tr: { x: 20, y: 20 }, br: { x: 20, y: 20 }, bl: { x: 20, y: 20 } };
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    function fmtVal(v) {
+      return v + unit;
+    }
+
+    function buildCss() {
+      // border-radius: TL TR BR BL [/ TL_y TR_y BR_y BL_y]
+      const xs = corners.map((c) => fmtVal(state[c].x));
+      let line = 'border-radius: ' + xs.join(' ');
+      if (elliptical) {
+        const ys = corners.map((c) => fmtVal(state[c].y));
+        line += ' / ' + ys.join(' ');
+      }
+      return line + ';';
+    }
+
+    function applyToBox() {
+      $('box').style.borderRadius = buildCss().replace(/^border-radius:\s*/, '').replace(/;$/, '');
+      $('output').textContent = buildCss();
+    }
+
+    function refreshLabels() {
+      document.querySelectorAll('.corner-card').forEach((card) => {
+        const c = card.dataset.corner;
+        card.querySelectorAll('.field').forEach((f) => {
+          const axis = f.querySelector('input').dataset.axis;
+          const v = state[c][axis];
+          f.querySelector('input').value = v;
+          f.querySelector('.val').textContent = fmtVal(v);
+        });
+      });
+    }
+
+    function refreshElliptical() {
+      document.querySelectorAll('.y-row').forEach((r) => r.style.display = elliptical ? '' : 'none');
+    }
+
+    // ===== イベント =====
+    document.querySelectorAll('.corner-card').forEach((card) => {
+      const c = card.dataset.corner;
+      card.addEventListener('input', function (e) {
+        if (e.target.tagName !== 'INPUT') return;
+        const axis = e.target.dataset.axis;
+        const v = parseInt(e.target.value, 10);
+        if (syncOn) {
+          corners.forEach((cc) => {
+            state[cc][axis] = v;
+            if (!elliptical) state[cc].y = v;
+          });
+        } else {
+          state[c][axis] = v;
+          if (!elliptical) state[c].y = v;
+        }
+        refreshLabels();
+        applyToBox();
+      });
+    });
+
+    document.querySelectorAll('[data-unit]').forEach((b) => {
+      b.addEventListener('click', function () {
+        unit = b.dataset.unit;
+        document.querySelectorAll('[data-unit]').forEach((x) => x.classList.toggle('primary', x.dataset.unit === unit));
+        // % のときは max を 50 に丸める
+        const max = unit === '%' ? 100 : 200;
+        document.querySelectorAll('.corner-card input[type="range"]').forEach((inp) => {
+          inp.max = max;
+          if (parseInt(inp.value, 10) > max) inp.value = max;
+        });
+        // state も丸める
+        corners.forEach((c) => {
+          state[c].x = Math.min(state[c].x, max);
+          state[c].y = Math.min(state[c].y, max);
+        });
+        refreshLabels();
+        applyToBox();
+      });
+    });
+
+    $('elliptical').addEventListener('change', function () {
+      elliptical = this.checked;
+      if (!elliptical) {
+        // X に揃える
+        corners.forEach((c) => state[c].y = state[c].x);
+      }
+      refreshElliptical();
+      refreshLabels();
+      applyToBox();
+    });
+    $('syncCorners').addEventListener('change', function () {
+      syncOn = this.checked;
+      if (syncOn) {
+        // 左上に揃える
+        const ref = state.tl;
+        corners.forEach((c) => state[c] = { x: ref.x, y: ref.y });
+        refreshLabels();
+        applyToBox();
+      }
+    });
+
+    $('bw').addEventListener('input', function () {
+      $('box').style.width = this.value + 'px';
+      $('bwVal').textContent = this.value + ' px';
+    });
+    $('bh').addEventListener('input', function () {
+      $('box').style.height = this.value + 'px';
+      $('bhVal').textContent = this.value + ' px';
+    });
+
+    $('copy').addEventListener('click', async function () {
+      try {
+        await navigator.clipboard.writeText($('output').textContent);
+        const o = this.textContent; this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = o, 1000);
+      } catch (e) {}
+    });
+
+    // ===== プリセット =====
+    const PRESETS = [
+      { name: '丸 (50%)', unit: '%', vals: [50, 50, 50, 50] },
+      { name: 'カード', unit: 'px', vals: [12, 12, 12, 12] },
+      { name: 'ピル', unit: 'px', vals: [120, 120, 120, 120] },
+      { name: '左上だけ', unit: 'px', vals: [40, 0, 0, 0] },
+      { name: '上のみ', unit: 'px', vals: [16, 16, 0, 0] },
+      { name: 'ブロブ', unit: '%', elliptical: true, x: [60, 40, 30, 70], y: [40, 60, 70, 30] },
+      { name: '葉っぱ', unit: '%', vals: [50, 0, 50, 0] },
+    ];
+    const presetsEl = $('presets');
+    PRESETS.forEach((p) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = p.name;
+      b.addEventListener('click', () => {
+        unit = p.unit;
+        document.querySelectorAll('[data-unit]').forEach((x) => x.classList.toggle('primary', x.dataset.unit === unit));
+        const max = unit === '%' ? 100 : 200;
+        document.querySelectorAll('.corner-card input[type="range"]').forEach((inp) => { inp.max = max; });
+        if (p.elliptical) {
+          elliptical = true; $('elliptical').checked = true;
+          corners.forEach((c, i) => { state[c] = { x: p.x[i], y: p.y[i] }; });
+        } else {
+          elliptical = false; $('elliptical').checked = false;
+          corners.forEach((c, i) => { state[c] = { x: p.vals[i], y: p.vals[i] }; });
+        }
+        refreshElliptical();
+        refreshLabels();
+        applyToBox();
+      });
+      presetsEl.appendChild(b);
+    });
+
+    refreshElliptical();
+    refreshLabels();
+    applyToBox();
+  })();
+</script>
+</body>
+</html>
