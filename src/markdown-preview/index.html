@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Markdown プレビュー - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>Markdown プレビュー</h1>
+    <p class="lead">Markdown をリアルタイムに HTML へ変換して表示します。</p>
+  </header>
+
+  <div class="split-2">
+    <div class="pane">
+      <div class="pane-label">Markdown</div>
+      <textarea id="input" rows="22" spellcheck="false"></textarea>
+    </div>
+    <div class="pane">
+      <div class="pane-label">プレビュー</div>
+      <div class="markdown-body" id="preview"></div>
+    </div>
+  </div>
+
+  <div class="actions" style="margin-top:12px;">
+    <button type="button" id="copyHtml">HTML をコピー</button>
+    <button type="button" id="clear">クリア</button>
+    <button type="button" id="sample">サンプルを読み込む</button>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const input = $('input');
+    const preview = $('preview');
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function escapeAttr(s) {
+      return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // -------- Inline 変換 --------
+    function inline(text) {
+      // 既にエスケープ済の文字列を受け取る前提
+      // 1. インラインコード `...`
+      const codes = [];
+      text = text.replace(/`([^`]+)`/g, (_, c) => {
+        codes.push(c);
+        return 'CODE' + (codes.length - 1) + '';
+      });
+      // 2. 画像 ![alt](url) — リンクより先に
+      text = text.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g, (_, alt, url, title) => {
+        const t = title ? ' title="' + escapeAttr(title) + '"' : '';
+        return '<img src="' + escapeAttr(url) + '" alt="' + escapeAttr(alt) + '"' + t + '>';
+      });
+      // 3. リンク [text](url)
+      text = text.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g, (_, label, url, title) => {
+        const t = title ? ' title="' + escapeAttr(title) + '"' : '';
+        return '<a href="' + escapeAttr(url) + '"' + t + ' target="_blank" rel="noopener noreferrer">' + label + '</a>';
+      });
+      // 4. 自動リンク <https://...>
+      text = text.replace(/&lt;(https?:\/\/[^\s&]+)&gt;/g, (_, url) =>
+        '<a href="' + escapeAttr(url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(url) + '</a>'
+      );
+      // 5. 太字 **text** / __text__
+      text = text.replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>');
+      text = text.replace(/__([^_\n]+?)__/g, '<strong>$1</strong>');
+      // 6. 斜体 *text* / _text_
+      text = text.replace(/(^|[^\*])\*([^*\n]+?)\*(?!\*)/g, '$1<em>$2</em>');
+      text = text.replace(/(^|[^_])_([^_\n]+?)_(?!_)/g, '$1<em>$2</em>');
+      // 7. 取り消し線 ~~text~~
+      text = text.replace(/~~([^~\n]+?)~~/g, '<del>$1</del>');
+      // 8. ハードブレイク (行末に 2 スペース)
+      text = text.replace(/  \n/g, '<br>\n');
+      // インラインコード復元
+      text = text.replace(/CODE(\d+)/g, (_, i) => '<code>' + escapeHtml(codes[+i]) + '</code>');
+      return text;
+    }
+
+    // -------- Block 変換 --------
+    function render(md) {
+      // CRLF 正規化
+      md = md.replace(/\r\n?/g, '\n');
+      const lines = md.split('\n');
+      const out = [];
+
+      let i = 0;
+      while (i < lines.length) {
+        const line = lines[i];
+
+        // フェンス済コードブロック
+        const fence = /^(```|~~~)\s*([\w-]*)\s*$/.exec(line);
+        if (fence) {
+          const closer = fence[1];
+          const lang = fence[2] || '';
+          i++;
+          const code = [];
+          while (i < lines.length && !lines[i].startsWith(closer)) {
+            code.push(lines[i]);
+            i++;
+          }
+          if (i < lines.length) i++; // 閉じ行をスキップ
+          const cls = lang ? ' class="lang-' + escapeAttr(lang) + '"' : '';
+          out.push('<pre><code' + cls + '>' + escapeHtml(code.join('\n')) + '</code></pre>');
+          continue;
+        }
+
+        // 見出し # ~ ######
+        const h = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
+        if (h) {
+          const lvl = h[1].length;
+          out.push('<h' + lvl + '>' + inline(escapeHtml(h[2])) + '</h' + lvl + '>');
+          i++;
+          continue;
+        }
+
+        // setext 見出し (次行が === or ---)
+        if (i + 1 < lines.length && /^=+\s*$/.test(lines[i + 1]) && line.trim() !== '') {
+          out.push('<h1>' + inline(escapeHtml(line.trim())) + '</h1>');
+          i += 2;
+          continue;
+        }
+        if (i + 1 < lines.length && /^-+\s*$/.test(lines[i + 1]) && line.trim() !== '') {
+          out.push('<h2>' + inline(escapeHtml(line.trim())) + '</h2>');
+          i += 2;
+          continue;
+        }
+
+        // 水平線
+        if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
+          out.push('<hr>');
+          i++;
+          continue;
+        }
+
+        // 引用 (連続行をまとめる)
+        if (/^>\s?/.test(line)) {
+          const buf = [];
+          while (i < lines.length && /^>\s?/.test(lines[i])) {
+            buf.push(lines[i].replace(/^>\s?/, ''));
+            i++;
+          }
+          out.push('<blockquote>\n' + render(buf.join('\n')) + '\n</blockquote>');
+          continue;
+        }
+
+        // テーブル (簡易)
+        if (/\|/.test(line) && i + 1 < lines.length && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/.test(lines[i + 1])) {
+          const headerCells = splitTableRow(line);
+          const aligns = splitTableRow(lines[i + 1]).map((c) => {
+            const t = c.trim();
+            const left = t.startsWith(':');
+            const right = t.endsWith(':');
+            if (left && right) return 'center';
+            if (right) return 'right';
+            if (left) return 'left';
+            return null;
+          });
+          i += 2;
+          const rows = [];
+          while (i < lines.length && /\|/.test(lines[i]) && lines[i].trim() !== '') {
+            rows.push(splitTableRow(lines[i]));
+            i++;
+          }
+          let html = '<table>\n<thead><tr>';
+          headerCells.forEach((c, idx) => {
+            const a = aligns[idx];
+            const style = a ? ' style="text-align:' + a + ';"' : '';
+            html += '<th' + style + '>' + inline(escapeHtml(c.trim())) + '</th>';
+          });
+          html += '</tr></thead>\n<tbody>';
+          rows.forEach((r) => {
+            html += '\n<tr>';
+            r.forEach((c, idx) => {
+              const a = aligns[idx];
+              const style = a ? ' style="text-align:' + a + ';"' : '';
+              html += '<td' + style + '>' + inline(escapeHtml(c.trim())) + '</td>';
+            });
+            html += '</tr>';
+          });
+          html += '\n</tbody></table>';
+          out.push(html);
+          continue;
+        }
+
+        // リスト
+        const ul = /^(\s*)([-*+])\s+(.*)$/.exec(line);
+        const ol = /^(\s*)(\d+)\.\s+(.*)$/.exec(line);
+        if (ul || ol) {
+          const start = i;
+          // 連続するリスト行を取り、ネスト構造を作る
+          const tag = ul ? 'ul' : 'ol';
+          const items = [];
+          let baseIndent = (ul || ol)[1].length;
+          while (i < lines.length) {
+            const l = lines[i];
+            const mu = /^(\s*)([-*+])\s+(.*)$/.exec(l);
+            const mo = /^(\s*)(\d+)\.\s+(.*)$/.exec(l);
+            if (!mu && !mo) {
+              // 継続行 (インデントされた段落)
+              if (/^\s+\S/.test(l) && items.length > 0 && l.length > baseIndent) {
+                items[items.length - 1].cont.push(l.slice(baseIndent + 2));
+                i++;
+                continue;
+              }
+              if (l.trim() === '') {
+                // 次の行を見て、リストが続くなら段落区切り
+                if (i + 1 < lines.length && (/^(\s*)([-*+])\s+/.test(lines[i + 1]) || /^(\s*)(\d+)\.\s+/.test(lines[i + 1]))) {
+                  i++;
+                  continue;
+                }
+              }
+              break;
+            }
+            const m = mu || mo;
+            const indent = m[1].length;
+            if (indent < baseIndent) break;
+            // task list?
+            let content = m[3];
+            let task = null;
+            const tm = /^\[( |x|X)\]\s+(.*)$/.exec(content);
+            if (tm) { task = tm[1].toLowerCase() === 'x'; content = tm[2]; }
+            items.push({ indent, content, cont: [], task });
+            i++;
+          }
+
+          // 単純化: 同階層リストとして出力 (深いネストは限定対応)
+          let html = '<' + tag + '>';
+          items.forEach((it) => {
+            const checkbox = it.task !== null
+              ? '<input type="checkbox" disabled' + (it.task ? ' checked' : '') + '> '
+              : '';
+            const more = it.cont.length > 0 ? '\n' + render(it.cont.join('\n')) : '';
+            html += '\n<li>' + checkbox + inline(escapeHtml(it.content)) + more + '</li>';
+          });
+          html += '\n</' + tag + '>';
+          out.push(html);
+          continue;
+        }
+
+        // 空行
+        if (line.trim() === '') { i++; continue; }
+
+        // 段落 (連続する非空行をまとめる)
+        const para = [line];
+        i++;
+        while (i < lines.length && lines[i].trim() !== '' &&
+               !/^(#{1,6})\s+/.test(lines[i]) &&
+               !/^>\s?/.test(lines[i]) &&
+               !/^(```|~~~)/.test(lines[i]) &&
+               !/^\s*([-*_])(\s*\1){2,}\s*$/.test(lines[i]) &&
+               !/^(\s*)([-*+])\s+/.test(lines[i]) &&
+               !/^(\s*)(\d+)\.\s+/.test(lines[i])) {
+          para.push(lines[i]);
+          i++;
+        }
+        out.push('<p>' + inline(escapeHtml(para.join('\n'))) + '</p>');
+      }
+
+      return out.join('\n');
+    }
+
+    function splitTableRow(line) {
+      let s = line.trim();
+      if (s.startsWith('|')) s = s.slice(1);
+      if (s.endsWith('|')) s = s.slice(0, -1);
+      return s.split('|');
+    }
+
+    function update() {
+      preview.innerHTML = render(input.value);
+    }
+
+    input.addEventListener('input', update);
+
+    $('clear').addEventListener('click', function () {
+      input.value = ''; update(); input.focus();
+    });
+
+    $('copyHtml').addEventListener('click', async function () {
+      try {
+        await navigator.clipboard.writeText(preview.innerHTML);
+        const orig = this.textContent;
+        this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = orig, 1000);
+      } catch (e) { alert('コピーできませんでした: ' + e.message); }
+    });
+
+    const SAMPLE = `# Markdown プレビュー
+
+これは **Markdown** のサンプルです。*斜体* や ~~取り消し線~~、\`インラインコード\` などが使えます。
+
+## リスト
+
+- りんご
+- みかん
+  - 温州みかん
+  - ぽんかん
+- ぶどう
+
+1. 一つ目
+2. 二つ目
+3. 三つ目
+
+## タスクリスト
+
+- [x] 完了したタスク
+- [ ] これからやるタスク
+
+## 引用
+
+> 引用文。
+> 複数行も OK。
+
+## コードブロック
+
+\`\`\`javascript
+function hello(name) {
+  return "Hello, " + name + "!";
+}
+\`\`\`
+
+## テーブル
+
+| 名前 | 役割 | 備考 |
+|------|:---:|-----:|
+| Alice | dev | 100 |
+| Bob   | ops | 200 |
+
+## リンク・画像
+
+[public-tools リポジトリ](https://github.com/tiwuofficial/public-tools)
+
+---
+
+最後に水平線。
+`;
+    $('sample').addEventListener('click', function () { input.value = SAMPLE; update(); });
+    input.value = SAMPLE;
+    update();
+  })();
+</script>
+</body>
+</html>
