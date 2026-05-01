@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>キーワード出現頻度 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 頻度バー */
+  table.freq {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  table.freq th, table.freq td {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9rem;
+    text-align: left;
+    vertical-align: middle;
+  }
+  table.freq tr:last-child td { border-bottom: none; }
+  table.freq thead { background: var(--bg); }
+  table.freq th { color: var(--muted); font-weight: 600; font-size: 0.8rem; }
+  table.freq td.idx, table.freq th.idx { width: 40px; text-align: right; color: var(--muted); }
+  table.freq td.cnt, table.freq th.cnt { width: 60px; text-align: right; font-variant-numeric: tabular-nums; }
+  table.freq td.pct { width: 80px; }
+  .bar-mini {
+    height: 6px;
+    background: var(--bg);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .bar-mini .fill {
+    height: 100%;
+    background: var(--accent);
+  }
+  table.freq td.term {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    word-break: break-all;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>キーワード出現頻度</h1>
+    <p class="lead">テキスト中の単語や文字 N-gram の出現回数と密度をランキング表示します。SEO のキーワードチェックに。</p>
+  </header>
+
+  <textarea id="input" rows="10" placeholder="ここに記事本文を貼り付け…"></textarea>
+
+  <h2>モード</h2>
+  <div class="card" style="display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;">
+    <label style="color:var(--muted);font-size:0.95rem;">分割方法</label>
+    <select id="mode" style="width:auto;">
+      <option value="word" selected>単語 (空白・句読点で分割)</option>
+      <option value="ngram">文字 N-gram (日本語向け)</option>
+    </select>
+
+    <label id="ngramLabel" style="color:var(--muted);font-size:0.95rem;display:none;">N (連続文字数)</label>
+    <select id="n" style="width:auto;display:none;">
+      <option>1</option><option selected>2</option><option>3</option><option>4</option>
+    </select>
+
+    <label style="color:var(--muted);font-size:0.95rem;">最小長</label>
+    <input type="number" id="minLen" min="1" max="20" value="2">
+
+    <label style="color:var(--muted);font-size:0.95rem;">最小出現回数</label>
+    <input type="number" id="minCount" min="1" max="100" value="2">
+
+    <label style="color:var(--muted);font-size:0.95rem;">表示件数</label>
+    <input type="number" id="topN" min="5" max="500" value="50">
+
+    <label style="color:var(--muted);font-size:0.95rem;">大文字小文字</label>
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.95rem;">
+      <input type="checkbox" id="ignoreCase" checked style="width:auto;"> 区別しない
+    </label>
+
+    <label style="color:var(--muted);font-size:0.95rem;">除外語</label>
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.95rem;">
+      <input type="checkbox" id="useStop" checked style="width:auto;"> 一般的な助詞・冠詞を除外（の・は・が・the・a・and 等）
+    </label>
+  </div>
+
+  <h2 style="margin-top:18px;">結果 <span id="totalLabel" style="color:var(--muted);font-size:0.85rem;font-weight:400;"></span></h2>
+  <div id="freqOut"></div>
+  <div class="actions" style="margin-top:8px;">
+    <button type="button" id="copyTsv">TSV でコピー</button>
+    <button type="button" id="exportCsv">CSV で書き出し</button>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    const STOP_JA = new Set(['の','は','が','を','に','で','と','も','や','から','まで','より','へ','し','た','て','です','ます','だ','である','こと','もの','よう','これ','それ','あれ','どれ','この','その','あの','どの','する','いる','ある','なる','れる','られる','ない','こと','ため','ように','など','まで','について','として','ように','という','という','あり','なる']);
+    const STOP_EN = new Set(['a','an','the','and','or','but','if','of','in','on','at','to','for','with','by','as','is','are','was','were','be','been','being','do','does','did','have','has','had','i','you','he','she','it','we','they','this','that','these','those','my','your','his','her','its','our','their']);
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function escapeCsv(s) {
+      const t = String(s ?? '');
+      if (t.includes(',') || t.includes('"') || t.includes('\n')) return '"' + t.replace(/"/g, '""') + '"';
+      return t;
+    }
+
+    function tokenizeWords(text) {
+      // 空白・句読点・記号で分割
+      return text
+        .split(/[\s　、。，．；：！？.,;:!?\(\)\[\]\{\}<>"'`@#$%^&*+=\-_/\\|~]+/u)
+        .filter((t) => t.length > 0);
+    }
+
+    function ngramOf(text, n) {
+      // 改行・空白を除く全文字を結合し、N 連続を抽出
+      const clean = text.replace(/\s+/g, '');
+      const out = [];
+      for (let i = 0; i + n <= clean.length; i++) {
+        const part = clean.slice(i, i + n);
+        // 句読点を含む N-gram は除外
+        if (/[、。，．！？.,;:!?]/.test(part)) continue;
+        out.push(part);
+      }
+      return out;
+    }
+
+    function update() {
+      const text = $('input').value;
+      const mode = $('mode').value;
+      const minLen = Math.max(1, parseInt($('minLen').value, 10) || 1);
+      const minCount = Math.max(1, parseInt($('minCount').value, 10) || 1);
+      const topN = Math.max(1, parseInt($('topN').value, 10) || 50);
+      const ic = $('ignoreCase').checked;
+      const useStop = $('useStop').checked;
+
+      $('ngramLabel').style.display = mode === 'ngram' ? '' : 'none';
+      $('n').style.display = mode === 'ngram' ? '' : 'none';
+
+      let tokens;
+      if (mode === 'ngram') {
+        const n = parseInt($('n').value, 10);
+        tokens = ngramOf(text, n);
+      } else {
+        tokens = tokenizeWords(text);
+      }
+
+      // 集計
+      const map = new Map();
+      tokens.forEach((t) => {
+        let k = ic ? t.toLowerCase() : t;
+        if (k.length < minLen) return;
+        if (useStop && (STOP_EN.has(k.toLowerCase()) || STOP_JA.has(k))) return;
+        map.set(k, (map.get(k) || 0) + 1);
+      });
+
+      const total = tokens.length;
+      const arr = [...map.entries()]
+        .filter(([_, c]) => c >= minCount)
+        .map(([term, count]) => ({ term, count, pct: total > 0 ? (count / total * 100) : 0 }))
+        .sort((a, b) => b.count - a.count);
+
+      const visible = arr.slice(0, topN);
+
+      $('totalLabel').textContent = '(全 ' + total.toLocaleString('ja-JP') + ' 件のトークンから ' + arr.length.toLocaleString('ja-JP') + ' 個のキーワード)';
+
+      if (visible.length === 0) {
+        $('freqOut').innerHTML = '<div style="color:var(--muted);padding:14px;">条件に一致するキーワードがありませんでした。</div>';
+        window._lastResult = [];
+        return;
+      }
+
+      const maxC = visible[0].count;
+      $('freqOut').innerHTML =
+        '<table class="freq"><thead><tr>' +
+          '<th class="idx">#</th><th>キーワード</th><th class="cnt">出現</th><th>密度</th><th class="pct">割合</th>' +
+        '</tr></thead><tbody>' +
+        visible.map((v, i) =>
+          '<tr>' +
+            '<td class="idx">' + (i + 1) + '</td>' +
+            '<td class="term">' + escapeHtml(v.term) + '</td>' +
+            '<td class="cnt">' + v.count + '</td>' +
+            '<td><div class="bar-mini"><div class="fill" style="width:' + (v.count / maxC * 100) + '%"></div></div></td>' +
+            '<td class="pct">' + v.pct.toFixed(2) + ' %</td>' +
+          '</tr>'
+        ).join('') +
+        '</tbody></table>';
+      window._lastResult = visible;
+    }
+
+    ['input', 'mode', 'n', 'minLen', 'minCount', 'topN', 'ignoreCase', 'useStop'].forEach((id) => {
+      $(id).addEventListener('input', update);
+      $(id).addEventListener('change', update);
+    });
+
+    $('copyTsv').addEventListener('click', async function () {
+      const rows = window._lastResult || [];
+      if (rows.length === 0) return;
+      const tsv = ['rank\tterm\tcount\tpct'].concat(rows.map((v, i) => (i + 1) + '\t' + v.term + '\t' + v.count + '\t' + v.pct.toFixed(2))).join('\n');
+      try {
+        await navigator.clipboard.writeText(tsv);
+        const o = this.textContent; this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = o, 1000);
+      } catch (e) {}
+    });
+    $('exportCsv').addEventListener('click', function () {
+      const rows = window._lastResult || [];
+      if (rows.length === 0) return;
+      const csv = ['rank,term,count,pct'].concat(rows.map((v, i) => [i + 1, escapeCsv(v.term), v.count, v.pct.toFixed(2)].join(','))).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'keyword-frequency.csv';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
+
+    // 初期サンプル
+    $('input').value =
+      'SEO のキーワード分析にこのツールを使うと、出現頻度の高いキーワードがすぐに分かります。' +
+      'Web ライターは記事の中で重要なキーワードがバランスよく登場しているかを確認できます。' +
+      'キーワードの密度が高すぎると不自然な文章になり、逆に低すぎると検索エンジンに記事のテーマが伝わりにくくなります。';
+    update();
+  })();
+</script>
+</body>
+</html>
