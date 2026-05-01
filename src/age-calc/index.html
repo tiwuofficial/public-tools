@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>年齢計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 大きい年齢表示 */
+  .age-big {
+    text-align: center;
+    margin: 8px 0;
+  }
+  .age-big .num {
+    font-size: 3rem;
+    font-weight: 700;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .age-big .unit { font-size: 1.2rem; color: var(--muted); margin-left: 6px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>年齢計算</h1>
+    <p class="lead">生年月日から満年齢・生まれてからの日数・干支・星座・次の誕生日までを計算します。</p>
+  </header>
+
+  <div class="card">
+    <div style="display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;">
+      <label for="birth" style="color:var(--muted);font-size:0.95rem;">生年月日</label>
+      <input type="date" id="birth">
+
+      <label for="ref" style="color:var(--muted);font-size:0.95rem;">基準日</label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input type="date" id="ref" style="flex:1;">
+        <button type="button" id="today">今日</button>
+      </div>
+    </div>
+  </div>
+
+  <h2>満年齢</h2>
+  <div class="card">
+    <div class="age-big"><span class="num" id="years">-</span><span class="unit">歳</span></div>
+    <div style="text-align:center;color:var(--muted);" id="ymd">-</div>
+  </div>
+
+  <h2>詳細</h2>
+  <ul class="plain-list" id="detail"></ul>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function pad(n, w) { return String(n).padStart(w || 2, '0'); }
+    function todayStr() {
+      const d = new Date();
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    }
+
+    const ZODIAC = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
+    const ZODIAC_EN = ['ねずみ', '牛', 'とら', 'うさぎ', '竜', 'へび', '馬', 'ひつじ', 'さる', 'とり', 'いぬ', 'いのしし'];
+    const ERAS = [
+      // start: { y, m, d, name }
+      { y: 2019, m: 5, d: 1, name: '令和' },
+      { y: 1989, m: 1, d: 8, name: '平成' },
+      { y: 1926, m: 12, d: 25, name: '昭和' },
+      { y: 1912, m: 7, d: 30, name: '大正' },
+      { y: 1868, m: 1, d: 25, name: '明治' },
+    ];
+
+    function eraName(y, m, d) {
+      for (const e of ERAS) {
+        if (y > e.y || (y === e.y && (m > e.m || (m === e.m && d >= e.d)))) {
+          const yy = y - e.y + 1;
+          return e.name + (yy === 1 ? '元' : yy) + '年';
+        }
+      }
+      return '明治以前';
+    }
+
+    // 西洋占星術（太陽星座）
+    function horoscope(m, d) {
+      const list = [
+        ['山羊座', 1, 19], ['水瓶座', 2, 18], ['魚座', 3, 20],
+        ['牡羊座', 4, 19], ['牡牛座', 5, 20], ['双子座', 6, 21],
+        ['蟹座', 7, 22], ['獅子座', 8, 22], ['乙女座', 9, 22],
+        ['天秤座', 10, 23], ['蠍座', 11, 22], ['射手座', 12, 21],
+        ['山羊座', 12, 31],
+      ];
+      for (const [name, mo, day] of list) {
+        if (m < mo || (m === mo && d <= day)) return name;
+      }
+      return '山羊座';
+    }
+
+    function diffYMD(from, to) {
+      // from <= to の前提
+      let y = to.getFullYear() - from.getFullYear();
+      let mo = to.getMonth() - from.getMonth();
+      let d = to.getDate() - from.getDate();
+      if (d < 0) {
+        const prevMonth = new Date(to.getFullYear(), to.getMonth(), 0);
+        d += prevMonth.getDate();
+        mo -= 1;
+      }
+      if (mo < 0) { mo += 12; y -= 1; }
+      return { y, mo, d };
+    }
+
+    function nextBirthday(birth, ref) {
+      let cand = new Date(ref.getFullYear(), birth.getMonth(), birth.getDate());
+      if (cand < ref) cand = new Date(ref.getFullYear() + 1, birth.getMonth(), birth.getDate());
+      return cand;
+    }
+
+    function update() {
+      const bv = $('birth').value;
+      const rv = $('ref').value;
+      if (!bv || !rv) {
+        $('years').textContent = '-'; $('ymd').textContent = '-'; $('detail').innerHTML = ''; return;
+      }
+      const [by, bm, bd] = bv.split('-').map((s) => parseInt(s, 10));
+      const [ry, rm, rd] = rv.split('-').map((s) => parseInt(s, 10));
+      const birth = new Date(by, bm - 1, bd);
+      const ref = new Date(ry, rm - 1, rd);
+      if (birth > ref) {
+        $('years').textContent = '—';
+        $('ymd').textContent = '基準日が生年月日より前です';
+        $('detail').innerHTML = '';
+        return;
+      }
+      const { y, mo, d } = diffYMD(birth, ref);
+      const ms = ref.getTime() - birth.getTime();
+      const days = Math.floor(ms / 86400000);
+      const weeks = Math.floor(days / 7);
+      const hours = Math.floor(ms / 3600000);
+      const minutes = Math.floor(ms / 60000);
+
+      const next = nextBirthday(birth, ref);
+      const daysToBday = Math.ceil((next - ref) / 86400000);
+      const ageOnNext = next.getFullYear() - by;
+
+      $('years').textContent = y;
+      $('ymd').textContent = y + ' 歳 ' + mo + ' ヶ月 ' + d + ' 日';
+
+      const items = [
+        row('生年月日', bv + ' (' + eraName(by, bm, bd) + ')'),
+        row('基準日', rv),
+        row('生まれてから', days.toLocaleString('ja-JP') + ' 日 / ' + weeks.toLocaleString('ja-JP') + ' 週'),
+        row('時間 / 分', hours.toLocaleString('ja-JP') + ' 時間 / ' + minutes.toLocaleString('ja-JP') + ' 分'),
+        row('干支', ZODIAC[(by - 4) % 12] + '（' + ZODIAC_EN[(by - 4) % 12] + '年）'),
+        row('星座', horoscope(bm, bd)),
+        row('次の誕生日まで', daysToBday + ' 日（' + (next.getFullYear() + '-' + pad(next.getMonth() + 1) + '-' + pad(next.getDate())) + '、' + ageOnNext + ' 歳）'),
+      ];
+      $('detail').innerHTML = items.join('');
+    }
+    function row(label, val) {
+      return '<li><span class="label">' + escapeHtml(label) + '</span><span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">' + escapeHtml(val) + '</span></li>';
+    }
+
+    $('today').addEventListener('click', function () { $('ref').value = todayStr(); update(); });
+    ['birth', 'ref'].forEach((id) => {
+      $(id).addEventListener('input', update);
+      $(id).addEventListener('change', update);
+    });
+
+    $('ref').value = todayStr();
+    $('birth').value = '2000-01-01';
+    update();
+  })();
+</script>
+</body>
+</html>
