@@ -301,6 +301,46 @@ ul.plain-list .label { color: var(--muted); }
   text-align: center;
 }
 
+/* error / status banners */
+.banner {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+.banner.error {
+  background: var(--removed-bg);
+  border-color: #fecaca;
+  color: var(--removed-fg);
+}
+.banner.ok {
+  background: var(--added-bg);
+  border-color: #bbf7d0;
+  color: var(--added-fg);
+}
+
+/* code block */
+pre.code {
+  margin: 12px 0 0;
+  padding: 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  overflow: auto;
+  white-space: pre;
+  max-height: 520px;
+}
+/* JSON syntax tokens (汎用に利用可) */
+pre.code .tk-key { color: #0f766e; }
+pre.code .tk-str { color: #b91c1c; }
+pre.code .tk-num { color: #1d4ed8; }
+pre.code .tk-bool { color: #7c3aed; }
+pre.code .tk-null { color: var(--muted); }
+
 /* footer */
 footer.page-footer {
   margin-top: 48px;

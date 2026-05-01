@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JSON 整形 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>JSON 整形</h1>
+    <p class="lead">JSON を整形・圧縮し、シンタックスハイライト付きで表示します。</p>
+  </header>
+
+  <div class="split-2">
+    <div class="pane">
+      <div class="pane-label">入力</div>
+      <textarea id="input" rows="20" placeholder='{"name":"Alice","age":30,"tags":["a","b"]}'></textarea>
+    </div>
+    <div class="pane">
+      <div class="pane-label">出力</div>
+      <pre class="code" id="output" style="margin-top:0;min-height:420px;"></pre>
+    </div>
+  </div>
+
+  <div class="actions" style="margin-top:12px;">
+    <button type="button" id="format" class="primary">整形</button>
+    <button type="button" id="minify">1 行に圧縮</button>
+    <button type="button" id="copy">出力をコピー</button>
+    <button type="button" id="clear">クリア</button>
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;color:var(--muted);">
+      インデント
+      <select id="indent" style="width:auto;">
+        <option value="2" selected>スペース 2</option>
+        <option value="4">スペース 4</option>
+        <option value="tab">タブ</option>
+      </select>
+    </label>
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;color:var(--muted);">
+      <input type="checkbox" id="sortKeys" style="width:auto;"> キーをアルファベット順にソート
+    </label>
+  </div>
+
+  <div id="status"></div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const input = $('input');
+    const output = $('output');
+    const status = $('status');
+    const indentSel = $('indent');
+    const sortKeys = $('sortKeys');
+
+    function escapeHtml(s) {
+      return s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    // JSON.stringify が出力した整形済み文字列にトークン色付け
+    function highlight(text) {
+      const escaped = escapeHtml(text);
+      return escaped.replace(
+        /("(?:\\.|[^"\\])*")(\s*:)?|\b(true|false)\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,
+        function (match, str, colon, bool) {
+          if (str !== undefined) {
+            if (colon) return '<span class="tk-key">' + str + '</span>' + colon;
+            return '<span class="tk-str">' + str + '</span>';
+          }
+          if (bool !== undefined) return '<span class="tk-bool">' + bool + '</span>';
+          if (match === 'null') return '<span class="tk-null">null</span>';
+          return '<span class="tk-num">' + match + '</span>';
+        }
+      );
+    }
+
+    function deepSortKeys(value) {
+      if (Array.isArray(value)) return value.map(deepSortKeys);
+      if (value && typeof value === 'object') {
+        const out = {};
+        Object.keys(value).sort().forEach((k) => { out[k] = deepSortKeys(value[k]); });
+        return out;
+      }
+      return value;
+    }
+
+    function getIndent() {
+      const v = indentSel.value;
+      if (v === 'tab') return '\t';
+      return parseInt(v, 10);
+    }
+
+    function showError(msg) {
+      status.innerHTML = '<div class="banner error">' + escapeHtml(msg) + '</div>';
+    }
+    function showOk(msg) {
+      status.innerHTML = '<div class="banner ok">' + escapeHtml(msg) + '</div>';
+    }
+    function clearStatus() { status.innerHTML = ''; }
+
+    function process(mode) {
+      const raw = input.value.trim();
+      if (raw === '') {
+        output.innerHTML = '';
+        clearStatus();
+        return;
+      }
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch (e) {
+        // JSON.parse のエラーには位置情報があれば抽出
+        let detail = e.message;
+        const m = /position\s+(\d+)/.exec(e.message);
+        if (m) {
+          const pos = parseInt(m[1], 10);
+          const before = raw.slice(0, pos);
+          const line = before.split('\n').length;
+          const col = pos - before.lastIndexOf('\n');
+          detail += '  (line ' + line + ', col ' + col + ')';
+        }
+        showError('JSON のパースに失敗しました: ' + detail);
+        output.innerHTML = '';
+        return;
+      }
+      if (sortKeys.checked) data = deepSortKeys(data);
+      const text = mode === 'minify' ? JSON.stringify(data) : JSON.stringify(data, null, getIndent());
+      output.innerHTML = highlight(text);
+      const bytes = new TextEncoder().encode(text).length;
+      showOk('OK ・ ' + text.length.toLocaleString('ja-JP') + ' 文字 / ' + bytes.toLocaleString('ja-JP') + ' bytes');
+    }
+
+    $('format').addEventListener('click', () => process('format'));
+    $('minify').addEventListener('click', () => process('minify'));
+
+    $('copy').addEventListener('click', async function () {
+      const text = output.textContent;
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        const orig = this.textContent;
+        this.textContent = 'コピー済';
+        setTimeout(() => { this.textContent = orig; }, 1200);
+      } catch (e) {
+        alert('コピーできませんでした: ' + e.message);
+      }
+    });
+
+    $('clear').addEventListener('click', function () {
+      input.value = '';
+      output.innerHTML = '';
+      clearStatus();
+      input.focus();
+    });
+
+    // Ctrl/Cmd+Enter で整形
+    input.addEventListener('keydown', function (e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        process('format');
+      }
+    });
+  })();
+</script>
+</body>
+</html>
