@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CSS Gradient ジェネレータ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: グラデーションエディタ */
+  .grad-layout {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 24px;
+    align-items: start;
+  }
+  .grad-preview {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    min-height: 280px;
+  }
+  .stop-row {
+    display: grid;
+    grid-template-columns: 36px 1fr 70px 36px;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .stop-row input[type="color"] { height: 32px; padding: 2px; }
+  .stop-row input[type="number"] { text-align: right; }
+  .stop-row .swatch-color { width: 100%; }
+  .ang-row {
+    display: grid;
+    grid-template-columns: 90px 1fr 60px;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .ang-row .val {
+    text-align: right;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>CSS Gradient ジェネレータ</h1>
+    <p class="lead">線形・放射状・円錐 (conic) グラデーションをスライダで作成し、CSS をコピーできます。</p>
+  </header>
+
+  <div class="grad-layout">
+    <div>
+      <div class="grad-preview" id="preview"></div>
+
+      <h2>CSS</h2>
+      <pre class="code" id="output" style="white-space:pre-wrap;"></pre>
+      <div class="actions">
+        <button type="button" id="copy" class="primary">コピー</button>
+      </div>
+    </div>
+
+    <div>
+      <h2 style="margin-top:0;">タイプ</h2>
+      <div class="actions" style="margin-bottom:12px;">
+        <button type="button" data-type="linear" class="primary">線形 linear</button>
+        <button type="button" data-type="radial">放射 radial</button>
+        <button type="button" data-type="conic">円錐 conic</button>
+        <button type="button" data-type="repeating-linear">repeating-linear</button>
+      </div>
+
+      <div id="linearControls">
+        <h2>角度</h2>
+        <div class="ang-row">
+          <label for="angle" style="color:var(--muted);font-size:0.9rem;">angle</label>
+          <input type="range" id="angle" min="0" max="360" value="135">
+          <span class="val" id="angleVal">135°</span>
+        </div>
+        <div class="actions" style="margin-bottom:12px;">
+          <button type="button" data-angle="0">↑ 0°</button>
+          <button type="button" data-angle="90">→ 90°</button>
+          <button type="button" data-angle="180">↓ 180°</button>
+          <button type="button" data-angle="270">← 270°</button>
+          <button type="button" data-angle="135">↘ 135°</button>
+          <button type="button" data-angle="45">↗ 45°</button>
+        </div>
+      </div>
+
+      <div id="radialControls" style="display:none;">
+        <h2>形状・位置</h2>
+        <div style="display:grid;grid-template-columns:90px 1fr;gap:8px;align-items:center;margin-bottom:8px;">
+          <label style="color:var(--muted);font-size:0.9rem;">形状</label>
+          <select id="radialShape" style="width:auto;">
+            <option value="ellipse" selected>ellipse</option>
+            <option value="circle">circle</option>
+          </select>
+          <label style="color:var(--muted);font-size:0.9rem;">位置</label>
+          <select id="radialPosition" style="width:auto;">
+            <option value="center" selected>center</option>
+            <option value="top left">top left</option>
+            <option value="top">top</option>
+            <option value="top right">top right</option>
+            <option value="left">left</option>
+            <option value="right">right</option>
+            <option value="bottom left">bottom left</option>
+            <option value="bottom">bottom</option>
+            <option value="bottom right">bottom right</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="conicControls" style="display:none;">
+        <h2>角度・位置</h2>
+        <div class="ang-row">
+          <label for="conicAngle" style="color:var(--muted);font-size:0.9rem;">from</label>
+          <input type="range" id="conicAngle" min="0" max="360" value="0">
+          <span class="val" id="conicAngleVal">0°</span>
+        </div>
+        <div style="display:grid;grid-template-columns:90px 1fr;gap:8px;align-items:center;margin-bottom:8px;">
+          <label style="color:var(--muted);font-size:0.9rem;">中心</label>
+          <select id="conicPosition" style="width:auto;">
+            <option value="center" selected>center</option>
+            <option value="top left">top left</option>
+            <option value="top">top</option>
+            <option value="top right">top right</option>
+            <option value="left">left</option>
+            <option value="right">right</option>
+            <option value="bottom left">bottom left</option>
+            <option value="bottom">bottom</option>
+            <option value="bottom right">bottom right</option>
+          </select>
+        </div>
+      </div>
+
+      <h2>カラーストップ</h2>
+      <div id="stopList"></div>
+      <div class="actions" style="margin-top:8px;">
+        <button type="button" id="addStop">＋ 追加</button>
+        <button type="button" id="reverseStops">反転</button>
+        <button type="button" id="distributeStops">等間隔に並べる</button>
+      </div>
+    </div>
+  </div>
+
+  <h2>プリセット</h2>
+  <div class="actions" id="presets" style="flex-wrap:wrap;"></div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    let type = 'linear';
+    let angle = 135;
+    let stops = [
+      { color: '#3b82f6', pos: 0 },
+      { color: '#ec4899', pos: 100 },
+    ];
+    let radial = { shape: 'ellipse', pos: 'center' };
+    let conic = { angle: 0, pos: 'center' };
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    function renderStops() {
+      const list = $('stopList');
+      list.innerHTML = '';
+      stops.forEach((s, i) => {
+        const row = document.createElement('div');
+        row.className = 'stop-row';
+        row.innerHTML =
+          '<input type="color" class="swatch-color" data-i="' + i + '" data-prop="color" value="' + s.color + '">' +
+          '<input type="range" data-i="' + i + '" data-prop="pos" min="0" max="100" step="1" value="' + s.pos + '">' +
+          '<input type="number" data-i="' + i + '" data-prop="pos" min="0" max="100" step="1" value="' + s.pos + '">' +
+          (stops.length > 2 ? '<button type="button" class="del-stop" data-i="' + i + '">×</button>' : '<span></span>');
+        list.appendChild(row);
+      });
+    }
+
+    function gradientString() {
+      const sortedStops = [...stops].sort((a, b) => a.pos - b.pos);
+      const stopStr = sortedStops.map((s) => s.color + ' ' + s.pos + '%').join(', ');
+      if (type === 'linear') return 'linear-gradient(' + angle + 'deg, ' + stopStr + ')';
+      if (type === 'repeating-linear') return 'repeating-linear-gradient(' + angle + 'deg, ' + stopStr + ')';
+      if (type === 'radial') return 'radial-gradient(' + radial.shape + ' at ' + radial.pos + ', ' + stopStr + ')';
+      if (type === 'conic') return 'conic-gradient(from ' + conic.angle + 'deg at ' + conic.pos + ', ' + stopStr + ')';
+      return '';
+    }
+
+    function render() {
+      const css = gradientString();
+      $('preview').style.background = css;
+      $('output').textContent = 'background: ' + css + ';';
+    }
+
+    // ===== タイプ切替 =====
+    document.querySelectorAll('[data-type]').forEach((b) => {
+      b.addEventListener('click', function () {
+        type = b.dataset.type;
+        document.querySelectorAll('[data-type]').forEach((x) => x.classList.toggle('primary', x.dataset.type === type));
+        $('linearControls').style.display = (type === 'linear' || type === 'repeating-linear') ? '' : 'none';
+        $('radialControls').style.display = type === 'radial' ? '' : 'none';
+        $('conicControls').style.display = type === 'conic' ? '' : 'none';
+        render();
+      });
+    });
+
+    // 角度
+    $('angle').addEventListener('input', function () {
+      angle = parseInt(this.value, 10);
+      $('angleVal').textContent = angle + '°';
+      render();
+    });
+    document.querySelectorAll('[data-angle]').forEach((b) => {
+      b.addEventListener('click', function () {
+        angle = parseInt(b.dataset.angle, 10);
+        $('angle').value = angle;
+        $('angleVal').textContent = angle + '°';
+        render();
+      });
+    });
+
+    // radial
+    $('radialShape').addEventListener('change', function () { radial.shape = this.value; render(); });
+    $('radialPosition').addEventListener('change', function () { radial.pos = this.value; render(); });
+
+    // conic
+    $('conicAngle').addEventListener('input', function () {
+      conic.angle = parseInt(this.value, 10);
+      $('conicAngleVal').textContent = conic.angle + '°';
+      render();
+    });
+    $('conicPosition').addEventListener('change', function () { conic.pos = this.value; render(); });
+
+    // ストップ操作
+    $('stopList').addEventListener('input', function (e) {
+      const i = +e.target.dataset.i;
+      const prop = e.target.dataset.prop;
+      if (isNaN(i) || !prop) return;
+      if (prop === 'color') {
+        stops[i].color = e.target.value;
+      } else {
+        const v = parseInt(e.target.value, 10);
+        if (Number.isFinite(v)) {
+          stops[i].pos = Math.max(0, Math.min(100, v));
+          // 同じ行の range / number を同期
+          const row = e.target.closest('.stop-row');
+          row.querySelectorAll('input[data-prop="pos"]').forEach((x) => {
+            if (x !== e.target) x.value = stops[i].pos;
+          });
+        }
+      }
+      render();
+    });
+    $('stopList').addEventListener('click', function (e) {
+      if (e.target.classList.contains('del-stop')) {
+        const i = +e.target.dataset.i;
+        if (stops.length <= 2) return;
+        stops.splice(i, 1);
+        renderStops(); render();
+      }
+    });
+
+    $('addStop').addEventListener('click', function () {
+      const last = stops[stops.length - 1];
+      const newPos = Math.min(100, Math.max(0, Math.round((last.pos + (stops[stops.length - 2]?.pos ?? 0)) / 2)));
+      stops.push({ color: last.color, pos: 100 });
+      stops.push({ color: '#ffffff', pos: newPos });
+      stops.sort((a, b) => a.pos - b.pos);
+      // 重複防止のため最後の append を取り消して 1 つだけ追加するように調整
+      // やり直し: シンプルに 1 つだけ中央に追加
+      stops = stops.slice(0, stops.length - 1);
+      renderStops(); render();
+    });
+    $('reverseStops').addEventListener('click', function () {
+      stops = stops.map((s) => ({ color: s.color, pos: 100 - s.pos })).reverse();
+      renderStops(); render();
+    });
+    $('distributeStops').addEventListener('click', function () {
+      const n = stops.length;
+      stops = stops.map((s, i) => ({ ...s, pos: Math.round((i / (n - 1)) * 100) }));
+      renderStops(); render();
+    });
+
+    $('copy').addEventListener('click', async function () {
+      try {
+        await navigator.clipboard.writeText($('output').textContent);
+        const o = this.textContent; this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = o, 1000);
+      } catch (e) {}
+    });
+
+    // ===== プリセット =====
+    const PRESETS = [
+      { name: 'Sunset',   type: 'linear', angle: 90, stops: [['#fb923c', 0], ['#f43f5e', 100]] },
+      { name: 'Ocean',    type: 'linear', angle: 135, stops: [['#06b6d4', 0], ['#1d4ed8', 100]] },
+      { name: 'Lime',     type: 'linear', angle: 45, stops: [['#84cc16', 0], ['#16a34a', 100]] },
+      { name: 'Pink',     type: 'linear', angle: 90, stops: [['#fbcfe8', 0], ['#a855f7', 100]] },
+      { name: '虹',       type: 'linear', angle: 90, stops: [['#ef4444', 0], ['#f59e0b', 16], ['#eab308', 33], ['#22c55e', 50], ['#06b6d4', 66], ['#6366f1', 83], ['#a855f7', 100]] },
+      { name: '影風',     type: 'radial', shape: 'ellipse', pos: 'center', stops: [['#000000', 0], ['#ffffff', 70]] },
+      { name: 'スポーク', type: 'conic',  conicAngle: 0, pos: 'center', stops: [['#3b82f6', 0], ['#ec4899', 25], ['#22c55e', 50], ['#f59e0b', 75], ['#3b82f6', 100]] },
+    ];
+    const presetsEl = $('presets');
+    PRESETS.forEach((p) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = p.name;
+      b.addEventListener('click', () => {
+        type = p.type;
+        if (p.angle !== undefined) angle = p.angle;
+        if (p.shape) { radial.shape = p.shape; $('radialShape').value = p.shape; }
+        if (p.pos) { radial.pos = p.pos; conic.pos = p.pos; $('radialPosition').value = p.pos; $('conicPosition').value = p.pos; }
+        if (p.conicAngle !== undefined) { conic.angle = p.conicAngle; $('conicAngle').value = p.conicAngle; $('conicAngleVal').textContent = p.conicAngle + '°'; }
+        stops = p.stops.map(([c, pos]) => ({ color: c, pos }));
+        document.querySelectorAll('[data-type]').forEach((x) => x.classList.toggle('primary', x.dataset.type === type));
+        $('linearControls').style.display = (type === 'linear' || type === 'repeating-linear') ? '' : 'none';
+        $('radialControls').style.display = type === 'radial' ? '' : 'none';
+        $('conicControls').style.display = type === 'conic' ? '' : 'none';
+        $('angle').value = angle;
+        $('angleVal').textContent = angle + '°';
+        renderStops();
+        render();
+      });
+      presetsEl.appendChild(b);
+    });
+
+    renderStops();
+    render();
+  })();
+</script>
+</body>
+</html>
