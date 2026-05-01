@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>コイントス・サイコロ・じゃんけん - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 大きい結果表示 */
+  .big-result {
+    text-align: center;
+    padding: 32px 16px;
+    font-size: 4rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    min-height: 140px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+  }
+  .big-result .label {
+    font-size: 1.2rem;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+  .dice {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 80px;
+    height: 80px;
+    background: #fff;
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    font-size: 2.4rem;
+    font-weight: 700;
+    color: var(--fg);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
+  .janken-btn {
+    font-size: 2rem;
+    padding: 16px 24px;
+    border-radius: 12px;
+    line-height: 1;
+  }
+  .janken-row {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .janken-result {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 24px;
+    margin: 16px 0;
+    font-size: 2.5rem;
+  }
+  .janken-result .vs { font-size: 1rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>コイントス・サイコロ・じゃんけん</h1>
+    <p class="lead">何かを決められないときに。crypto.getRandomValues を使った偏りのない乱数で結果を出します。</p>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button type="button" class="active" data-tab="coin">コイントス</button>
+    <button type="button" data-tab="dice">サイコロ</button>
+    <button type="button" data-tab="janken">じゃんけん</button>
+  </div>
+
+  <!-- コイントス -->
+  <section id="tab-coin">
+    <div class="big-result" id="coinDisplay">
+      <span style="font-size:5rem;">🪙</span>
+    </div>
+    <div class="actions" style="justify-content:center;margin-top:16px;">
+      <button type="button" id="coinFlip" class="primary">投げる</button>
+      <button type="button" id="coinReset">リセット</button>
+    </div>
+    <h2>履歴</h2>
+    <div id="coinStats" style="text-align:center;color:var(--muted);font-size:0.95rem;margin-bottom:8px;">表 0 回 / 裏 0 回</div>
+    <ul class="plain-list" id="coinHist" style="display:none;"></ul>
+  </section>
+
+  <!-- サイコロ -->
+  <section id="tab-dice" style="display:none;">
+    <div style="display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;margin-bottom:12px;">
+      <label for="diceCount" style="color:var(--muted);font-size:0.95rem;">サイコロの数</label>
+      <input type="number" id="diceCount" min="1" max="20" value="2">
+      <label for="diceSides" style="color:var(--muted);font-size:0.95rem;">面の数</label>
+      <select id="diceSides" style="width:auto;">
+        <option value="6" selected>6 面 (一般)</option>
+        <option value="4">4 面</option>
+        <option value="8">8 面</option>
+        <option value="10">10 面</option>
+        <option value="12">12 面</option>
+        <option value="20">20 面 (TRPG)</option>
+        <option value="100">100 面</option>
+      </select>
+    </div>
+
+    <div class="big-result" id="diceDisplay" style="flex-wrap:wrap;">
+      <span class="dice">?</span>
+    </div>
+    <div id="diceSum" style="text-align:center;color:var(--muted);margin-top:8px;font-size:1rem;"></div>
+
+    <div class="actions" style="justify-content:center;margin-top:16px;">
+      <button type="button" id="diceRoll" class="primary">振る</button>
+      <button type="button" id="diceReset">リセット</button>
+    </div>
+
+    <h2>履歴</h2>
+    <ul class="plain-list" id="diceHist" style="display:none;"></ul>
+  </section>
+
+  <!-- じゃんけん -->
+  <section id="tab-janken" style="display:none;">
+    <p style="text-align:center;color:var(--muted);">あなたの手を選んでください。</p>
+    <div class="janken-row">
+      <button type="button" class="janken-btn" data-hand="rock" title="グー">✊</button>
+      <button type="button" class="janken-btn" data-hand="scissors" title="チョキ">✌️</button>
+      <button type="button" class="janken-btn" data-hand="paper" title="パー">✋</button>
+    </div>
+
+    <div class="janken-result" id="jankenResult" style="display:none;">
+      <div style="text-align:center;">
+        <div id="userHand">-</div>
+        <div style="font-size:0.85rem;color:var(--muted);">あなた</div>
+      </div>
+      <span class="vs">VS</span>
+      <div style="text-align:center;">
+        <div id="cpuHand">-</div>
+        <div style="font-size:0.85rem;color:var(--muted);">コンピュータ</div>
+      </div>
+    </div>
+    <div id="jankenJudge" style="text-align:center;font-size:1.6rem;font-weight:700;margin-top:8px;"></div>
+
+    <h2>戦績</h2>
+    <div id="jankenStats" style="text-align:center;color:var(--muted);">勝ち 0 ・ 負け 0 ・ あいこ 0</div>
+    <div class="actions" style="justify-content:center;margin-top:8px;">
+      <button type="button" id="jankenReset">リセット</button>
+    </div>
+  </section>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const tabs = document.querySelectorAll('.tabs button');
+
+    tabs.forEach((b) => b.addEventListener('click', function () {
+      tabs.forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      ['coin', 'dice', 'janken'].forEach((t) => {
+        $('tab-' + t).style.display = t === b.dataset.tab ? '' : 'none';
+      });
+    }));
+
+    function randInt(max) {
+      const limit = Math.floor(0xFFFFFFFF / max) * max;
+      const buf = new Uint32Array(1);
+      let r;
+      do { crypto.getRandomValues(buf); r = buf[0]; } while (r >= limit);
+      return r % max;
+    }
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    // ============ コイン ============
+    const coinHist = [];
+    function coinFlip() {
+      const isHead = randInt(2) === 0;
+      const label = isHead ? '表' : '裏';
+      const emoji = isHead ? '🪙' : '🌖';
+      $('coinDisplay').innerHTML = '<div><div style="font-size:5rem;">' + emoji + '</div><div class="label">' + label + '</div></div>';
+      coinHist.unshift(label);
+      if (coinHist.length > 50) coinHist.pop();
+      const head = coinHist.filter((x) => x === '表').length;
+      const tail = coinHist.length - head;
+      $('coinStats').textContent = '表 ' + head + ' 回 / 裏 ' + tail + ' 回 (' + coinHist.length + ' 回中)';
+      const list = coinHist.map((v, i) =>
+        '<li><span class="label">#' + (coinHist.length - i) + '</span><span>' + v + '</span></li>'
+      ).join('');
+      $('coinHist').innerHTML = list;
+      $('coinHist').style.display = '';
+    }
+    function coinReset() {
+      coinHist.length = 0;
+      $('coinDisplay').innerHTML = '<span style="font-size:5rem;">🪙</span>';
+      $('coinStats').textContent = '表 0 回 / 裏 0 回';
+      $('coinHist').innerHTML = ''; $('coinHist').style.display = 'none';
+    }
+    $('coinFlip').addEventListener('click', coinFlip);
+    $('coinReset').addEventListener('click', coinReset);
+
+    // ============ サイコロ ============
+    const diceHist = [];
+    const PIPS = { 1: '⚀', 2: '⚁', 3: '⚂', 4: '⚃', 5: '⚄', 6: '⚅' };
+    function diceRoll() {
+      const count = Math.max(1, Math.min(20, parseInt($('diceCount').value, 10) || 1));
+      const sides = parseInt($('diceSides').value, 10);
+      const result = [];
+      for (let i = 0; i < count; i++) result.push(randInt(sides) + 1);
+      const sum = result.reduce((a, b) => a + b, 0);
+      const html = result.map((v) =>
+        sides === 6 ? '<span class="dice">' + PIPS[v] + '</span>' : '<span class="dice">' + v + '</span>'
+      ).join('');
+      $('diceDisplay').innerHTML = html;
+      $('diceSum').textContent = '合計: ' + sum + (count > 1 ? ' (' + result.join(' + ') + ')' : '');
+      diceHist.unshift({ count, sides, result, sum });
+      if (diceHist.length > 30) diceHist.pop();
+      $('diceHist').innerHTML = diceHist.map((h, i) =>
+        '<li><span class="label">#' + (diceHist.length - i) + ' (' + h.count + 'd' + h.sides + ')</span>' +
+        '<span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">' + h.result.join(', ') + ' = ' + h.sum + '</span></li>'
+      ).join('');
+      $('diceHist').style.display = '';
+    }
+    function diceReset() {
+      diceHist.length = 0;
+      $('diceDisplay').innerHTML = '<span class="dice">?</span>';
+      $('diceSum').textContent = '';
+      $('diceHist').innerHTML = ''; $('diceHist').style.display = 'none';
+    }
+    $('diceRoll').addEventListener('click', diceRoll);
+    $('diceReset').addEventListener('click', diceReset);
+
+    // ============ じゃんけん ============
+    const jankenStats = { win: 0, lose: 0, draw: 0 };
+    const HAND = { rock: '✊', scissors: '✌️', paper: '✋' };
+    const HAND_JP = { rock: 'グー', scissors: 'チョキ', paper: 'パー' };
+    function judge(u, c) {
+      if (u === c) return 'あいこ';
+      if ((u === 'rock' && c === 'scissors') ||
+          (u === 'scissors' && c === 'paper') ||
+          (u === 'paper' && c === 'rock')) return '勝ち';
+      return '負け';
+    }
+    document.querySelectorAll('.janken-btn').forEach((b) => {
+      b.addEventListener('click', function () {
+        const u = b.dataset.hand;
+        const cpuArr = ['rock', 'scissors', 'paper'];
+        const c = cpuArr[randInt(3)];
+        $('userHand').textContent = HAND[u] + ' (' + HAND_JP[u] + ')';
+        $('cpuHand').textContent = HAND[c] + ' (' + HAND_JP[c] + ')';
+        $('jankenResult').style.display = '';
+        const j = judge(u, c);
+        $('jankenJudge').textContent = j;
+        if (j === '勝ち') { $('jankenJudge').style.color = 'var(--accent)'; jankenStats.win++; }
+        else if (j === '負け') { $('jankenJudge').style.color = 'var(--danger)'; jankenStats.lose++; }
+        else { $('jankenJudge').style.color = 'var(--muted)'; jankenStats.draw++; }
+        $('jankenStats').textContent = '勝ち ' + jankenStats.win + ' ・ 負け ' + jankenStats.lose + ' ・ あいこ ' + jankenStats.draw;
+      });
+    });
+    $('jankenReset').addEventListener('click', function () {
+      jankenStats.win = jankenStats.lose = jankenStats.draw = 0;
+      $('jankenStats').textContent = '勝ち 0 ・ 負け 0 ・ あいこ 0';
+      $('jankenResult').style.display = 'none';
+      $('jankenJudge').textContent = '';
+    });
+  })();
+</script>
+</body>
+</html>
