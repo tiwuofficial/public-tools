@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>テーブルジェネレータ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 編集グリッドと整形済プレビュー */
+  table.gen-grid {
+    border-collapse: collapse;
+    width: 100%;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  table.gen-grid th, table.gen-grid td {
+    border: 1px solid var(--border);
+    padding: 0;
+    vertical-align: top;
+  }
+  table.gen-grid input, table.gen-grid select {
+    width: 100%;
+    border: none;
+    padding: 8px 10px;
+    background: transparent;
+    box-shadow: none;
+    border-radius: 0;
+  }
+  table.gen-grid input:focus, table.gen-grid select:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    box-shadow: none;
+  }
+  table.gen-grid thead { background: var(--bg); }
+  table.gen-grid thead input { font-weight: 600; }
+  .row-handle { width: 40px; text-align: center; color: var(--muted); }
+  .row-actions { width: 40px; text-align: center; }
+  .col-actions { width: 40px; text-align: center; }
+  .preview-html table {
+    border-collapse: collapse;
+    margin: 4px 0;
+  }
+  .preview-html th, .preview-html td {
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+  }
+  .preview-html th { background: var(--bg); }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>テーブルジェネレータ</h1>
+    <p class="lead">セルを直接編集して、Markdown / HTML / CSV / TSV のテーブルコードを生成します。</p>
+  </header>
+
+  <div class="card" style="margin-bottom:14px;">
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
+      <button type="button" id="addRow">＋ 行を追加</button>
+      <button type="button" id="addCol">＋ 列を追加</button>
+      <button type="button" id="resetBtn">サンプルに戻す</button>
+      <span style="flex:1;"></span>
+      <button type="button" id="loadCsv">CSV/TSV から取り込む…</button>
+    </div>
+  </div>
+
+  <h2>編集</h2>
+  <div style="overflow-x:auto;">
+    <table class="gen-grid" id="grid"></table>
+  </div>
+
+  <h2>整列 (列ごと)</h2>
+  <div id="alignRow" class="card" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+
+  <div class="tabs" style="margin-top:18px;" role="tablist">
+    <button type="button" class="active" data-out="md">Markdown</button>
+    <button type="button" data-out="html">HTML</button>
+    <button type="button" data-out="htmlPretty">HTML (整形)</button>
+    <button type="button" data-out="csv">CSV</button>
+    <button type="button" data-out="tsv">TSV</button>
+    <button type="button" data-out="preview">プレビュー</button>
+  </div>
+
+  <pre class="code" id="output" style="white-space:pre;"></pre>
+  <div class="card preview-html" id="preview" style="display:none;"></div>
+
+  <div class="actions" style="margin-top:8px;">
+    <button type="button" id="copy" class="primary">コピー</button>
+  </div>
+
+  <!-- CSV/TSV 取り込みモーダル代わりに card を出し分け -->
+  <div id="csvCard" class="card" style="display:none;margin-top:16px;">
+    <h2 style="margin-top:0;">CSV / TSV から取り込み</h2>
+    <textarea id="csvIn" rows="6" placeholder="名前,年齢,職業&#10;Alice,30,デザイナー&#10;Bob,25,エンジニア"></textarea>
+    <div class="actions" style="margin-top:8px;">
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;color:var(--muted);">
+        区切り
+        <select id="csvSep" style="width:auto;">
+          <option value="auto" selected>自動判定</option>
+          <option value=",">カンマ</option>
+          <option value="\t">タブ</option>
+          <option value=";">セミコロン</option>
+        </select>
+      </label>
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;color:var(--muted);">
+        <input type="checkbox" id="csvHeader" checked style="width:auto;"> 1 行目をヘッダ扱い
+      </label>
+      <button type="button" id="csvApply" class="primary">取り込む</button>
+      <button type="button" id="csvCancel">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    let header = ['名前', '年齢', '職業'];
+    let rows = [
+      ['Alice', '30', 'デザイナー'],
+      ['Bob', '25', 'エンジニア'],
+    ];
+    let aligns = []; // 各列の '', 'left', 'center', 'right'
+    let outMode = 'md';
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+    function escapeAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+
+    function syncAligns() {
+      while (aligns.length < header.length) aligns.push('');
+      aligns.length = header.length;
+    }
+
+    function renderGrid() {
+      syncAligns();
+      const colCount = header.length;
+      let html = '<thead><tr><th class="row-handle"></th>';
+      header.forEach((h, ci) => {
+        html += '<th><input type="text" data-h="' + ci + '" value="' + escapeAttr(h) + '"></th>';
+      });
+      html += '<th class="col-actions"></th></tr></thead><tbody>';
+      rows.forEach((row, ri) => {
+        html += '<tr><td class="row-handle">' + (ri + 1) + '</td>';
+        for (let ci = 0; ci < colCount; ci++) {
+          html += '<td><input type="text" data-r="' + ri + '" data-c="' + ci + '" value="' + escapeAttr(row[ci] || '') + '"></td>';
+        }
+        html += '<td class="row-actions"><button type="button" class="del-row" data-r="' + ri + '" title="行削除">×</button></td>';
+      });
+      html += '</tbody><tfoot><tr><td class="row-handle"></td>';
+      for (let ci = 0; ci < colCount; ci++) {
+        html += '<td class="col-actions"><button type="button" class="del-col" data-c="' + ci + '" title="列削除">×</button></td>';
+      }
+      html += '<td></td></tr></tfoot>';
+      $('grid').innerHTML = html;
+
+      // alignment
+      const alignRow = $('alignRow');
+      alignRow.innerHTML = '';
+      header.forEach((h, ci) => {
+        const div = document.createElement('div');
+        div.style.cssText = 'display:flex;align-items:center;gap:6px;';
+        div.innerHTML =
+          '<span style="color:var(--muted);font-size:0.85rem;">' + escapeHtml(h || '列' + (ci + 1)) + '</span>' +
+          '<select data-align="' + ci + '" style="width:auto;">' +
+            '<option value="">-</option>' +
+            '<option value="left">←</option>' +
+            '<option value="center">中央</option>' +
+            '<option value="right">→</option>' +
+          '</select>';
+        const sel = div.querySelector('select');
+        sel.value = aligns[ci] || '';
+        alignRow.appendChild(div);
+      });
+    }
+
+    function renderOutput() {
+      let text = '';
+      if (outMode === 'md') text = toMarkdown();
+      else if (outMode === 'html') text = toHtml(false);
+      else if (outMode === 'htmlPretty') text = toHtml(true);
+      else if (outMode === 'csv') text = toDelim(',');
+      else if (outMode === 'tsv') text = toDelim('\t');
+
+      if (outMode === 'preview') {
+        $('output').style.display = 'none';
+        $('preview').style.display = '';
+        $('preview').innerHTML = toHtml(false);
+      } else {
+        $('output').style.display = '';
+        $('preview').style.display = 'none';
+        $('output').textContent = text;
+      }
+    }
+
+    function toMarkdown() {
+      syncAligns();
+      const ncol = header.length;
+      const widths = header.map((h, ci) => {
+        let w = String(h || '').length;
+        rows.forEach((r) => { w = Math.max(w, String(r[ci] || '').length); });
+        return Math.max(w, 3);
+      });
+      const headLine = '| ' + header.map((h, ci) => pad(h || '', widths[ci])).join(' | ') + ' |';
+      const sepLine = '| ' + aligns.map((a, ci) => {
+        const w = widths[ci];
+        if (a === 'left') return ':' + '-'.repeat(w - 1);
+        if (a === 'right') return '-'.repeat(w - 1) + ':';
+        if (a === 'center') return ':' + '-'.repeat(w - 2) + ':';
+        return '-'.repeat(w);
+      }).join(' | ') + ' |';
+      const bodyLines = rows.map((r) =>
+        '| ' + header.map((_, ci) => pad(r[ci] || '', widths[ci])).join(' | ') + ' |'
+      );
+      return [headLine, sepLine, ...bodyLines].join('\n');
+    }
+    function pad(s, w) {
+      const len = String(s).length;
+      if (len >= w) return String(s);
+      return String(s) + ' '.repeat(w - len);
+    }
+
+    function toHtml(pretty) {
+      const nl = pretty ? '\n' : '';
+      const ind = pretty ? '  ' : '';
+      let out = '<table>' + nl;
+      out += ind + '<thead>' + nl + ind + ind + '<tr>' + nl;
+      header.forEach((h, ci) => {
+        const a = aligns[ci];
+        const style = a ? ' style="text-align:' + a + ';"' : '';
+        out += (pretty ? ind + ind + ind : '') + '<th' + style + '>' + escapeHtml(h) + '</th>' + nl;
+      });
+      out += ind + ind + '</tr>' + nl + ind + '</thead>' + nl;
+      out += ind + '<tbody>' + nl;
+      rows.forEach((r) => {
+        out += ind + ind + '<tr>' + nl;
+        header.forEach((_, ci) => {
+          const a = aligns[ci];
+          const style = a ? ' style="text-align:' + a + ';"' : '';
+          out += (pretty ? ind + ind + ind : '') + '<td' + style + '>' + escapeHtml(r[ci] || '') + '</td>' + nl;
+        });
+        out += ind + ind + '</tr>' + nl;
+      });
+      out += ind + '</tbody>' + nl + '</table>';
+      return out;
+    }
+
+    function toDelim(sep) {
+      function quote(s) {
+        const t = String(s);
+        if (sep === ',' && (t.includes(',') || t.includes('"') || t.includes('\n'))) {
+          return '"' + t.replace(/"/g, '""') + '"';
+        }
+        return t;
+      }
+      const lines = [header.map(quote).join(sep)];
+      rows.forEach((r) => lines.push(header.map((_, ci) => quote(r[ci] || '')).join(sep)));
+      return lines.join('\n');
+    }
+
+    // ===== ハンドラ =====
+    document.querySelectorAll('.tabs button').forEach((b) => {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('.tabs button').forEach((x) => x.classList.remove('active'));
+        b.classList.add('active');
+        outMode = b.dataset.out;
+        renderOutput();
+      });
+    });
+
+    $('grid').addEventListener('input', function (e) {
+      if (e.target.dataset.h !== undefined) {
+        header[+e.target.dataset.h] = e.target.value;
+      } else if (e.target.dataset.r !== undefined) {
+        const r = +e.target.dataset.r, c = +e.target.dataset.c;
+        rows[r][c] = e.target.value;
+      }
+      renderOutput();
+      // 列ヘッダ変更時は align 行のラベル更新
+      if (e.target.dataset.h !== undefined) {
+        const span = $('alignRow').children[+e.target.dataset.h]?.querySelector('span');
+        if (span) span.textContent = e.target.value || '列' + (+e.target.dataset.h + 1);
+      }
+    });
+    $('grid').addEventListener('click', function (e) {
+      if (e.target.classList.contains('del-row')) {
+        const r = +e.target.dataset.r;
+        rows.splice(r, 1);
+        if (rows.length === 0) rows.push(new Array(header.length).fill(''));
+        renderGrid(); renderOutput();
+      } else if (e.target.classList.contains('del-col')) {
+        const c = +e.target.dataset.c;
+        if (header.length <= 1) return;
+        header.splice(c, 1);
+        rows.forEach((r) => r.splice(c, 1));
+        aligns.splice(c, 1);
+        renderGrid(); renderOutput();
+      }
+    });
+    $('alignRow').addEventListener('change', function (e) {
+      if (e.target.dataset.align !== undefined) {
+        aligns[+e.target.dataset.align] = e.target.value;
+        renderOutput();
+      }
+    });
+
+    $('addRow').addEventListener('click', function () {
+      rows.push(new Array(header.length).fill(''));
+      renderGrid(); renderOutput();
+    });
+    $('addCol').addEventListener('click', function () {
+      header.push('列' + (header.length + 1));
+      rows.forEach((r) => r.push(''));
+      aligns.push('');
+      renderGrid(); renderOutput();
+    });
+    $('resetBtn').addEventListener('click', function () {
+      header = ['名前', '年齢', '職業'];
+      rows = [['Alice', '30', 'デザイナー'], ['Bob', '25', 'エンジニア']];
+      aligns = [];
+      renderGrid(); renderOutput();
+    });
+
+    $('copy').addEventListener('click', async function () {
+      let text;
+      if (outMode === 'preview') text = toHtml(true);
+      else text = $('output').textContent;
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        const o = this.textContent; this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = o, 1000);
+      } catch (e) {}
+    });
+
+    // ----- CSV/TSV 取り込み -----
+    $('loadCsv').addEventListener('click', function () {
+      $('csvCard').style.display = '';
+      $('csvIn').focus();
+    });
+    $('csvCancel').addEventListener('click', function () {
+      $('csvCard').style.display = 'none';
+    });
+    $('csvApply').addEventListener('click', function () {
+      const text = $('csvIn').value;
+      if (!text.trim()) return;
+      let sep = $('csvSep').value;
+      if (sep === '\\t') sep = '\t';
+      if (sep === 'auto') {
+        // 1 行目で出現の多い区切りを推定
+        const first = text.split('\n')[0];
+        const counts = { ',': 0, '\t': 0, ';': 0 };
+        for (const c of first) if (c in counts) counts[c]++;
+        sep = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+        if (counts[sep] === 0) sep = ',';
+      }
+      const parsed = parseCsv(text, sep);
+      if (parsed.length === 0) return;
+      if ($('csvHeader').checked) {
+        header = parsed[0];
+        rows = parsed.slice(1);
+      } else {
+        header = parsed[0].map((_, i) => '列' + (i + 1));
+        rows = parsed;
+      }
+      // 列幅を揃える
+      const w = header.length;
+      rows = rows.map((r) => {
+        const r2 = r.slice(0, w);
+        while (r2.length < w) r2.push('');
+        return r2;
+      });
+      aligns = new Array(w).fill('');
+      $('csvCard').style.display = 'none';
+      renderGrid(); renderOutput();
+    });
+
+    function parseCsv(text, sep) {
+      const out = [];
+      let row = [];
+      let buf = '';
+      let inQuote = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (inQuote) {
+          if (c === '"') {
+            if (text[i + 1] === '"') { buf += '"'; i++; }
+            else { inQuote = false; }
+          } else {
+            buf += c;
+          }
+        } else {
+          if (c === '"' && buf === '') inQuote = true;
+          else if (c === sep) { row.push(buf); buf = ''; }
+          else if (c === '\n') { row.push(buf); out.push(row); row = []; buf = ''; }
+          else if (c === '\r') {}
+          else buf += c;
+        }
+      }
+      if (buf !== '' || row.length > 0) { row.push(buf); out.push(row); }
+      return out;
+    }
+
+    renderGrid();
+    renderOutput();
+  })();
+</script>
+</body>
+</html>
