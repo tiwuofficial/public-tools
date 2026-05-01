@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>メタタグ / OGP ジェネレータ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: SNS 風プレビュー */
+  .meta-grid {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 8px 12px;
+    align-items: start;
+  }
+  .meta-grid .field-help {
+    grid-column: 2;
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: -2px;
+  }
+  .meta-grid .field-help.warn { color: #d97706; }
+  .meta-grid .field-help.over { color: var(--danger); }
+  .share-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .share-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .share-card .platform {
+    padding: 8px 14px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .share-card .img {
+    width: 100%;
+    aspect-ratio: 1.91 / 1;
+    background: var(--bg) center/cover no-repeat;
+    border-bottom: 1px solid var(--border);
+  }
+  .share-card .img.empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .share-card .body {
+    padding: 12px 14px;
+  }
+  .share-card .url {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+  }
+  .share-card .title {
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 4px;
+    line-height: 1.4;
+  }
+  .share-card .desc {
+    font-size: 0.85rem;
+    color: var(--muted);
+    line-height: 1.5;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>メタタグ / OGP ジェネレータ</h1>
+    <p class="lead">フォームに入力すると、SEO・OGP・Twitter Card のメタタグ HTML を自動生成し、シェア時のプレビューを表示します。</p>
+  </header>
+
+  <div class="card" style="margin-bottom:18px;">
+    <h2 style="margin-top:0;">基本</h2>
+    <div class="meta-grid">
+      <label for="title" style="color:var(--muted);font-size:0.95rem;">タイトル</label>
+      <input type="text" id="title" placeholder="ページのタイトル" value="サンプルページ - public-tools">
+      <div class="field-help" id="titleHelp"></div>
+
+      <label for="description" style="color:var(--muted);font-size:0.95rem;">説明</label>
+      <textarea id="description" rows="3" placeholder="検索結果に表示される説明 (120 字前後)">公開ツールのサンプルページです。ここに 120 字前後の説明を入れます。</textarea>
+      <div class="field-help" id="descHelp"></div>
+
+      <label for="url" style="color:var(--muted);font-size:0.95rem;">canonical URL</label>
+      <input type="url" id="url" placeholder="https://example.com/page" value="https://example.com/sample">
+
+      <label for="keywords" style="color:var(--muted);font-size:0.95rem;">キーワード</label>
+      <input type="text" id="keywords" placeholder="カンマ区切り (任意)" value="">
+
+      <label for="lang" style="color:var(--muted);font-size:0.95rem;">html lang</label>
+      <input type="text" id="lang" value="ja" style="max-width:120px;">
+
+      <label for="robots" style="color:var(--muted);font-size:0.95rem;">robots</label>
+      <select id="robots" style="width:auto;">
+        <option value="index,follow" selected>index,follow</option>
+        <option value="noindex,follow">noindex,follow</option>
+        <option value="index,nofollow">index,nofollow</option>
+        <option value="noindex,nofollow">noindex,nofollow</option>
+      </select>
+
+      <label for="favicon" style="color:var(--muted);font-size:0.95rem;">favicon</label>
+      <input type="text" id="favicon" placeholder="/favicon.ico (任意)">
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:18px;">
+    <h2 style="margin-top:0;">OGP</h2>
+    <div class="meta-grid">
+      <label for="ogType" style="color:var(--muted);font-size:0.95rem;">og:type</label>
+      <select id="ogType" style="width:auto;">
+        <option value="website" selected>website</option>
+        <option value="article">article</option>
+        <option value="book">book</option>
+        <option value="profile">profile</option>
+        <option value="video.movie">video.movie</option>
+      </select>
+
+      <label for="ogSiteName" style="color:var(--muted);font-size:0.95rem;">og:site_name</label>
+      <input type="text" id="ogSiteName" placeholder="サイト名" value="public-tools">
+
+      <label for="ogImage" style="color:var(--muted);font-size:0.95rem;">og:image</label>
+      <input type="url" id="ogImage" placeholder="シェア画像 URL (1200×630 推奨)" value="https://example.com/og.png">
+
+      <label for="ogTitle" style="color:var(--muted);font-size:0.95rem;">og:title</label>
+      <input type="text" id="ogTitle" placeholder="(空欄なら基本タイトルを使用)">
+
+      <label for="ogDescription" style="color:var(--muted);font-size:0.95rem;">og:description</label>
+      <textarea id="ogDescription" rows="2" placeholder="(空欄なら基本説明を使用)"></textarea>
+
+      <label for="ogLocale" style="color:var(--muted);font-size:0.95rem;">og:locale</label>
+      <input type="text" id="ogLocale" value="ja_JP" style="max-width:160px;">
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:18px;">
+    <h2 style="margin-top:0;">Twitter Card</h2>
+    <div class="meta-grid">
+      <label for="twCard" style="color:var(--muted);font-size:0.95rem;">twitter:card</label>
+      <select id="twCard" style="width:auto;">
+        <option value="summary_large_image" selected>summary_large_image</option>
+        <option value="summary">summary</option>
+        <option value="player">player</option>
+        <option value="app">app</option>
+      </select>
+
+      <label for="twSite" style="color:var(--muted);font-size:0.95rem;">twitter:site</label>
+      <input type="text" id="twSite" placeholder="@yoursite" style="max-width:240px;">
+
+      <label for="twCreator" style="color:var(--muted);font-size:0.95rem;">twitter:creator</label>
+      <input type="text" id="twCreator" placeholder="@author" style="max-width:240px;">
+    </div>
+  </div>
+
+  <h2>シェアプレビュー</h2>
+  <div class="share-cards" style="margin-bottom:18px;">
+    <div class="share-card facebook">
+      <div class="platform">Facebook / LinkedIn (1.91:1)</div>
+      <div class="img" id="fbImg"></div>
+      <div class="body">
+        <div class="url" id="fbUrl">EXAMPLE.COM</div>
+        <div class="title" id="fbTitle">-</div>
+        <div class="desc" id="fbDesc">-</div>
+      </div>
+    </div>
+    <div class="share-card twitter">
+      <div class="platform">Twitter / X</div>
+      <div class="img" id="twImg"></div>
+      <div class="body">
+        <div class="url" id="twUrl">example.com</div>
+        <div class="title" id="twTitle">-</div>
+        <div class="desc" id="twDesc">-</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>生成された HTML</h2>
+  <pre class="code" id="output" style="white-space:pre;"></pre>
+  <div class="actions">
+    <button type="button" id="copy" class="primary">コピー</button>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    function escapeAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    function lengthFlag(str, target, max) {
+      const n = Array.from(str).length;
+      let cls = '';
+      let msg = n + ' 字';
+      if (n > max) { cls = 'over'; msg += ' (上限 ' + max + ' 超過)'; }
+      else if (n > target) { cls = 'warn'; msg += ' (目標 ' + target + ' 超え、PC で省略の可能性)'; }
+      else { msg += ' (目標 ' + target + ')'; }
+      return { cls, msg, n };
+    }
+
+    function update() {
+      const title = $('title').value.trim();
+      const desc = $('description').value.trim();
+      const url = $('url').value.trim();
+      const keywords = $('keywords').value.trim();
+      const lang = $('lang').value.trim();
+      const robots = $('robots').value;
+      const favicon = $('favicon').value.trim();
+      const ogType = $('ogType').value;
+      const ogSite = $('ogSiteName').value.trim();
+      const ogImage = $('ogImage').value.trim();
+      const ogTitle = $('ogTitle').value.trim() || title;
+      const ogDesc = $('ogDescription').value.trim() || desc;
+      const ogLocale = $('ogLocale').value.trim();
+      const twCard = $('twCard').value;
+      const twSite = $('twSite').value.trim();
+      const twCreator = $('twCreator').value.trim();
+
+      // length flags
+      const titleFlag = lengthFlag(title, 32, 60);
+      $('titleHelp').textContent = titleFlag.msg;
+      $('titleHelp').className = 'field-help' + (titleFlag.cls ? ' ' + titleFlag.cls : '');
+      const descFlag = lengthFlag(desc, 120, 160);
+      $('descHelp').textContent = descFlag.msg;
+      $('descHelp').className = 'field-help' + (descFlag.cls ? ' ' + descFlag.cls : '');
+
+      // HTML 出力
+      const lines = [];
+      const tag = (s) => { if (s) lines.push(s); };
+      tag('<!-- 基本 -->');
+      tag('<meta charset="UTF-8">');
+      tag('<meta name="viewport" content="width=device-width, initial-scale=1">');
+      if (lang) tag('<meta http-equiv="content-language" content="' + escapeAttr(lang) + '">');
+      if (title) tag('<title>' + escapeHtml(title) + '</title>');
+      if (desc) tag('<meta name="description" content="' + escapeAttr(desc) + '">');
+      if (keywords) tag('<meta name="keywords" content="' + escapeAttr(keywords) + '">');
+      if (robots) tag('<meta name="robots" content="' + escapeAttr(robots) + '">');
+      if (url) tag('<link rel="canonical" href="' + escapeAttr(url) + '">');
+      if (favicon) tag('<link rel="icon" href="' + escapeAttr(favicon) + '">');
+
+      lines.push('');
+      tag('<!-- Open Graph (Facebook, LINE, LinkedIn 等) -->');
+      tag('<meta property="og:type" content="' + escapeAttr(ogType) + '">');
+      tag('<meta property="og:title" content="' + escapeAttr(ogTitle) + '">');
+      if (ogDesc) tag('<meta property="og:description" content="' + escapeAttr(ogDesc) + '">');
+      if (url) tag('<meta property="og:url" content="' + escapeAttr(url) + '">');
+      if (ogSite) tag('<meta property="og:site_name" content="' + escapeAttr(ogSite) + '">');
+      if (ogImage) tag('<meta property="og:image" content="' + escapeAttr(ogImage) + '">');
+      if (ogLocale) tag('<meta property="og:locale" content="' + escapeAttr(ogLocale) + '">');
+
+      lines.push('');
+      tag('<!-- Twitter Card -->');
+      tag('<meta name="twitter:card" content="' + escapeAttr(twCard) + '">');
+      tag('<meta name="twitter:title" content="' + escapeAttr(ogTitle) + '">');
+      if (ogDesc) tag('<meta name="twitter:description" content="' + escapeAttr(ogDesc) + '">');
+      if (ogImage) tag('<meta name="twitter:image" content="' + escapeAttr(ogImage) + '">');
+      if (twSite) tag('<meta name="twitter:site" content="' + escapeAttr(twSite) + '">');
+      if (twCreator) tag('<meta name="twitter:creator" content="' + escapeAttr(twCreator) + '">');
+
+      $('output').textContent = lines.join('\n');
+
+      // プレビュー
+      const host = (() => { try { return new URL(url).host; } catch (e) { return url || 'example.com'; } })();
+      $('fbUrl').textContent = host.toUpperCase();
+      $('twUrl').textContent = host;
+      $('fbTitle').textContent = ogTitle || '(タイトル未設定)';
+      $('twTitle').textContent = ogTitle || '(タイトル未設定)';
+      $('fbDesc').textContent = ogDesc || '(説明未設定)';
+      $('twDesc').textContent = ogDesc || '(説明未設定)';
+      const fb = $('fbImg'); const tw = $('twImg');
+      if (ogImage) {
+        fb.style.backgroundImage = "url('" + ogImage.replace(/'/g, "\\'") + "')";
+        fb.classList.remove('empty'); fb.textContent = '';
+        tw.style.backgroundImage = "url('" + ogImage.replace(/'/g, "\\'") + "')";
+        tw.classList.remove('empty'); tw.textContent = '';
+      } else {
+        fb.style.backgroundImage = ''; fb.classList.add('empty'); fb.textContent = '画像なし';
+        tw.style.backgroundImage = ''; tw.classList.add('empty'); tw.textContent = '画像なし';
+      }
+    }
+
+    document.querySelectorAll('input, textarea, select').forEach((el) => {
+      el.addEventListener('input', update);
+      el.addEventListener('change', update);
+    });
+
+    $('copy').addEventListener('click', async function () {
+      try {
+        await navigator.clipboard.writeText($('output').textContent);
+        const o = this.textContent; this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = o, 1000);
+      } catch (e) {}
+    });
+
+    update();
+  })();
+</script>
+</body>
+</html>
