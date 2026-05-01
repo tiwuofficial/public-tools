@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UUID 生成 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>UUID 生成</h1>
+    <p class="lead">UUID v4 (ランダム) と v7 (時刻ベース、ソート可能) を生成します。</p>
+  </header>
+
+  <div class="card">
+    <div style="display:grid;grid-template-columns:120px 1fr;gap:12px;align-items:center;">
+      <label for="version" style="color:var(--muted);font-size:0.9rem;">バージョン</label>
+      <select id="version" style="width:auto;">
+        <option value="4" selected>v4 (ランダム)</option>
+        <option value="7">v7 (時刻ベース・ソート可能)</option>
+      </select>
+
+      <label for="count" style="color:var(--muted);font-size:0.9rem;">個数</label>
+      <input type="number" id="count" min="1" max="200" value="10">
+    </div>
+
+    <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;color:var(--muted);"><input type="checkbox" id="upper" style="width:auto;"> 大文字で出力</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;color:var(--muted);"><input type="checkbox" id="noHyphen" style="width:auto;"> ハイフンを除去</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;color:var(--muted);"><input type="checkbox" id="braces" style="width:auto;"> { } で囲む</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;color:var(--muted);"><input type="checkbox" id="quotes" style="width:auto;"> ダブルクォートで囲む</label>
+    </div>
+
+    <div class="actions" style="margin-top:14px;">
+      <button type="button" id="generate" class="primary">生成</button>
+      <button type="button" id="copyAll">すべてコピー</button>
+    </div>
+  </div>
+
+  <h2>生成結果</h2>
+  <ul class="plain-list" id="results" style="display:none;"></ul>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function escapeAttr(s) {
+      return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    }
+
+    function toHex(bytes) {
+      const hex = [];
+      for (let i = 0; i < bytes.length; i++) {
+        hex.push(bytes[i].toString(16).padStart(2, '0'));
+      }
+      return hex.join('');
+    }
+
+    // v4: random (RFC 4122)
+    function uuidV4() {
+      // crypto.randomUUID は v4 互換
+      if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      b[6] = (b[6] & 0x0f) | 0x40;
+      b[8] = (b[8] & 0x3f) | 0x80;
+      const h = toHex(b);
+      return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+    }
+
+    // v7: 48-bit Unix ms timestamp + 12-bit rand_a + 62-bit rand_b (RFC 9562)
+    function uuidV7() {
+      const ms = Date.now();
+      const b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      // 上位 48bit に時刻
+      b[0] = (ms / 0x10000000000) & 0xff;
+      b[1] = (ms / 0x100000000) & 0xff;
+      b[2] = (ms / 0x1000000) & 0xff;
+      b[3] = (ms / 0x10000) & 0xff;
+      b[4] = (ms / 0x100) & 0xff;
+      b[5] = ms & 0xff;
+      // version (7) を上位ニブルに
+      b[6] = (b[6] & 0x0f) | 0x70;
+      // variant (10xx)
+      b[8] = (b[8] & 0x3f) | 0x80;
+      const h = toHex(b);
+      return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+    }
+
+    function format(uuid) {
+      let s = uuid;
+      if ($('upper').checked) s = s.toUpperCase();
+      if ($('noHyphen').checked) s = s.replace(/-/g, '');
+      if ($('braces').checked) s = '{' + s + '}';
+      if ($('quotes').checked) s = '"' + s + '"';
+      return s;
+    }
+
+    function generate() {
+      const v = $('version').value;
+      const n = Math.max(1, Math.min(200, parseInt($('count').value, 10) || 1));
+      const fn = v === '7' ? uuidV7 : uuidV4;
+      const list = [];
+      for (let i = 0; i < n; i++) list.push(format(fn()));
+
+      $('results').innerHTML = list.map((u) =>
+        '<li>' +
+          '<span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.95rem;flex:1;overflow:auto;">' + escapeHtml(u) + '</span>' +
+          '<button type="button" class="copy-one" data-v="' + escapeAttr(u) + '" style="margin-left:12px;">コピー</button>' +
+        '</li>'
+      ).join('');
+      $('results').style.display = '';
+    }
+
+    $('generate').addEventListener('click', generate);
+    document.querySelectorAll('input[type="checkbox"], #version, #count').forEach((el) => {
+      el.addEventListener('change', generate);
+    });
+
+    document.body.addEventListener('click', async function (e) {
+      const btn = e.target.closest('.copy-one');
+      if (!btn) return;
+      try {
+        await navigator.clipboard.writeText(btn.dataset.v);
+        const orig = btn.textContent;
+        btn.textContent = 'コピー済';
+        setTimeout(() => btn.textContent = orig, 900);
+      } catch (e) {}
+    });
+
+    $('copyAll').addEventListener('click', async function () {
+      const items = Array.from($('results').querySelectorAll('.copy-one')).map((b) => b.dataset.v);
+      if (items.length === 0) return;
+      try {
+        await navigator.clipboard.writeText(items.join('\n'));
+        const orig = this.textContent;
+        this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = orig, 1000);
+      } catch (e) {}
+    });
+
+    generate();
+  })();
+</script>
+</body>
+</html>
