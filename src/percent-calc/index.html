@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>割合計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: パターンカードの間隔と式表示 */
+  .pat-card { margin-bottom: 16px; }
+  .pat-card h3 {
+    margin: 0 0 8px;
+    font-size: 1rem;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .pat-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 1.05rem;
+  }
+  .pat-row input {
+    width: 110px;
+    padding: 6px 10px;
+    text-align: right;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .pat-row .answer {
+    background: var(--accent-weak);
+    color: var(--accent);
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: var(--radius);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    min-width: 100px;
+    text-align: right;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>割合計算</h1>
+    <p class="lead">パーセントに関するよくある計算を 1 ページで。買い物の割引、増減、税抜き/税込みの確認などに。</p>
+  </header>
+
+  <div class="card pat-card">
+    <h3>① B の A% は何？</h3>
+    <div class="pat-row">
+      <input type="number" id="p1a" step="any" value="20"><span>%</span>
+      <span style="color:var(--muted);">×</span>
+      <input type="number" id="p1b" step="any" value="3000"><span>=</span>
+      <span class="answer" id="p1out">600</span>
+    </div>
+    <div style="color:var(--muted);font-size:0.85rem;margin-top:6px;" id="p1desc"></div>
+  </div>
+
+  <div class="card pat-card">
+    <h3>② A は B の何 % ？</h3>
+    <div class="pat-row">
+      <input type="number" id="p2a" step="any" value="600"><span>は</span>
+      <input type="number" id="p2b" step="any" value="3000"><span>の</span>
+      <span class="answer" id="p2out">20%</span>
+    </div>
+    <div style="color:var(--muted);font-size:0.85rem;margin-top:6px;" id="p2desc"></div>
+  </div>
+
+  <div class="card pat-card">
+    <h3>③ A から B への変化は何 %？（増減率）</h3>
+    <div class="pat-row">
+      <input type="number" id="p3a" step="any" value="3000"><span>→</span>
+      <input type="number" id="p3b" step="any" value="2400"><span>は</span>
+      <span class="answer" id="p3out">-20%</span>
+    </div>
+    <div style="color:var(--muted);font-size:0.85rem;margin-top:6px;" id="p3desc"></div>
+  </div>
+
+  <div class="card pat-card">
+    <h3>④ A を P% 増やすと / 減らすと？（割引・値上げ）</h3>
+    <div class="pat-row">
+      <input type="number" id="p4a" step="any" value="3000"><span>を</span>
+      <input type="number" id="p4p" step="any" value="20"><span>%</span>
+      <select id="p4dir" style="width:auto;">
+        <option value="up">増やす</option>
+        <option value="down" selected>減らす（割引）</option>
+      </select>
+      <span style="color:var(--muted);">→</span>
+      <span class="answer" id="p4out">2,400</span>
+    </div>
+    <div style="color:var(--muted);font-size:0.85rem;margin-top:6px;" id="p4desc"></div>
+  </div>
+
+  <div class="card pat-card">
+    <h3>⑤ B の何 % が A になるか（逆算）</h3>
+    <div class="pat-row">
+      <input type="number" id="p5b" step="any" value="3000"><span>の</span>
+      <span class="answer" id="p5out">20%</span>
+      <span>が</span>
+      <input type="number" id="p5a" step="any" value="600"><span>になる</span>
+    </div>
+    <div style="color:var(--muted);font-size:0.85rem;margin-top:6px;">※ ② と同じ式ですが、AB の順を逆にした表現です。</div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    function fmt(n, decimals) {
+      if (!Number.isFinite(n)) return '-';
+      const d = decimals === undefined ? 2 : decimals;
+      const r = Math.round(n * Math.pow(10, d)) / Math.pow(10, d);
+      const neg = r < 0;
+      const abs = Math.abs(r);
+      const [i, f] = String(abs).split('.');
+      const grouped = i.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      return (neg ? '-' : '') + grouped + (f ? '.' + f : '');
+    }
+
+    function getNum(id) {
+      const v = parseFloat($(id).value);
+      return Number.isFinite(v) ? v : null;
+    }
+
+    function update() {
+      // ① P% × B
+      const p1a = getNum('p1a'), p1b = getNum('p1b');
+      if (p1a !== null && p1b !== null) {
+        const r = (p1a / 100) * p1b;
+        $('p1out').textContent = fmt(r);
+        $('p1desc').textContent = '計算式: ' + p1b + ' × ' + p1a + ' / 100 = ' + fmt(r);
+      } else {
+        $('p1out').textContent = '-'; $('p1desc').textContent = '';
+      }
+
+      // ② A / B × 100
+      const p2a = getNum('p2a'), p2b = getNum('p2b');
+      if (p2a !== null && p2b !== null && p2b !== 0) {
+        const r = (p2a / p2b) * 100;
+        $('p2out').textContent = fmt(r) + '%';
+        $('p2desc').textContent = '計算式: ' + p2a + ' / ' + p2b + ' × 100 = ' + fmt(r) + '%';
+      } else {
+        $('p2out').textContent = '-'; $('p2desc').textContent = '';
+      }
+
+      // ③ (B - A) / A × 100
+      const p3a = getNum('p3a'), p3b = getNum('p3b');
+      if (p3a !== null && p3b !== null && p3a !== 0) {
+        const diff = p3b - p3a;
+        const r = (diff / p3a) * 100;
+        const sign = diff > 0 ? '+' : '';
+        const word = diff > 0 ? '増' : (diff < 0 ? '減' : '同じ');
+        $('p3out').textContent = sign + fmt(r) + '%';
+        $('p3desc').textContent = '差額: ' + (diff >= 0 ? '+' : '') + fmt(diff) + ' ・ ' + word;
+      } else {
+        $('p3out').textContent = '-'; $('p3desc').textContent = '';
+      }
+
+      // ④ A × (1 ± P/100)
+      const p4a = getNum('p4a'), p4p = getNum('p4p');
+      if (p4a !== null && p4p !== null) {
+        const dir = $('p4dir').value === 'up' ? 1 : -1;
+        const r = p4a * (1 + dir * p4p / 100);
+        $('p4out').textContent = fmt(r);
+        const verb = dir === 1 ? '+' : '-';
+        $('p4desc').textContent = '差額: ' + verb + fmt(p4a * p4p / 100) + ' ・ 倍率: ' + fmt(1 + dir * p4p / 100, 4);
+      } else {
+        $('p4out').textContent = '-'; $('p4desc').textContent = '';
+      }
+
+      // ⑤ A / B × 100  (逆順)
+      const p5a = getNum('p5a'), p5b = getNum('p5b');
+      if (p5a !== null && p5b !== null && p5b !== 0) {
+        const r = (p5a / p5b) * 100;
+        $('p5out').textContent = fmt(r) + '%';
+      } else {
+        $('p5out').textContent = '-';
+      }
+    }
+
+    document.querySelectorAll('input, select').forEach((el) => {
+      el.addEventListener('input', update);
+      el.addEventListener('change', update);
+    });
+
+    update();
+  })();
+</script>
+</body>
+</html>
