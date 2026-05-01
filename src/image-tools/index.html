@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>画像加工 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 画像加工レイアウト */
+  .img-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+  .preview-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .preview-pair .pane > .imgbox {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    min-height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    padding: 8px;
+  }
+  .imgbox img, .imgbox canvas { max-width: 100%; max-height: 480px; display: block; }
+  .ctrl { margin-bottom: 14px; }
+  .ctrl > .label {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .drop {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 28px;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    background: var(--card);
+  }
+  .drop.drag { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>画像加工</h1>
+    <p class="lead">画像のリサイズ・圧縮・白黒（グレースケール）変換・フォーマット変換をブラウザ内で実行します。</p>
+  </header>
+
+  <div class="img-layout">
+    <div>
+      <div class="drop" id="drop">
+        ここに画像をドロップ<br>または<strong>クリックして選択</strong>
+        <input type="file" id="file" accept="image/*" style="display:none;">
+      </div>
+
+      <div id="origInfo" style="margin-top:8px;color:var(--muted);font-size:0.85rem;"></div>
+
+      <h2 style="margin-top:18px;">サイズ</h2>
+      <div class="ctrl">
+        <div class="label"><span>長辺の最大ピクセル</span><span id="maxSideVal">原寸</span></div>
+        <input type="range" id="maxSide" min="64" max="4096" step="16" value="4096">
+        <button type="button" id="origSize" style="margin-top:6px;">原寸に戻す</button>
+      </div>
+
+      <h2>フィルタ</h2>
+      <div class="ctrl">
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.95rem;">
+          <input type="checkbox" id="grayscale" style="width:auto;"> グレースケール（白黒）
+        </label>
+      </div>
+      <div class="ctrl">
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.95rem;">
+          <input type="checkbox" id="sepia" style="width:auto;"> セピア
+        </label>
+      </div>
+      <div class="ctrl">
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.95rem;">
+          <input type="checkbox" id="invert" style="width:auto;"> 色反転
+        </label>
+      </div>
+      <div class="ctrl">
+        <div class="label"><span>明るさ</span><span id="brightVal">100%</span></div>
+        <input type="range" id="brightness" min="0" max="200" step="1" value="100">
+      </div>
+      <div class="ctrl">
+        <div class="label"><span>コントラスト</span><span id="contrastVal">100%</span></div>
+        <input type="range" id="contrast" min="0" max="200" step="1" value="100">
+      </div>
+      <div class="ctrl">
+        <div class="label"><span>彩度</span><span id="satVal">100%</span></div>
+        <input type="range" id="saturate" min="0" max="200" step="1" value="100">
+      </div>
+
+      <h2>出力</h2>
+      <div class="ctrl">
+        <div class="label">フォーマット</div>
+        <select id="format" style="width:100%;">
+          <option value="image/jpeg" selected>JPEG (圧縮可)</option>
+          <option value="image/png">PNG (可逆)</option>
+          <option value="image/webp">WebP</option>
+        </select>
+      </div>
+      <div class="ctrl" id="qualityRow">
+        <div class="label"><span>JPEG/WebP 品質</span><span id="qualVal">85</span></div>
+        <input type="range" id="quality" min="1" max="100" step="1" value="85">
+      </div>
+
+      <button type="button" id="download" class="primary" style="width:100%;margin-top:10px;">ダウンロード</button>
+      <div id="outInfo" style="margin-top:8px;color:var(--muted);font-size:0.85rem;text-align:center;"></div>
+    </div>
+
+    <div>
+      <div class="preview-pair">
+        <div class="pane">
+          <div class="pane-label">元画像</div>
+          <div class="imgbox"><img id="orig" alt=""></div>
+        </div>
+        <div class="pane">
+          <div class="pane-label">加工後</div>
+          <div class="imgbox"><canvas id="canvas"></canvas></div>
+        </div>
+      </div>
+      <div id="status" style="margin-top:12px;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function fmtBytes(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(2) + ' KB';
+      return (n / 1024 / 1024).toFixed(2) + ' MB';
+    }
+
+    let originalImg = null;
+    let originalSize = 0;
+    let originalName = 'image';
+    let renderTimer = null;
+
+    function setStatus(kind, msg) {
+      $('status').innerHTML = msg ? '<div class="banner ' + kind + '">' + escapeHtml(msg) + '</div>' : '';
+    }
+
+    function loadFile(f) {
+      if (!f) return;
+      if (!f.type.startsWith('image/')) {
+        setStatus('error', '画像ファイルを選択してください');
+        return;
+      }
+      originalSize = f.size;
+      originalName = (f.name || 'image').replace(/\.[^.]+$/, '');
+      const url = URL.createObjectURL(f);
+      const img = new Image();
+      img.onload = function () {
+        originalImg = img;
+        $('orig').src = url;
+        $('origInfo').textContent =
+          img.naturalWidth + ' × ' + img.naturalHeight + ' px ・ ' +
+          fmtBytes(originalSize) + ' ・ ' + (f.type || '不明');
+        const longSide = Math.max(img.naturalWidth, img.naturalHeight);
+        $('maxSide').max = Math.max(longSide, 64);
+        $('maxSide').value = longSide;
+        $('maxSideVal').textContent = '原寸 (' + longSide + ')';
+        render();
+      };
+      img.onerror = function () {
+        setStatus('error', '画像を読み込めませんでした');
+      };
+      img.src = url;
+    }
+
+    // Drop / file input
+    const drop = $('drop');
+    drop.addEventListener('click', () => $('file').click());
+    $('file').addEventListener('change', (e) => loadFile(e.target.files[0]));
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('drag'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      drop.classList.remove('drag');
+      if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+    });
+
+    // Slider value labels
+    function bindLabel(id, labelId, suffix) {
+      $(id).addEventListener('input', function () {
+        $(labelId).textContent = this.value + (suffix || '');
+        scheduleRender();
+      });
+    }
+    bindLabel('brightness', 'brightVal', '%');
+    bindLabel('contrast', 'contrastVal', '%');
+    bindLabel('saturate', 'satVal', '%');
+    bindLabel('quality', 'qualVal');
+    $('maxSide').addEventListener('input', function () {
+      $('maxSideVal').textContent = this.value;
+      scheduleRender();
+    });
+    $('origSize').addEventListener('click', function () {
+      if (!originalImg) return;
+      const longSide = Math.max(originalImg.naturalWidth, originalImg.naturalHeight);
+      $('maxSide').value = longSide;
+      $('maxSideVal').textContent = '原寸 (' + longSide + ')';
+      render();
+    });
+
+    ['grayscale', 'sepia', 'invert', 'format'].forEach((id) =>
+      $(id).addEventListener('change', scheduleRender)
+    );
+
+    function scheduleRender() {
+      clearTimeout(renderTimer);
+      renderTimer = setTimeout(render, 60);
+    }
+
+    function applyPixelEffects(ctx, w, h) {
+      const gray = $('grayscale').checked;
+      const sepia = $('sepia').checked;
+      const invert = $('invert').checked;
+      // SVG/CSS filter は Canvas に直接適用できないので、輝度/彩度/コントラストは
+      // ImageData をピクセル単位で処理する。重い処理だが PC 用なので許容。
+      const bright = parseInt($('brightness').value, 10) / 100;
+      const contrast = parseInt($('contrast').value, 10) / 100;
+      const sat = parseInt($('saturate').value, 10) / 100;
+      if (!gray && !sepia && !invert && bright === 1 && contrast === 1 && sat === 1) return;
+
+      const imgData = ctx.getImageData(0, 0, w, h);
+      const d = imgData.data;
+      const cF = (contrast - 1) * 255;
+      const cFactor = (259 * (cF + 255)) / (255 * (259 - cF));
+      for (let i = 0; i < d.length; i += 4) {
+        let r = d[i], g = d[i + 1], b = d[i + 2];
+        // brightness
+        if (bright !== 1) { r *= bright; g *= bright; b *= bright; }
+        // saturation
+        if (sat !== 1) {
+          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+          r = lum + (r - lum) * sat;
+          g = lum + (g - lum) * sat;
+          b = lum + (b - lum) * sat;
+        }
+        // contrast
+        if (contrast !== 1) {
+          r = cFactor * (r - 128) + 128;
+          g = cFactor * (g - 128) + 128;
+          b = cFactor * (b - 128) + 128;
+        }
+        // grayscale
+        if (gray) {
+          const v = 0.299 * r + 0.587 * g + 0.114 * b;
+          r = g = b = v;
+        }
+        // sepia
+        if (sepia) {
+          const nr = r * 0.393 + g * 0.769 + b * 0.189;
+          const ng = r * 0.349 + g * 0.686 + b * 0.168;
+          const nb = r * 0.272 + g * 0.534 + b * 0.131;
+          r = nr; g = ng; b = nb;
+        }
+        // invert
+        if (invert) { r = 255 - r; g = 255 - g; b = 255 - b; }
+        d[i] = clamp255(r);
+        d[i + 1] = clamp255(g);
+        d[i + 2] = clamp255(b);
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+    function clamp255(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+
+    let lastBlob = null;
+    let lastExt = 'jpg';
+
+    async function render() {
+      if (!originalImg) return;
+      const ow = originalImg.naturalWidth;
+      const oh = originalImg.naturalHeight;
+      const longSide = Math.max(ow, oh);
+      const maxSide = parseInt($('maxSide').value, 10);
+      const scale = maxSide >= longSide ? 1 : maxSide / longSide;
+      const w = Math.max(1, Math.round(ow * scale));
+      const h = Math.max(1, Math.round(oh * scale));
+
+      const cv = $('canvas');
+      cv.width = w;
+      cv.height = h;
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(originalImg, 0, 0, w, h);
+      applyPixelEffects(ctx, w, h);
+
+      // 出力品質の表示制御
+      const fmt = $('format').value;
+      $('qualityRow').style.display = (fmt === 'image/png') ? 'none' : '';
+
+      // Blob 化（サイズ表示用）
+      try {
+        const quality = parseInt($('quality').value, 10) / 100;
+        const blob = await new Promise((res) => cv.toBlob(res, fmt, quality));
+        if (!blob) {
+          setStatus('error', 'このフォーマットの出力に失敗しました');
+          return;
+        }
+        lastBlob = blob;
+        lastExt = fmt === 'image/jpeg' ? 'jpg' : (fmt === 'image/webp' ? 'webp' : 'png');
+        const ratio = originalSize > 0 ? Math.round((blob.size / originalSize) * 100) : 0;
+        $('outInfo').textContent =
+          w + ' × ' + h + ' px ・ ' + fmtBytes(blob.size) +
+          (originalSize ? ' (元の ' + ratio + '%)' : '');
+        setStatus('', '');
+      } catch (e) {
+        setStatus('error', '出力エラー: ' + e.message);
+      }
+    }
+
+    $('download').addEventListener('click', function () {
+      if (!lastBlob) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(lastBlob);
+      a.download = originalName + '_edited.' + lastExt;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
+  })();
+</script>
+</body>
+</html>
