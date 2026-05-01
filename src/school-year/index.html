@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>入学・卒業年計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: タイムライン表 */
+  table.timeline {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  table.timeline th, table.timeline td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.95rem;
+  }
+  table.timeline thead { background: var(--bg); }
+  table.timeline th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
+  table.timeline tbody tr:last-child td { border-bottom: none; }
+  table.timeline td.year {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>入学・卒業年計算</h1>
+    <p class="lead">生年月日から、小学校・中学校・高校・大学の入学年と卒業年を西暦と和暦で表示します（履歴書用）。</p>
+  </header>
+
+  <div class="card">
+    <div style="display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;">
+      <label for="birth" style="color:var(--muted);font-size:0.95rem;">生年月日</label>
+      <input type="date" id="birth" value="2000-04-01">
+    </div>
+    <div style="margin-top:8px;color:var(--muted);font-size:0.85rem;">
+      ※ 4 月 1 日生まれは「早生まれ」扱いで、前学年の人と同じ学年になります（学校教育法）。
+    </div>
+  </div>
+
+  <h2>履歴書テーブル</h2>
+  <table class="timeline" id="timeline">
+    <thead>
+      <tr><th>年</th><th>項目</th><th>満年齢</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div id="empty" style="color:var(--muted);text-align:center;padding:24px 0;display:none;">
+    生年月日を入力してください。
+  </div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    const ERAS = [
+      { name: '令和', start: [2019, 5, 1] },
+      { name: '平成', start: [1989, 1, 8] },
+      { name: '昭和', start: [1926, 12, 25] },
+      { name: '大正', start: [1912, 7, 30] },
+      { name: '明治', start: [1868, 1, 25] },
+    ];
+    function compareYMD(a, b) {
+      if (a[0] !== b[0]) return a[0] - b[0];
+      if (a[1] !== b[1]) return a[1] - b[1];
+      return a[2] - b[2];
+    }
+    function adToJp(y, m, d) {
+      for (const e of ERAS) {
+        if (compareYMD([y, m, d], e.start) >= 0) {
+          const yy = y - e.start[0] + 1;
+          return e.name + (yy === 1 ? '元' : yy);
+        }
+      }
+      return null;
+    }
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    // 学校教育法: 満 6 歳に達した日の翌日以後の最初の学年の初め (= 4 月 1 日)
+    // 4 月 1 日生まれは前年に「満 6 歳に達した日の翌日」が 4 月 2 日なので前年度の小 1
+    function elementaryEntryYear(by, bm, bd) {
+      // 4 月 1 日まで (含む) に 6 歳になっていれば、その年の 4 月入学
+      // つまり birth + 6 年 の 4 月 1 日の時点で 6 歳以上 ≒ (by + 6, bm, bd) <= (by + 6, 4, 1)
+      if (compareYMD([0, bm, bd], [0, 4, 1]) <= 0) return by + 6;
+      return by + 7;
+    }
+    function ageOnApril1(by, bm, bd, year) {
+      // 4 月 1 日時点の満年齢
+      let age = year - by;
+      if (compareYMD([0, bm, bd], [0, 4, 1]) > 0) age--;
+      // ただし「4 月 1 日生まれ」は 4 月 1 日に満年齢に達するので含める
+      return age;
+    }
+    function ageOnMarch31(by, bm, bd, year) {
+      // 3 月 31 日時点の満年齢 (年度末)
+      let age = year - by;
+      if (compareYMD([0, bm, bd], [0, 3, 31]) > 0) age--;
+      return age;
+    }
+
+    function fmtAdJp(y, m) {
+      const jp = adToJp(y, m, 1);
+      return y + ' 年 ' + m + ' 月  (' + jp + '年)';
+    }
+
+    function render() {
+      const v = $('birth').value;
+      if (!v) { $('empty').style.display = ''; $('timeline').style.display = 'none'; return; }
+      const [by, bm, bd] = v.split('-').map((s) => parseInt(s, 10));
+      if (!Number.isFinite(by) || by < 1900) { $('empty').style.display = ''; $('timeline').style.display = 'none'; return; }
+      $('empty').style.display = 'none';
+      $('timeline').style.display = '';
+
+      const enterES = elementaryEntryYear(by, bm, bd);
+      const milestones = [
+        { label: '生まれ', ad: by, m: bm, age: 0 },
+        { label: '小学校 入学', ad: enterES, m: 4, age: ageOnApril1(by, bm, bd, enterES) },
+        { label: '小学校 卒業', ad: enterES + 6, m: 3, age: ageOnMarch31(by, bm, bd, enterES + 6) },
+        { label: '中学校 入学', ad: enterES + 6, m: 4, age: ageOnApril1(by, bm, bd, enterES + 6) },
+        { label: '中学校 卒業', ad: enterES + 9, m: 3, age: ageOnMarch31(by, bm, bd, enterES + 9) },
+        { label: '高校 入学', ad: enterES + 9, m: 4, age: ageOnApril1(by, bm, bd, enterES + 9) },
+        { label: '高校 卒業', ad: enterES + 12, m: 3, age: ageOnMarch31(by, bm, bd, enterES + 12) },
+        { label: '大学 入学（4 年制）', ad: enterES + 12, m: 4, age: ageOnApril1(by, bm, bd, enterES + 12) },
+        { label: '大学 卒業（4 年制）', ad: enterES + 16, m: 3, age: ageOnMarch31(by, bm, bd, enterES + 16) },
+        { label: '大学院修士 入学', ad: enterES + 16, m: 4, age: ageOnApril1(by, bm, bd, enterES + 16) },
+        { label: '大学院修士 修了', ad: enterES + 18, m: 3, age: ageOnMarch31(by, bm, bd, enterES + 18) },
+      ];
+      // 短大 (2 年) と専門 (2 年) も補助情報として下部に
+      const tbody = document.querySelector('#timeline tbody');
+      tbody.innerHTML = milestones.map((it) =>
+        '<tr>' +
+          '<td class="year">' + escapeHtml(fmtAdJp(it.ad, it.m)) + '</td>' +
+          '<td>' + escapeHtml(it.label) + '</td>' +
+          '<td class="year">' + it.age + ' 歳</td>' +
+        '</tr>'
+      ).join('') + (
+        '<tr>' +
+          '<td class="year">' + escapeHtml(fmtAdJp(enterES + 14, 3)) + '</td>' +
+          '<td style="color:var(--muted);">短大／専門 卒業（2 年制の場合）</td>' +
+          '<td class="year">' + ageOnMarch31(by, bm, bd, enterES + 14) + ' 歳</td>' +
+        '</tr>'
+      );
+    }
+
+    $('birth').addEventListener('input', render);
+    render();
+  })();
+</script>
+</body>
+</html>
