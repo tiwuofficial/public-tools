@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lorem Ipsum 生成 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>Lorem Ipsum / ダミー文章 生成</h1>
+    <p class="lead">デザインのレイアウト確認用に、ダミーの文章を生成します。英文 (Lorem Ipsum)・日本語の両対応。</p>
+  </header>
+
+  <div class="card">
+    <div style="display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;">
+      <label for="lang" style="color:var(--muted);font-size:0.95rem;">種類</label>
+      <select id="lang" style="width:auto;">
+        <option value="latin" selected>英文 (Lorem Ipsum)</option>
+        <option value="ja">日本語</option>
+        <option value="ja-classic">日本語 (古文・短歌風)</option>
+      </select>
+
+      <label for="unit" style="color:var(--muted);font-size:0.95rem;">単位</label>
+      <select id="unit" style="width:auto;">
+        <option value="paragraph" selected>段落</option>
+        <option value="sentence">文</option>
+        <option value="word">単語</option>
+        <option value="char">文字</option>
+      </select>
+
+      <label for="count" style="color:var(--muted);font-size:0.95rem;">数</label>
+      <input type="number" id="count" min="1" max="500" value="3">
+
+      <label style="color:var(--muted);font-size:0.95rem;">オプション</label>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;">
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;">
+          <input type="checkbox" id="startLorem" checked style="width:auto;"> "Lorem ipsum dolor sit amet…" で始める (英文時)
+        </label>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;">
+          <input type="checkbox" id="wrapHtml" style="width:auto;"> HTML &lt;p&gt; タグで囲む
+        </label>
+      </div>
+    </div>
+
+    <div class="actions" style="margin-top:14px;">
+      <button type="button" id="generate" class="primary">生成</button>
+      <button type="button" id="copy">コピー</button>
+    </div>
+  </div>
+
+  <h2>結果</h2>
+  <textarea id="output" rows="14" readonly></textarea>
+  <div id="info" style="color:var(--muted);font-size:0.85rem;text-align:right;margin-top:4px;"></div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    // ===== 単語プール =====
+    const LATIN_WORDS = (
+      'lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ' +
+      'enim ad minim veniam quis nostrud exercitation ullamco laboris nisi aliquip ex ea commodo consequat duis aute irure ' +
+      'reprehenderit in voluptate velit esse cillum eu fugiat nulla pariatur excepteur sint occaecat cupidatat non proident ' +
+      'sunt culpa qui officia deserunt mollit anim id est laborum at vero eos accusamus iusto odio dignissimos ducimus blanditiis ' +
+      'praesentium voluptatum deleniti atque corrupti dolores quos quas molestias excepturi obcaecati cupiditate similique mollitia ' +
+      'animi laboriosam doloremque laudantium totam rem aperiam eaque ipsa quae ab illo inventore veritatis quasi architecto beatae ' +
+      'vitae dicta explicabo nemo enim voluptas aspernatur aut odit fugit sed quia consequuntur magni dolores ratione sequi nesciunt'
+    ).split(/\s+/);
+
+    const JA_WORDS = (
+      '今日 明日 昨日 太陽 月 星 空 雲 雨 風 海 山 川 森 街 道 人 子供 大人 旅 旅人 物語 話 詩 歌 歌声 ' +
+      '光 影 朝 昼 夜 夕暮 春 夏 秋 冬 桜 紅葉 雪 花 木々 鳥 蝶 魚 犬 猫 言葉 思い 願い 希望 夢 静寂 騒音 ' +
+      '心 体 笑顔 涙 微笑 記憶 時間 場所 家 部屋 窓 扉 椅子 机 本 紙 鉛筆 絵 写真 音楽 旋律 響き 鼓動 香り 味 ' +
+      '色 赤 青 黄 緑 白 黒 灰色 透明 鮮やか 静か 賑やか 優しい 厳しい 暖かい 涼しい 冷たい 軽い 重い 速い 遅い'
+    ).split(/\s+/);
+
+    const JA_CLASSIC = (
+      '春霞 たなびく 山辺 桜花 散りぬる 我が世 誰そ 香り立ち 風そよぐ 月明かり 朧月 夜更け 夢見る 静寂 ' +
+      'いにしへ 都 雅やか 雪深し 草枕 旅の空 古き良き 都路 霞立ち 朝霧 夕映え 山かげ 鶯 ほととぎす 砕け散る ' +
+      '玉の緒 言の葉 文書き 筆を取り 想ひ出 雁 漂泊 たゆたふ ささやき 響く 鈴の音 涙ぐむ 紅葉散る 木枯らし'
+    ).split(/\s+/);
+
+    function rand(max) { return Math.floor(Math.random() * max); }
+    function pick(arr) { return arr[rand(arr.length)]; }
+
+    function genLatinSentence(words, isFirst, startLorem) {
+      const len = 6 + rand(12);
+      const arr = [];
+      for (let i = 0; i < len; i++) arr.push(pick(words));
+      if (isFirst && startLorem) {
+        arr[0] = 'Lorem'; arr[1] = 'ipsum'; arr[2] = 'dolor'; arr[3] = 'sit'; arr[4] = 'amet,';
+      }
+      let s = arr.join(' ');
+      // 適度に , を挿入
+      if (rand(2) === 0) {
+        const pos = 3 + rand(arr.length - 4);
+        s = s.split(' ').map((w, i) => i === pos ? w + ',' : w).join(' ');
+      }
+      s = s[0].toUpperCase() + s.slice(1) + '.';
+      return s;
+    }
+
+    function genJaSentence(words) {
+      const len = 6 + rand(10);
+      const arr = [];
+      for (let i = 0; i < len; i++) arr.push(pick(words));
+      const tails = ['です。', 'でした。', 'である。', 'だった。', 'なのだ。', 'のようだ。', 'と言える。', 'かもしれない。'];
+      // 単語を「の」「は」「が」などで繋ぐ
+      const conn = ['の', 'は', 'が', 'を', 'と', 'に', 'から', 'まで', 'より'];
+      let s = arr[0];
+      for (let i = 1; i < arr.length; i++) {
+        s += pick(conn) + arr[i];
+      }
+      return s + pick(tails);
+    }
+
+    function genJaClassicSentence(words) {
+      const len = 5 + rand(8);
+      const arr = [];
+      for (let i = 0; i < len; i++) arr.push(pick(words));
+      return arr.join('、') + '。';
+    }
+
+    function generate() {
+      const lang = $('lang').value;
+      const unit = $('unit').value;
+      const count = Math.max(1, Math.min(500, parseInt($('count').value, 10) || 1));
+      const startLorem = $('startLorem').checked;
+      const wrapHtml = $('wrapHtml').checked;
+
+      const words = lang === 'latin' ? LATIN_WORDS : (lang === 'ja' ? JA_WORDS : JA_CLASSIC);
+      const sentenceFn = lang === 'latin' ? (isFirst) => genLatinSentence(words, isFirst, startLorem)
+                       : lang === 'ja' ? () => genJaSentence(words)
+                       : () => genJaClassicSentence(words);
+
+      let result = '';
+      if (unit === 'paragraph') {
+        const paras = [];
+        for (let p = 0; p < count; p++) {
+          const sentN = 3 + rand(4);
+          const sents = [];
+          for (let s = 0; s < sentN; s++) {
+            sents.push(sentenceFn(p === 0 && s === 0));
+          }
+          const sep = lang === 'latin' ? ' ' : '';
+          paras.push(sents.join(sep));
+        }
+        result = paras.join('\n\n');
+      } else if (unit === 'sentence') {
+        const sents = [];
+        for (let s = 0; s < count; s++) sents.push(sentenceFn(s === 0));
+        const sep = lang === 'latin' ? ' ' : '';
+        result = sents.join(sep);
+      } else if (unit === 'word') {
+        const arr = [];
+        for (let i = 0; i < count; i++) arr.push(pick(words));
+        if (lang === 'latin' && startLorem && count >= 5) {
+          arr[0] = 'Lorem'; arr[1] = 'ipsum'; arr[2] = 'dolor'; arr[3] = 'sit'; arr[4] = 'amet';
+        }
+        result = arr.join(lang === 'latin' ? ' ' : '');
+      } else if (unit === 'char') {
+        // sentence 単位で生成して count 文字に切る
+        const buf = [];
+        let total = 0;
+        while (total < count) {
+          const s = sentenceFn(buf.length === 0);
+          buf.push(s);
+          total += s.length + (lang === 'latin' ? 1 : 0);
+        }
+        result = (lang === 'latin' ? buf.join(' ') : buf.join('')).slice(0, count);
+      }
+
+      if (wrapHtml && unit === 'paragraph') {
+        result = result.split('\n\n').map((p) => '<p>' + p + '</p>').join('\n');
+      }
+
+      $('output').value = result;
+      const charLen = Array.from(result).length;
+      $('info').textContent = charLen.toLocaleString('ja-JP') + ' 文字';
+    }
+
+    ['lang', 'unit', 'count', 'startLorem', 'wrapHtml'].forEach((id) => {
+      $(id).addEventListener('input', generate);
+      $(id).addEventListener('change', generate);
+    });
+    $('generate').addEventListener('click', generate);
+    $('copy').addEventListener('click', async function () {
+      if (!$('output').value) return;
+      try {
+        await navigator.clipboard.writeText($('output').value);
+        const o = this.textContent; this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = o, 1000);
+      } catch (e) {}
+    });
+
+    generate();
+  })();
+</script>
+</body>
+</html>
