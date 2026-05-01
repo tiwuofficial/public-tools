@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>数字 ⇄ 漢数字 変換 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>数字 ⇄ 漢数字 変換</h1>
+    <p class="lead">アラビア数字と漢数字を相互変換します。文章中の数字を一括変換するモードもあります。</p>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button type="button" class="active" data-mode="num2kan">数字 → 漢数字</button>
+    <button type="button" data-mode="kan2num">漢数字 → 数字</button>
+    <button type="button" data-mode="text">文章内を一括変換</button>
+  </div>
+
+  <section id="tab-num2kan">
+    <div class="card">
+      <div style="display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;">
+        <label for="numIn" style="color:var(--muted);font-size:0.95rem;">数字</label>
+        <input type="text" id="numIn" inputmode="numeric" placeholder="例: 1234567" value="1234567">
+
+        <label style="color:var(--muted);font-size:0.95rem;">表記</label>
+        <select id="numStyle" style="width:auto;">
+          <option value="positional" selected>位取り (千二百三十四)</option>
+          <option value="reading">読み式 (一二三四)</option>
+          <option value="formal">大字 (壱弐参 — 契約書用)</option>
+        </select>
+      </div>
+    </div>
+    <h2>結果</h2>
+    <ul class="plain-list" id="numOut"></ul>
+  </section>
+
+  <section id="tab-kan2num" style="display:none;">
+    <div class="card">
+      <div style="display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;">
+        <label for="kanIn" style="color:var(--muted);font-size:0.95rem;">漢数字</label>
+        <input type="text" id="kanIn" placeholder="例: 一万二千三百四十五" value="一万二千三百四十五">
+      </div>
+    </div>
+    <h2>結果</h2>
+    <ul class="plain-list" id="kanOut"></ul>
+  </section>
+
+  <section id="tab-text" style="display:none;">
+    <div class="card">
+      <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;">
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.95rem;">
+          方向
+          <select id="textDir" style="width:auto;">
+            <option value="num2kan" selected>数字 → 漢数字</option>
+            <option value="kan2num">漢数字 → 数字</option>
+          </select>
+        </label>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;color:var(--muted);">
+          数字 → 漢数字 の表記
+          <select id="textStyle" style="width:auto;">
+            <option value="positional" selected>位取り</option>
+            <option value="reading">読み式</option>
+            <option value="formal">大字</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="split-2" style="margin-top:12px;">
+      <div class="pane">
+        <div class="pane-label">入力</div>
+        <textarea id="textIn" rows="12" placeholder="ここに文章を貼り付け…"></textarea>
+      </div>
+      <div class="pane">
+        <div class="pane-label">出力</div>
+        <textarea id="textOut" rows="12" readonly></textarea>
+      </div>
+    </div>
+    <div class="actions" style="margin-top:8px;">
+      <button type="button" id="copyText" class="primary">出力をコピー</button>
+    </div>
+  </section>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    対応範囲: 0 〜 10 京 (10<sup>17</sup>) 程度。負の数や小数点は「マイナス」「点」と読み下しに対応。大字は契約書・領収書で改ざん防止に使われます。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const tabs = document.querySelectorAll('.tabs button');
+
+    tabs.forEach((b) => b.addEventListener('click', function () {
+      tabs.forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      ['num2kan', 'kan2num', 'text'].forEach((t) => $('tab-' + t).style.display = b.dataset.mode === t ? '' : 'none');
+    }));
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function row(label, val) {
+      return '<li><span class="label">' + escapeHtml(label) + '</span><span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:1rem;cursor:pointer;" data-copy="' + escapeAttr(val) + '" title="クリックでコピー">' + escapeHtml(val) + '</span></li>';
+    }
+    function escapeAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+
+    // ===== 数字 → 漢数字 =====
+    const KANJI_DIGITS = ['〇', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+    const KANJI_FORMAL = ['零', '壱', '弐', '参', '四', '五', '六', '七', '八', '九'];
+    const KANJI_FORMAL_UNITS = { 10: '拾', 100: '百', 1000: '阡', 10000: '萬' };
+
+    function numToKanji(n, style) {
+      n = String(n).trim();
+      if (n === '') return '';
+      if (n.startsWith('-')) return 'マイナス' + numToKanji(n.slice(1), style);
+      // 小数
+      if (n.includes('.')) {
+        const [a, b] = n.split('.');
+        return numToKanji(a, style) + '点' + Array.from(b).map((c) => digitChar(c, style)).join('');
+      }
+      if (!/^\d+$/.test(n)) return null;
+      // 0
+      if (n === '0') return digitChar('0', style);
+
+      if (style === 'reading') {
+        return Array.from(n).map((c) => digitChar(c, style)).join('');
+      }
+
+      // 位取り
+      // 4 桁ごとに区切り、万・億・兆・京 を付与
+      const groupNames = ['', '万', '億', '兆', '京'];
+      const groups = [];
+      let s = n;
+      while (s.length > 0) {
+        groups.unshift(s.slice(-4));
+        s = s.slice(0, -4);
+      }
+      const parts = [];
+      groups.forEach((g, idx) => {
+        const val = parseInt(g, 10);
+        if (val === 0) return;
+        const groupKan = sub10000(val, style);
+        const unitName = groupNames[groups.length - 1 - idx];
+        parts.push(groupKan + unitName);
+      });
+      return parts.join('') || digitChar('0', style);
+    }
+    function sub10000(n, style) {
+      // n: 0〜9999
+      if (n === 0) return '';
+      const thousand = Math.floor(n / 1000);
+      const hundred = Math.floor((n % 1000) / 100);
+      const ten = Math.floor((n % 100) / 10);
+      const one = n % 10;
+      let out = '';
+      if (thousand > 0) {
+        if (style === 'formal') out += (thousand === 1 ? '' : digitChar(thousand, style)) + KANJI_FORMAL_UNITS[1000];
+        else out += (thousand === 1 ? '千' : (digitChar(thousand, style) + '千'));
+        if (style === 'formal' && thousand === 1) out = '壱阡';
+      }
+      if (hundred > 0) {
+        if (style === 'formal') out += (hundred === 1 ? '' : digitChar(hundred, style)) + KANJI_FORMAL_UNITS[100];
+        else out += (hundred === 1 ? '百' : (digitChar(hundred, style) + '百'));
+        if (style === 'formal' && hundred === 1) out += '壱百'.slice(out.length);
+      }
+      if (ten > 0) {
+        if (style === 'formal') out += (ten === 1 ? '' : digitChar(ten, style)) + KANJI_FORMAL_UNITS[10];
+        else out += (ten === 1 ? '十' : (digitChar(ten, style) + '十'));
+        if (style === 'formal' && ten === 1) out += '壱拾'.slice(out.length);
+      }
+      if (one > 0) out += digitChar(one, style);
+      return out;
+    }
+    function digitChar(d, style) {
+      const i = typeof d === 'number' ? d : parseInt(d, 10);
+      if (style === 'formal') return KANJI_FORMAL[i];
+      return KANJI_DIGITS[i];
+    }
+
+    // ===== 漢数字 → 数字 =====
+    const DIGIT_MAP = { '〇':0,'零':0,'一':1,'壱':1,'二':2,'弐':2,'三':3,'参':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9 };
+    const SMALL_UNIT = { '十':10,'拾':10,'百':100,'阡':1000,'千':1000 };
+    const BIG_UNIT = { '万':10000, '萬':10000, '億':100000000, '兆':1000000000000, '京':10000000000000000 };
+
+    function kanjiToNum(text) {
+      if (!text) return null;
+      let s = text.trim();
+      let neg = false;
+      if (s.startsWith('マイナス')) { neg = true; s = s.slice(4); }
+      else if (s.startsWith('-')) { neg = true; s = s.slice(1); }
+      // 小数点
+      let frac = '';
+      if (s.includes('点')) {
+        const [a, b] = s.split('点');
+        s = a;
+        for (const c of b) {
+          const d = DIGIT_MAP[c];
+          if (d == null) return null;
+          frac += d;
+        }
+      } else if (s.includes('.')) {
+        const [a, b] = s.split('.');
+        s = a;
+        frac = b.match(/^[0-9]+$/) ? b : '';
+      }
+
+      // 純粋に「読み式」(漢字数字 + 小単位なし) の場合
+      if (/^[〇零一壱二弐三参四五六七八九]+$/.test(s)) {
+        let v = 0n;
+        for (const c of s) v = v * 10n + BigInt(DIGIT_MAP[c]);
+        return formatBig(v, neg, frac);
+      }
+
+      // 大単位 (万・億・兆・京) で分割
+      let total = 0n;
+      let i = 0;
+      while (i < s.length) {
+        // 大単位までの部分を読む
+        let chunk = '';
+        let bigUnit = 1n;
+        let foundBig = false;
+        for (let j = i; j < s.length; j++) {
+          if (BIG_UNIT[s[j]] !== undefined) {
+            chunk = s.slice(i, j);
+            bigUnit = BigInt(BIG_UNIT[s[j]]);
+            i = j + 1;
+            foundBig = true;
+            break;
+          }
+        }
+        if (!foundBig) {
+          chunk = s.slice(i);
+          i = s.length;
+        }
+        const n = parseSub10000(chunk);
+        if (n === null) return null;
+        total += BigInt(n) * bigUnit;
+      }
+      return formatBig(total, neg, frac);
+    }
+    function parseSub10000(chunk) {
+      if (chunk === '') return 1; // 「万」単独 → 1万 扱い
+      let total = 0;
+      let cur = 0;
+      for (const c of chunk) {
+        if (DIGIT_MAP[c] !== undefined) {
+          cur = cur * 10 + DIGIT_MAP[c];
+        } else if (SMALL_UNIT[c] !== undefined) {
+          const u = SMALL_UNIT[c];
+          total += (cur === 0 ? 1 : cur) * u;
+          cur = 0;
+        } else {
+          return null;
+        }
+      }
+      total += cur;
+      return total;
+    }
+    function formatBig(big, neg, frac) {
+      const s = (neg ? '-' : '') + big.toString() + (frac ? '.' + frac : '');
+      return s;
+    }
+
+    // ===== 単発: 数字 → 漢数字 =====
+    function renderNum2Kan() {
+      const v = $('numIn').value;
+      const style = $('numStyle').value;
+      if (v === '' || isNaN(parseFloat(v))) { $('numOut').innerHTML = ''; return; }
+      const main = numToKanji(v, style);
+      const items = [
+        row('入力', v),
+        row(({ positional: '位取り', reading: '読み式', formal: '大字' })[style], main || '変換できませんでした'),
+      ];
+      // 他の表記も補助表示
+      if (style !== 'positional') items.push(row('位取り', numToKanji(v, 'positional')));
+      if (style !== 'reading') items.push(row('読み式', numToKanji(v, 'reading')));
+      if (style !== 'formal') items.push(row('大字', numToKanji(v, 'formal')));
+      // 桁区切り
+      const num = parseFloat(v);
+      if (!isNaN(num) && Math.abs(num) >= 1000) {
+        items.push(row('カンマ区切り', num.toLocaleString('en-US')));
+      }
+      $('numOut').innerHTML = items.join('');
+    }
+
+    // ===== 単発: 漢数字 → 数字 =====
+    function renderKan2Num() {
+      const v = $('kanIn').value;
+      if (v === '') { $('kanOut').innerHTML = ''; return; }
+      const r = kanjiToNum(v);
+      if (r === null) {
+        $('kanOut').innerHTML = '<li><span class="label">エラー</span><span>解釈できませんでした</span></li>';
+        return;
+      }
+      const items = [
+        row('入力', v),
+        row('数字', r),
+      ];
+      const num = parseFloat(r);
+      if (!isNaN(num) && Math.abs(num) >= 1000) {
+        items.push(row('カンマ区切り', num.toLocaleString('en-US')));
+      }
+      $('kanOut').innerHTML = items.join('');
+    }
+
+    // ===== 文章一括変換 =====
+    function renderText() {
+      const dir = $('textDir').value;
+      const style = $('textStyle').value;
+      const src = $('textIn').value;
+      if (!src) { $('textOut').value = ''; return; }
+      let out;
+      if (dir === 'num2kan') {
+        out = src.replace(/-?\d+(?:\.\d+)?/g, (m) => numToKanji(m, style) || m);
+      } else {
+        // 漢数字 (位取りも含む) を検出して置換
+        out = src.replace(/(?:マイナス)?[〇零一壱二弐三参四五六七八九十拾百阡千万萬億兆京]+(?:点[〇零一壱二弐三参四五六七八九]+)?/g, (m) => {
+          const r = kanjiToNum(m);
+          return r === null ? m : r;
+        });
+      }
+      $('textOut').value = out;
+    }
+
+    // ===== バインド =====
+    ['numIn', 'numStyle'].forEach((id) => $(id).addEventListener('input', renderNum2Kan));
+    $('numStyle').addEventListener('change', renderNum2Kan);
+    $('kanIn').addEventListener('input', renderKan2Num);
+    ['textIn', 'textDir', 'textStyle'].forEach((id) => {
+      $(id).addEventListener('input', renderText);
+      $(id).addEventListener('change', renderText);
+    });
+
+    // クリックコピー
+    document.body.addEventListener('click', async function (e) {
+      const li = e.target.closest('[data-copy]');
+      if (!li) return;
+      try {
+        await navigator.clipboard.writeText(li.dataset.copy);
+        const orig = li.style.background;
+        li.style.background = 'var(--added-bg)';
+        setTimeout(() => li.style.background = orig, 600);
+      } catch (e) {}
+    });
+    $('copyText').addEventListener('click', async function () {
+      if (!$('textOut').value) return;
+      try {
+        await navigator.clipboard.writeText($('textOut').value);
+        const o = this.textContent; this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = o, 1000);
+      } catch (e) {}
+    });
+
+    // 初期サンプル
+    $('textIn').value = '今日は2026年5月1日、午前9時30分から会議を行います。参加費は1500円、定員25名までです。';
+    renderNum2Kan(); renderKan2Num(); renderText();
+  })();
+</script>
+</body>
+</html>
