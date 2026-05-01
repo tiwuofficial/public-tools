@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>URL エンコード / デコード - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>URL エンコード / デコード</h1>
+    <p class="lead">URL のパーセントエンコードと、クエリ文字列のパース／組み立てを行います。</p>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button type="button" class="active" data-mode="encode">エンコード</button>
+    <button type="button" data-mode="decode">デコード</button>
+    <button type="button" data-mode="query">クエリ文字列パース</button>
+  </div>
+
+  <!-- エンコード / デコード -->
+  <section id="tab-codec">
+    <div class="split-2">
+      <div class="pane">
+        <div class="pane-label" id="leftLabel">入力 (生テキスト)</div>
+        <textarea id="left" rows="14"></textarea>
+      </div>
+      <div class="pane">
+        <div class="pane-label" id="rightLabel">出力 (パーセントエンコード)</div>
+        <textarea id="right" rows="14" readonly></textarea>
+      </div>
+    </div>
+
+    <div class="actions" style="margin-top:12px;">
+      <button type="button" id="run" class="primary">変換</button>
+      <button type="button" id="swap">入出力を入れ替え</button>
+      <button type="button" id="copy">出力をコピー</button>
+      <button type="button" id="clear">クリア</button>
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;color:var(--muted);">
+        方式
+        <select id="kind" style="width:auto;">
+          <option value="component" selected>encodeURIComponent (推奨)</option>
+          <option value="uri">encodeURI</option>
+          <option value="form">application/x-www-form-urlencoded (空白を + に)</option>
+        </select>
+      </label>
+    </div>
+
+    <div id="status"></div>
+  </section>
+
+  <!-- クエリ文字列パース -->
+  <section id="tab-query" style="display:none;">
+    <div class="pane-label">クエリ文字列 / URL</div>
+    <textarea id="qIn" rows="4" placeholder="例: https://example.com/search?q=ねこ&page=2&tags=a&tags=b"></textarea>
+    <div class="actions" style="margin-top:8px;">
+      <button type="button" id="qParse" class="primary">パース</button>
+      <button type="button" id="qBuild">テーブルから組み立て</button>
+    </div>
+
+    <h2 style="margin-top:18px;">パラメータ</h2>
+    <table id="qTable" style="width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;">
+      <thead style="background:var(--bg);">
+        <tr>
+          <th style="text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);width:35%;">キー</th>
+          <th style="text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);">値</th>
+          <th style="width:60px;border-bottom:1px solid var(--border);"></th>
+        </tr>
+      </thead>
+      <tbody id="qRows"></tbody>
+    </table>
+    <div class="actions" style="margin-top:8px;">
+      <button type="button" id="qAdd">行を追加</button>
+    </div>
+
+    <h2>組み立て結果</h2>
+    <pre class="code" id="qOut" style="white-space:pre-wrap;"></pre>
+  </section>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const tabs = document.querySelectorAll('.tabs button');
+    let mode = 'encode';
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function setStatus(kind, msg) {
+      $('status').innerHTML = msg ? '<div class="banner ' + kind + '">' + escapeHtml(msg) + '</div>' : '';
+    }
+
+    // ---- タブ ----
+    function setMode(m) {
+      mode = m;
+      tabs.forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
+      const isQuery = m === 'query';
+      $('tab-codec').style.display = isQuery ? 'none' : '';
+      $('tab-query').style.display = isQuery ? '' : 'none';
+      if (m === 'encode') {
+        $('leftLabel').textContent = '入力 (生テキスト)';
+        $('rightLabel').textContent = '出力 (パーセントエンコード)';
+        $('left').placeholder = '例: 検索クエリ ねこ かわいい';
+      } else if (m === 'decode') {
+        $('leftLabel').textContent = '入力 (パーセントエンコード)';
+        $('rightLabel').textContent = '出力 (生テキスト)';
+        $('left').placeholder = '例: %E3%81%AD%E3%81%93+%E3%81%8B%E3%82%8F%E3%81%84%E3%81%84';
+      }
+      run();
+    }
+    tabs.forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+
+    // ---- エンコード/デコード ----
+    function run() {
+      if (mode === 'query') return;
+      const src = $('left').value;
+      $('status').innerHTML = '';
+      if (!src) { $('right').value = ''; return; }
+      const kind = $('kind').value;
+      try {
+        if (mode === 'encode') {
+          let out;
+          if (kind === 'component') out = encodeURIComponent(src);
+          else if (kind === 'uri') out = encodeURI(src);
+          else out = encodeURIComponent(src).replace(/%20/g, '+');
+          $('right').value = out;
+        } else {
+          let s = src;
+          if (kind === 'form') s = s.replace(/\+/g, '%20');
+          const out = (kind === 'uri') ? decodeURI(s) : decodeURIComponent(s);
+          $('right').value = out;
+        }
+      } catch (e) {
+        setStatus('error', '変換エラー: ' + e.message);
+        $('right').value = '';
+      }
+    }
+    $('run').addEventListener('click', run);
+    $('left').addEventListener('input', run);
+    $('kind').addEventListener('change', run);
+    $('swap').addEventListener('click', function () {
+      $('left').value = $('right').value;
+      setMode(mode === 'encode' ? 'decode' : 'encode');
+    });
+    $('copy').addEventListener('click', async function () {
+      if (!$('right').value) return;
+      try {
+        await navigator.clipboard.writeText($('right').value);
+        const o = this.textContent; this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = o, 1000);
+      } catch (e) {}
+    });
+    $('clear').addEventListener('click', function () {
+      $('left').value = ''; $('right').value = ''; setStatus('', ''); $('left').focus();
+    });
+    $('left').addEventListener('keydown', function (e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); }
+    });
+
+    // ---- クエリパース ----
+    function rowHtml(k, v) {
+      return '<tr>' +
+        '<td style="padding:6px 12px;border-bottom:1px solid var(--border);"><input type="text" class="q-k" value="' + escapeAttr(k) + '"></td>' +
+        '<td style="padding:6px 12px;border-bottom:1px solid var(--border);"><input type="text" class="q-v" value="' + escapeAttr(v) + '"></td>' +
+        '<td style="padding:6px 12px;border-bottom:1px solid var(--border);text-align:center;"><button type="button" class="q-del">削除</button></td>' +
+      '</tr>';
+    }
+    function escapeAttr(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function parseQuery() {
+      let s = $('qIn').value.trim();
+      if (!s) { $('qRows').innerHTML = ''; $('qOut').textContent = ''; return; }
+      const qIdx = s.indexOf('?');
+      if (qIdx >= 0) s = s.slice(qIdx + 1);
+      const hashIdx = s.indexOf('#');
+      if (hashIdx >= 0) s = s.slice(0, hashIdx);
+      const rows = [];
+      s.split('&').forEach((p) => {
+        if (!p) return;
+        const eq = p.indexOf('=');
+        const k = eq >= 0 ? p.slice(0, eq) : p;
+        const v = eq >= 0 ? p.slice(eq + 1) : '';
+        try {
+          rows.push([decodeURIComponent(k.replace(/\+/g, '%20')), decodeURIComponent(v.replace(/\+/g, '%20'))]);
+        } catch (e) { rows.push([k, v]); }
+      });
+      $('qRows').innerHTML = rows.map(([k, v]) => rowHtml(k, v)).join('');
+      buildQuery();
+    }
+    function buildQuery() {
+      const rows = $('qRows').querySelectorAll('tr');
+      const parts = [];
+      rows.forEach((r) => {
+        const k = r.querySelector('.q-k').value;
+        const v = r.querySelector('.q-v').value;
+        if (!k && !v) return;
+        parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
+      });
+      $('qOut').textContent = parts.length ? '?' + parts.join('&') : '';
+    }
+    $('qParse').addEventListener('click', parseQuery);
+    $('qIn').addEventListener('input', parseQuery);
+    $('qBuild').addEventListener('click', buildQuery);
+    $('qAdd').addEventListener('click', function () {
+      $('qRows').insertAdjacentHTML('beforeend', rowHtml('', ''));
+    });
+    document.body.addEventListener('click', function (e) {
+      if (e.target.classList.contains('q-del')) {
+        e.target.closest('tr').remove();
+        buildQuery();
+      }
+    });
+    document.body.addEventListener('input', function (e) {
+      if (e.target.classList.contains('q-k') || e.target.classList.contains('q-v')) {
+        buildQuery();
+      }
+    });
+
+    setMode('encode');
+  })();
+</script>
+</body>
+</html>
