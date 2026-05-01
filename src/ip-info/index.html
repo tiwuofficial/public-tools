@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IP アドレス確認 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 大きい IP 表示 */
+  .ip-big {
+    text-align: center;
+    padding: 32px 16px;
+  }
+  .ip-big .num {
+    font-size: 2.4rem;
+    font-weight: 700;
+    color: var(--accent);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    word-break: break-all;
+    cursor: pointer;
+  }
+  .ip-big .num:hover { opacity: 0.8; }
+  .ip-big .label {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-top: 6px;
+  }
+  .ip-big.loading .num { color: var(--muted); font-size: 1.4rem; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>IP アドレス確認</h1>
+    <p class="lead">あなたのグローバル IP アドレスとブラウザの環境情報を表示します。</p>
+  </header>
+
+  <h2>グローバル IP</h2>
+  <div class="card ip-big loading" id="globalIpCard">
+    <div class="num" id="globalIp" title="クリックでコピー">取得中…</div>
+    <div class="label" id="globalIpLabel"></div>
+  </div>
+
+  <div class="actions" style="justify-content:center;margin-top:8px;">
+    <button type="button" id="reload">再取得</button>
+  </div>
+
+  <h2>ブラウザ・環境情報</h2>
+  <ul class="plain-list" id="envList"></ul>
+
+  <h2>ローカル IP（WebRTC）</h2>
+  <div class="card">
+    <div id="localStatus" style="color:var(--muted);font-size:0.9rem;margin-bottom:6px;">取得には数秒かかります。最近のブラウザではプライバシー保護のため取得できないことがあります。</div>
+    <ul class="plain-list" id="localIps" style="display:none;"></ul>
+    <div class="actions">
+      <button type="button" id="getLocal">ローカル IP を取得</button>
+    </div>
+  </div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    グローバル IP の取得には外部 API <code>api.ipify.org</code> を 1 回だけ呼び出します。それ以外の情報はすべてブラウザ内で取得し、外部送信はしません。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function row(label, val, copyable) {
+      const cls = copyable && val !== '-' ? ' style="cursor:pointer;" data-copy="' + escapeAttr(val) + '" title="クリックでコピー"' : '';
+      return '<li' + cls + '><span class="label">' + escapeHtml(label) + '</span><span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">' + escapeHtml(val) + '</span></li>';
+    }
+    function escapeAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    // ===== グローバル IP =====
+    async function fetchGlobalIp() {
+      const card = $('globalIpCard');
+      card.classList.add('loading');
+      $('globalIp').textContent = '取得中…';
+      $('globalIpLabel').textContent = '';
+      try {
+        const res = await fetch('https://api.ipify.org?format=json', { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const ip = data.ip || '';
+        const ver = ip.includes(':') ? 'IPv6' : (/^\d+\.\d+\.\d+\.\d+$/.test(ip) ? 'IPv4' : '不明');
+        $('globalIp').textContent = ip;
+        $('globalIpLabel').textContent = ver;
+        card.classList.remove('loading');
+      } catch (e) {
+        $('globalIp').textContent = '取得失敗';
+        $('globalIpLabel').textContent = e.message + '（オフライン、または広告ブロッカー等で外部 API がブロックされている可能性があります）';
+      }
+    }
+
+    $('globalIp').addEventListener('click', async function () {
+      const v = this.textContent;
+      if (!v || v === '取得中…' || v === '取得失敗') return;
+      try {
+        await navigator.clipboard.writeText(v);
+        const orig = this.style.color;
+        this.style.color = '#16a34a';
+        setTimeout(() => this.style.color = orig, 600);
+      } catch (e) {}
+    });
+    $('reload').addEventListener('click', fetchGlobalIp);
+
+    // ===== 環境情報 =====
+    function detectOS(ua) {
+      if (/Windows NT 11/i.test(ua) || /Windows NT 10\.0/i.test(ua)) return 'Windows 10/11';
+      if (/Windows NT 6\.3/.test(ua)) return 'Windows 8.1';
+      if (/Windows NT 6\.2/.test(ua)) return 'Windows 8';
+      if (/Windows NT 6\.1/.test(ua)) return 'Windows 7';
+      if (/Mac OS X ([\d_\.]+)/.test(ua)) {
+        const m = ua.match(/Mac OS X ([\d_\.]+)/);
+        return 'macOS ' + (m[1] || '').replace(/_/g, '.');
+      }
+      if (/Android ([\d.]+)/.test(ua)) return 'Android ' + ua.match(/Android ([\d.]+)/)[1];
+      if (/iPhone OS ([\d_]+)/.test(ua)) return 'iOS ' + ua.match(/iPhone OS ([\d_]+)/)[1].replace(/_/g, '.');
+      if (/iPad/.test(ua)) return 'iPadOS';
+      if (/Linux/.test(ua)) return 'Linux';
+      return '不明';
+    }
+    function detectBrowser(ua) {
+      // Edge は EdgA / Edg / Edge があるので先に判定
+      if (/Edg\/([\d.]+)/.test(ua)) return 'Edge ' + ua.match(/Edg\/([\d.]+)/)[1];
+      if (/OPR\/([\d.]+)/.test(ua)) return 'Opera ' + ua.match(/OPR\/([\d.]+)/)[1];
+      if (/Firefox\/([\d.]+)/.test(ua)) return 'Firefox ' + ua.match(/Firefox\/([\d.]+)/)[1];
+      if (/Chrome\/([\d.]+)/.test(ua)) return 'Chrome ' + ua.match(/Chrome\/([\d.]+)/)[1];
+      if (/Version\/([\d.]+).*Safari/.test(ua)) return 'Safari ' + ua.match(/Version\/([\d.]+)/)[1];
+      return '不明';
+    }
+    function fmtBytes(n) {
+      if (n == null) return '不明';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+      return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+    }
+    function tzOffsetStr() {
+      const off = -new Date().getTimezoneOffset();
+      const sign = off >= 0 ? '+' : '-';
+      const abs = Math.abs(off);
+      return 'UTC' + sign + String(Math.floor(abs / 60)).padStart(2, '0') + ':' + String(abs % 60).padStart(2, '0');
+    }
+
+    function renderEnv() {
+      const ua = navigator.userAgent;
+      const items = [
+        row('OS', detectOS(ua), true),
+        row('ブラウザ', detectBrowser(ua), true),
+        row('User Agent', ua, true),
+        row('言語', navigator.language + (navigator.languages ? ' (' + navigator.languages.join(', ') + ')' : ''), true),
+        row('画面解像度', screen.width + ' × ' + screen.height + ' px', true),
+        row('利用可能領域', screen.availWidth + ' × ' + screen.availHeight + ' px'),
+        row('ウィンドウ', window.innerWidth + ' × ' + window.innerHeight + ' px'),
+        row('色深度', screen.colorDepth + ' bit'),
+        row('ピクセル比', String(window.devicePixelRatio)),
+        row('タイムゾーン', Intl.DateTimeFormat().resolvedOptions().timeZone + ' (' + tzOffsetStr() + ')', true),
+        row('Cookie 有効', navigator.cookieEnabled ? 'はい' : 'いいえ'),
+        row('オンライン', navigator.onLine ? 'はい' : 'いいえ'),
+        row('CPU 論理コア', String(navigator.hardwareConcurrency || '不明')),
+      ];
+      if (navigator.deviceMemory) items.push(row('デバイスメモリ', navigator.deviceMemory + ' GB'));
+      if (navigator.connection && navigator.connection.effectiveType) {
+        items.push(row('回線種別 (推定)', navigator.connection.effectiveType));
+      }
+      $('envList').innerHTML = items.join('');
+    }
+
+    document.body.addEventListener('click', async function (e) {
+      const li = e.target.closest('[data-copy]');
+      if (!li) return;
+      try {
+        await navigator.clipboard.writeText(li.dataset.copy);
+        const orig = li.style.background;
+        li.style.background = 'var(--added-bg)';
+        setTimeout(() => li.style.background = orig, 600);
+      } catch (e) {}
+    });
+
+    // ===== ローカル IP (WebRTC) =====
+    $('getLocal').addEventListener('click', async function () {
+      $('localStatus').textContent = '取得中…';
+      try {
+        const ips = await getLocalIps();
+        if (ips.length === 0) {
+          $('localStatus').textContent = '取得できませんでした（最近のブラウザではプライバシー保護で隠蔽されている可能性があります）。';
+          $('localIps').style.display = 'none';
+          return;
+        }
+        $('localIps').innerHTML = ips.map((ip) => row(ip.includes(':') ? 'IPv6' : 'IPv4', ip, true)).join('');
+        $('localIps').style.display = '';
+        $('localStatus').textContent = ips.length + ' 件取得しました（mDNS .local 名でマスクされている場合があります）。';
+      } catch (e) {
+        $('localStatus').textContent = '取得失敗: ' + e.message;
+      }
+    });
+
+    function getLocalIps() {
+      return new Promise((resolve, reject) => {
+        if (!window.RTCPeerConnection) return reject(new Error('WebRTC 非対応'));
+        const ips = new Set();
+        let pc;
+        try {
+          pc = new RTCPeerConnection({ iceServers: [] });
+        } catch (e) { return reject(e); }
+        pc.createDataChannel('');
+        pc.onicecandidate = (e) => {
+          if (!e.candidate) {
+            pc.close();
+            resolve([...ips]);
+            return;
+          }
+          const m = /([0-9a-fA-F.:]+)\s\d+\styp/.exec(e.candidate.candidate);
+          if (m) ips.add(m[1]);
+          // mDNS local の場合
+          const m2 = /(\S+\.local)/.exec(e.candidate.candidate);
+          if (m2) ips.add(m2[1]);
+        };
+        pc.createOffer().then((offer) => pc.setLocalDescription(offer)).catch(reject);
+        setTimeout(() => { try { pc.close(); } catch (e) {} resolve([...ips]); }, 4000);
+      });
+    }
+
+    renderEnv();
+    fetchGlobalIp();
+  })();
+</script>
+</body>
+</html>
