@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TODO リスト - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: TODO 行 */
+  .todo-item {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto auto;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 6px;
+  }
+  .todo-item.done .text { text-decoration: line-through; color: var(--muted); }
+  .todo-item .text {
+    font-size: 0.95rem;
+    cursor: text;
+    word-break: break-word;
+  }
+  .todo-item .text.editing {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  .priority-tag {
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 600;
+  }
+  .priority-tag.high { background: #fee2e2; color: #991b1b; }
+  .priority-tag.mid { background: #fef3c7; color: #92400e; }
+  .priority-tag.low { background: #dbeafe; color: #1e40af; }
+  .due-tag {
+    font-size: 0.78rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .due-tag.overdue { color: var(--danger); font-weight: 600; }
+  .due-tag.today { color: #d97706; font-weight: 600; }
+  .icon-btn {
+    padding: 4px 8px;
+    font-size: 0.85rem;
+  }
+  .filter-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .filter-row button.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>TODO リスト</h1>
+    <p class="lead">やることをサクッと管理。優先度と期限つき、ブラウザに自動保存（外部送信なし）。</p>
+  </header>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center;">
+      <input type="text" id="newText" placeholder="やることを入力して Enter で追加…" autofocus>
+      <select id="newPriority" style="width:auto;" title="優先度">
+        <option value="low">低</option>
+        <option value="mid" selected>中</option>
+        <option value="high">高</option>
+      </select>
+      <input type="date" id="newDue" title="期限" style="width:160px;">
+      <button type="button" id="addBtn" class="primary">追加</button>
+    </div>
+  </div>
+
+  <div class="filter-row">
+    <button type="button" class="active" data-filter="all">すべて (<span id="cntAll">0</span>)</button>
+    <button type="button" data-filter="active">未完了 (<span id="cntActive">0</span>)</button>
+    <button type="button" data-filter="done">完了 (<span id="cntDone">0</span>)</button>
+    <span style="flex:1;"></span>
+    <button type="button" id="clearDone">完了を一括削除</button>
+    <button type="button" id="export">書き出し</button>
+  </div>
+
+  <div id="list"></div>
+  <div id="empty" style="text-align:center;color:var(--muted);padding:32px 0;display:none;">
+    タスクがありません。
+  </div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    Enter で追加、行のテキストをクリックすると編集できます。データはブラウザの localStorage に保存されます（履歴削除や別ブラウザでは引き継がれません）。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const KEY = 'public-tools.todo.v1';
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(KEY);
+        if (!raw) return [];
+        const arr = JSON.parse(raw);
+        return Array.isArray(arr) ? arr : [];
+      } catch (e) { return []; }
+    }
+    function save() {
+      try { localStorage.setItem(KEY, JSON.stringify(items)); } catch (e) {}
+    }
+
+    let items = load();
+    let filter = 'all';
+
+    function uid() { return 't_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6); }
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function escapeAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+
+    function priorityRank(p) { return p === 'high' ? 0 : p === 'mid' ? 1 : 2; }
+    function todayStr() {
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    }
+    function dueStatus(due) {
+      if (!due) return null;
+      const t = todayStr();
+      if (due < t) return { cls: 'overdue', label: '期限切れ' };
+      if (due === t) return { cls: 'today', label: '今日' };
+      return null;
+    }
+
+    function add() {
+      const text = $('newText').value.trim();
+      if (!text) return;
+      items.push({
+        id: uid(),
+        text,
+        done: false,
+        priority: $('newPriority').value,
+        due: $('newDue').value || '',
+        created: Date.now(),
+      });
+      $('newText').value = '';
+      $('newDue').value = '';
+      save();
+      render();
+      $('newText').focus();
+    }
+
+    function render() {
+      const list = $('list');
+      list.innerHTML = '';
+      // 並び順: 未完了→完了 / 優先度高→低 / 期限近→遠（期限なしは最後）/ 作成日昇順
+      const sorted = [...items].sort((a, b) => {
+        if (a.done !== b.done) return a.done ? 1 : -1;
+        const pr = priorityRank(a.priority) - priorityRank(b.priority);
+        if (pr !== 0) return pr;
+        const da = a.due || '￿', db = b.due || '￿';
+        if (da !== db) return da < db ? -1 : 1;
+        return a.created - b.created;
+      });
+      const visible = sorted.filter((it) => {
+        if (filter === 'active') return !it.done;
+        if (filter === 'done') return it.done;
+        return true;
+      });
+      $('empty').style.display = visible.length === 0 ? '' : 'none';
+      visible.forEach((it) => {
+        const due = dueStatus(it.done ? null : it.due);
+        const dueHtml = it.due
+          ? '<span class="due-tag' + (due ? ' ' + due.cls : '') + '" title="期限">' + it.due + (due ? ' (' + due.label + ')' : '') + '</span>'
+          : '<span></span>';
+        const priLabel = { high: '高', mid: '中', low: '低' }[it.priority];
+        list.insertAdjacentHTML('beforeend',
+          '<div class="todo-item' + (it.done ? ' done' : '') + '" data-id="' + it.id + '">' +
+            '<input type="checkbox" class="t-check" ' + (it.done ? 'checked' : '') + ' style="width:auto;cursor:pointer;">' +
+            '<div class="text" tabindex="0">' + escapeHtml(it.text) + '</div>' +
+            '<span class="priority-tag ' + it.priority + '">' + priLabel + '</span>' +
+            dueHtml +
+            '<button type="button" class="icon-btn t-del" title="削除">×</button>' +
+          '</div>'
+        );
+      });
+      const cntAll = items.length;
+      const cntDone = items.filter((it) => it.done).length;
+      $('cntAll').textContent = cntAll;
+      $('cntActive').textContent = cntAll - cntDone;
+      $('cntDone').textContent = cntDone;
+    }
+
+    function findItem(id) { return items.find((it) => it.id === id); }
+
+    list?.addEventListener?.('click', () => {});
+    $('list').addEventListener('click', function (e) {
+      const row = e.target.closest('.todo-item');
+      if (!row) return;
+      const id = row.dataset.id;
+      const item = findItem(id);
+      if (!item) return;
+      if (e.target.classList.contains('t-check')) {
+        item.done = e.target.checked;
+        save(); render();
+      } else if (e.target.classList.contains('t-del')) {
+        if (!confirm('このタスクを削除しますか？')) return;
+        items = items.filter((it) => it.id !== id);
+        save(); render();
+      }
+    });
+
+    // テキストクリックで編集
+    $('list').addEventListener('dblclick', function (e) {
+      const tx = e.target.closest('.text');
+      if (!tx) return;
+      startEdit(tx);
+    });
+    $('list').addEventListener('click', function (e) {
+      const tx = e.target.closest('.text');
+      if (!tx) return;
+      // シングルクリックでも編集モードに入れる（多用するため）
+      if (!tx.classList.contains('editing')) startEdit(tx);
+    });
+    function startEdit(tx) {
+      const row = tx.closest('.todo-item');
+      const id = row.dataset.id;
+      const item = findItem(id);
+      if (!item) return;
+      tx.classList.add('editing');
+      tx.contentEditable = 'true';
+      // 全選択
+      const range = document.createRange();
+      range.selectNodeContents(tx);
+      const sel = window.getSelection();
+      sel.removeAllRanges(); sel.addRange(range);
+      function finish(commit) {
+        tx.contentEditable = 'false';
+        tx.classList.remove('editing');
+        if (commit) {
+          const v = tx.textContent.trim();
+          if (v) {
+            item.text = v;
+            save();
+          }
+        }
+        render();
+      }
+      tx.addEventListener('keydown', function onKey(ev) {
+        if (ev.key === 'Enter') { ev.preventDefault(); finish(true); tx.removeEventListener('keydown', onKey); }
+        else if (ev.key === 'Escape') { finish(false); tx.removeEventListener('keydown', onKey); }
+      });
+      tx.addEventListener('blur', function onBlur() { finish(true); tx.removeEventListener('blur', onBlur); }, { once: true });
+    }
+
+    $('newText').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); add(); }
+    });
+    $('addBtn').addEventListener('click', add);
+
+    document.querySelectorAll('.filter-row [data-filter]').forEach((b) => {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('.filter-row [data-filter]').forEach((x) => x.classList.remove('active'));
+        b.classList.add('active');
+        filter = b.dataset.filter;
+        render();
+      });
+    });
+
+    $('clearDone').addEventListener('click', function () {
+      const n = items.filter((it) => it.done).length;
+      if (n === 0) return;
+      if (!confirm('完了済の ' + n + ' 件を削除しますか？')) return;
+      items = items.filter((it) => !it.done);
+      save(); render();
+    });
+
+    $('export').addEventListener('click', function () {
+      if (items.length === 0) return;
+      const lines = items.map((it) =>
+        (it.done ? '[x] ' : '[ ] ') +
+        '[' + ({ high: '高', mid: '中', low: '低' }[it.priority]) + '] ' +
+        (it.due ? '(' + it.due + ') ' : '') +
+        it.text
+      );
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'todo-' + todayStr() + '.txt';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
+
+    render();
+  })();
+</script>
+</body>
+</html>
