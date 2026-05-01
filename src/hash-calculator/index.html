@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ハッシュ計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>ハッシュ計算</h1>
+    <p class="lead">テキストまたはファイルから SHA-1 / SHA-256 / SHA-384 / SHA-512 のハッシュ値を計算します。</p>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button type="button" class="active" data-mode="text">テキスト</button>
+    <button type="button" data-mode="file">ファイル</button>
+  </div>
+
+  <section id="tab-text">
+    <textarea id="textIn" rows="8" placeholder="ハッシュ化したい文字列を入力…"></textarea>
+    <div class="actions" style="margin-top:8px;">
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.9rem;color:var(--muted);">
+        出力
+        <select id="textCase" style="width:auto;">
+          <option value="lower" selected>小文字</option>
+          <option value="upper">大文字</option>
+        </select>
+      </label>
+      <button type="button" id="textClear">クリア</button>
+    </div>
+  </section>
+
+  <section id="tab-file" style="display:none;">
+    <div class="card" id="dropZone" style="text-align:center;padding:32px;cursor:pointer;">
+      <div style="color:var(--muted);">ここにファイルをドロップ、またはクリックして選択</div>
+      <input type="file" id="file" style="display:none;">
+      <div id="fileInfo" style="margin-top:8px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.9rem;"></div>
+    </div>
+    <div id="progress" style="margin-top:8px;color:var(--muted);font-size:0.9rem;"></div>
+  </section>
+
+  <h2>結果</h2>
+  <ul class="plain-list" id="results">
+    <li><span class="label">SHA-1</span><span id="sha1" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;cursor:pointer;" title="クリックでコピー">-</span></li>
+    <li><span class="label">SHA-256</span><span id="sha256" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;cursor:pointer;" title="クリックでコピー">-</span></li>
+    <li><span class="label">SHA-384</span><span id="sha384" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;cursor:pointer;font-size:0.85rem;" title="クリックでコピー">-</span></li>
+    <li><span class="label">SHA-512</span><span id="sha512" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;cursor:pointer;font-size:0.85rem;" title="クリックでコピー">-</span></li>
+  </ul>
+
+  <div id="status" style="margin-top:12px;"></div>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const tabs = document.querySelectorAll('.tabs button');
+    let mode = 'text';
+
+    function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function toHex(buf) {
+      const a = new Uint8Array(buf);
+      let h = '';
+      for (let i = 0; i < a.length; i++) h += a[i].toString(16).padStart(2, '0');
+      return h;
+    }
+    function applyCase(s) {
+      return $('textCase').value === 'upper' ? s.toUpperCase() : s.toLowerCase();
+    }
+
+    async function hashAll(buffer) {
+      const algos = [['SHA-1', 'sha1'], ['SHA-256', 'sha256'], ['SHA-384', 'sha384'], ['SHA-512', 'sha512']];
+      // 並列実行
+      const results = await Promise.all(algos.map(([algo]) => crypto.subtle.digest(algo, buffer)));
+      algos.forEach(([, id], i) => {
+        $(id).textContent = applyCase(toHex(results[i]));
+      });
+    }
+
+    function clearResults() {
+      ['sha1', 'sha256', 'sha384', 'sha512'].forEach((id) => $(id).textContent = '-');
+    }
+
+    // ---- タブ ----
+    tabs.forEach((b) => b.addEventListener('click', function () {
+      tabs.forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      mode = b.dataset.mode;
+      $('tab-text').style.display = mode === 'text' ? '' : 'none';
+      $('tab-file').style.display = mode === 'file' ? '' : 'none';
+      clearResults();
+      $('status').innerHTML = '';
+      if (mode === 'text') runText();
+    }));
+
+    // ---- テキストモード ----
+    let textTimer = null;
+    async function runText() {
+      const text = $('textIn').value;
+      if (!text) { clearResults(); return; }
+      const buf = new TextEncoder().encode(text);
+      try {
+        await hashAll(buf);
+      } catch (e) {
+        $('status').innerHTML = '<div class="banner error">' + escapeHtml('計算エラー: ' + e.message) + '</div>';
+      }
+    }
+    $('textIn').addEventListener('input', function () {
+      clearTimeout(textTimer);
+      textTimer = setTimeout(runText, 80);
+    });
+    $('textCase').addEventListener('change', function () {
+      ['sha1', 'sha256', 'sha384', 'sha512'].forEach((id) => {
+        const v = $(id).textContent;
+        if (v && v !== '-') $(id).textContent = applyCase(v);
+      });
+    });
+    $('textClear').addEventListener('click', function () {
+      $('textIn').value = ''; clearResults(); $('textIn').focus();
+    });
+
+    // ---- ファイルモード ----
+    const drop = $('dropZone');
+    const fileInput = $('file');
+
+    function fmtBytes(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(2) + ' KB';
+      if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(2) + ' MB';
+      return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+    }
+
+    async function handleFile(f) {
+      if (!f) return;
+      $('fileInfo').textContent = f.name + ' (' + fmtBytes(f.size) + ')';
+      $('progress').textContent = '読み込み中…';
+      clearResults();
+      try {
+        const buf = await f.arrayBuffer();
+        $('progress').textContent = 'ハッシュ計算中…';
+        const t0 = performance.now();
+        await hashAll(buf);
+        const dt = (performance.now() - t0).toFixed(0);
+        $('progress').textContent = '完了 (' + dt + ' ms)';
+      } catch (e) {
+        $('progress').textContent = '';
+        $('status').innerHTML = '<div class="banner error">' + escapeHtml('読み込み失敗: ' + e.message) + '</div>';
+      }
+    }
+
+    drop.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => handleFile(fileInput.files[0]));
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.style.borderColor = 'var(--accent)'; });
+    drop.addEventListener('dragleave', () => { drop.style.borderColor = ''; });
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      drop.style.borderColor = '';
+      if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+    });
+
+    // ---- クリックでコピー ----
+    document.querySelectorAll('#results span[id]').forEach((el) => {
+      el.addEventListener('click', async function () {
+        const v = this.textContent;
+        if (!v || v === '-') return;
+        try {
+          await navigator.clipboard.writeText(v);
+          const orig = this.style.color;
+          this.style.color = 'var(--accent)';
+          setTimeout(() => this.style.color = orig, 600);
+        } catch (e) {}
+      });
+    });
+
+    runText();
+  })();
+</script>
+</body>
+</html>
