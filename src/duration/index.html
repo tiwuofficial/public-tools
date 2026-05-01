@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>時間単位変換 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>時間単位変換</h1>
+    <p class="lead">秒・分・時間・日などの時間量を相互に変換します。<code>1:30:00</code> や <code>1h30m</code> のような表記も解釈します。</p>
+  </header>
+
+  <h2>単位ごとに入力</h2>
+  <div class="card">
+    <div style="display:grid;grid-template-columns:120px 1fr 80px;gap:10px;align-items:center;">
+      <label for="ms" style="color:var(--muted);font-size:0.9rem;">ミリ秒</label>
+      <input type="number" id="ms" step="any" placeholder="0">
+      <button type="button" data-copy="ms">コピー</button>
+
+      <label for="sec" style="color:var(--muted);font-size:0.9rem;">秒</label>
+      <input type="number" id="sec" step="any" placeholder="0">
+      <button type="button" data-copy="sec">コピー</button>
+
+      <label for="min" style="color:var(--muted);font-size:0.9rem;">分</label>
+      <input type="number" id="min" step="any" placeholder="0">
+      <button type="button" data-copy="min">コピー</button>
+
+      <label for="hour" style="color:var(--muted);font-size:0.9rem;">時間</label>
+      <input type="number" id="hour" step="any" placeholder="0">
+      <button type="button" data-copy="hour">コピー</button>
+
+      <label for="day" style="color:var(--muted);font-size:0.9rem;">日</label>
+      <input type="number" id="day" step="any" placeholder="0">
+      <button type="button" data-copy="day">コピー</button>
+
+      <label for="week" style="color:var(--muted);font-size:0.9rem;">週</label>
+      <input type="number" id="week" step="any" placeholder="0">
+      <button type="button" data-copy="week">コピー</button>
+    </div>
+    <div style="margin-top:10px;color:var(--muted);font-size:0.85rem;">
+      ※ 月・年は長さが一定でないため省略。日数で計算してください（30 日 ≒ 1 か月）。
+    </div>
+  </div>
+
+  <h2>表記から変換</h2>
+  <div class="card">
+    <div class="pane-label">入力（例: <code>1:30:00</code>, <code>1h30m</code>, <code>90m</code>, <code>2.5d</code>, <code>3600</code>）</div>
+    <input type="text" id="freeIn" spellcheck="false" placeholder="1h30m">
+    <div id="status" style="margin-top:8px;"></div>
+  </div>
+
+  <h2>整形表示</h2>
+  <ul class="plain-list" id="formatted"></ul>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    ヒント: <code>1d2h3m4s500ms</code> や <code>HH:MM:SS</code>、純粋な数値（秒として解釈）も入力できます。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const FIELDS = [
+      { id: 'ms', factor: 1 },
+      { id: 'sec', factor: 1000 },
+      { id: 'min', factor: 60 * 1000 },
+      { id: 'hour', factor: 60 * 60 * 1000 },
+      { id: 'day', factor: 24 * 60 * 60 * 1000 },
+      { id: 'week', factor: 7 * 24 * 60 * 60 * 1000 },
+    ];
+
+    function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function setStatus(kind, msg) {
+      $('status').innerHTML = msg ? '<div class="banner ' + kind + '">' + escapeHtml(msg) + '</div>' : '';
+    }
+
+    let updating = false;
+    let current = 0; // ms
+
+    function fmtNumber(n) {
+      // 整数なら整数、そうでなければ最大 6 桁の小数
+      if (Number.isInteger(n)) return String(n);
+      const s = n.toFixed(6).replace(/\.?0+$/, '');
+      return s;
+    }
+
+    function setFromMs(ms) {
+      current = ms;
+      updating = true;
+      FIELDS.forEach((f) => { $(f.id).value = ms === 0 ? '' : fmtNumber(ms / f.factor); });
+      updating = false;
+      renderFormatted(ms);
+    }
+
+    function renderFormatted(ms) {
+      const out = $('formatted');
+      if (!Number.isFinite(ms)) { out.innerHTML = ''; return; }
+      const neg = ms < 0;
+      const abs = Math.abs(ms);
+      const totalSec = Math.floor(abs / 1000);
+      const milli = Math.round(abs % 1000);
+      const d = Math.floor(totalSec / 86400);
+      const h = Math.floor((totalSec % 86400) / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      const sign = neg ? '-' : '';
+      const pad = (n, w) => String(n).padStart(w, '0');
+      const hms = sign + pad(h + d * 24, 2) + ':' + pad(m, 2) + ':' + pad(s, 2);
+      const hmsMs = hms + (milli ? '.' + pad(milli, 3) : '');
+      const human = humanize(ms);
+      const compact = compactize(ms);
+
+      const rows = [
+        row('HH:MM:SS', hms),
+        row('HH:MM:SS.mmm', hmsMs),
+        row('日本語', human),
+        row('短縮表記', compact),
+      ];
+      out.innerHTML = rows.join('');
+    }
+    function row(label, val) {
+      return '<li><span class="label">' + escapeHtml(label) +
+        '</span><span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;cursor:pointer;" data-copy-text="' +
+        escapeAttr(val) + '" title="クリックでコピー">' + escapeHtml(val) + '</span></li>';
+    }
+    function escapeAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+    function humanize(ms) {
+      const neg = ms < 0;
+      let abs = Math.floor(Math.abs(ms));
+      const parts = [];
+      const units = [
+        [86400000, '日'], [3600000, '時間'], [60000, '分'], [1000, '秒'], [1, 'ミリ秒'],
+      ];
+      for (const [u, l] of units) {
+        if (abs >= u) {
+          const v = Math.floor(abs / u);
+          abs %= u;
+          parts.push(v + ' ' + l);
+        }
+      }
+      if (parts.length === 0) parts.push('0 ミリ秒');
+      return (neg ? '-' : '') + parts.join(' ');
+    }
+    function compactize(ms) {
+      const neg = ms < 0;
+      let abs = Math.floor(Math.abs(ms));
+      const parts = [];
+      const units = [[86400000, 'd'], [3600000, 'h'], [60000, 'm'], [1000, 's'], [1, 'ms']];
+      for (const [u, l] of units) {
+        if (abs >= u) {
+          const v = Math.floor(abs / u);
+          abs %= u;
+          parts.push(v + l);
+        }
+      }
+      if (parts.length === 0) parts.push('0s');
+      return (neg ? '-' : '') + parts.join('');
+    }
+
+    // 単位入力
+    FIELDS.forEach((f) => {
+      $(f.id).addEventListener('input', function () {
+        if (updating) return;
+        if (this.value.trim() === '') {
+          // 他フィールドが全て空なら 0、そうでなければこのフィールドだけ 0 として再計算
+          const anyOther = FIELDS.some((g) => g.id !== f.id && $(g.id).value.trim() !== '');
+          if (!anyOther) { setFromMs(0); return; }
+        }
+        const v = parseFloat(this.value);
+        if (!Number.isFinite(v)) return;
+        setFromMs(v * f.factor);
+      });
+    });
+
+    // フリー入力パーサ
+    function parseFree(text) {
+      const t = text.trim();
+      if (!t) return 0;
+      // HH:MM:SS(.mmm) 形式
+      const m = /^(-?)(\d+):(\d{1,2})(?::(\d{1,2})(?:\.(\d{1,3}))?)?$/.exec(t);
+      if (m) {
+        const sign = m[1] === '-' ? -1 : 1;
+        const h = parseInt(m[2], 10);
+        const min = parseInt(m[3], 10);
+        const s = m[4] ? parseInt(m[4], 10) : 0;
+        const ms = m[5] ? parseInt(m[5].padEnd(3, '0').slice(0, 3), 10) : 0;
+        return sign * (h * 3600000 + min * 60000 + s * 1000 + ms);
+      }
+      // 純粋な数値 (秒として扱う)
+      if (/^-?\d+(\.\d+)?$/.test(t)) {
+        return parseFloat(t) * 1000;
+      }
+      // 1d2h3m4s500ms 形式
+      const re = /(-?\d+(?:\.\d+)?)\s*(ms|s|m|h|d|w)/gi;
+      let total = 0;
+      let consumed = 0;
+      let mm;
+      const factors = { ms: 1, s: 1000, m: 60000, h: 3600000, d: 86400000, w: 604800000 };
+      // 「m」と「ms」の優先順を保つため事前に大文字化はせず順次マッチ
+      const order = [];
+      const re2 = /(-?\d+(?:\.\d+)?)\s*(ms|s|m|h|d|w)/gi;
+      while ((mm = re2.exec(t)) !== null) {
+        const v = parseFloat(mm[1]);
+        const u = mm[2].toLowerCase();
+        total += v * factors[u];
+        consumed += mm[0].length;
+        order.push(mm.index);
+      }
+      // 残りの文字（空白以外）があるなら無効
+      const stripped = t.replace(re2, '').replace(/\s+/g, '');
+      if (stripped !== '') throw new Error('「' + text + '」を時間として解釈できません');
+      if (order.length === 0) throw new Error('「' + text + '」を時間として解釈できません');
+      return total;
+    }
+    $('freeIn').addEventListener('input', function () {
+      const t = this.value;
+      if (!t.trim()) { setStatus('', ''); return; }
+      try {
+        const ms = parseFree(t);
+        setFromMs(ms);
+        setStatus('ok', '✓ ' + ms.toLocaleString('ja-JP') + ' ms');
+      } catch (e) {
+        setStatus('error', e.message);
+      }
+    });
+
+    // クリックコピー
+    document.body.addEventListener('click', async function (e) {
+      const el = e.target.closest('[data-copy-text]');
+      if (el) {
+        try {
+          await navigator.clipboard.writeText(el.dataset.copyText);
+          const orig = el.style.color;
+          el.style.color = 'var(--accent)';
+          setTimeout(() => el.style.color = orig, 600);
+        } catch (e) {}
+      }
+    });
+    document.querySelectorAll('[data-copy]').forEach((b) => {
+      b.addEventListener('click', async function () {
+        const v = $(b.dataset.copy).value;
+        if (!v) return;
+        try {
+          await navigator.clipboard.writeText(v);
+          const orig = b.textContent;
+          b.textContent = 'コピー済';
+          setTimeout(() => b.textContent = orig, 800);
+        } catch (e) {}
+      });
+    });
+
+    // 初期サンプル
+    setFromMs(90 * 60 * 1000);
+  })();
+</script>
+</body>
+</html>
