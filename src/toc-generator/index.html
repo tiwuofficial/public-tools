@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>目次 (TOC) ジェネレータ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 構造プレビュー */
+  .toc-tree {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9rem;
+  }
+  .toc-tree .h-row {
+    padding: 2px 0;
+    word-break: break-all;
+  }
+  .toc-tree .lvl {
+    color: var(--muted);
+    font-size: 0.8rem;
+    margin-right: 6px;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>目次 (TOC) ジェネレータ</h1>
+    <p class="lead">記事の Markdown または HTML から見出しを抽出し、リンク付き目次を生成します。</p>
+  </header>
+
+  <div class="split-2">
+    <div class="pane">
+      <div class="pane-label">入力 (Markdown または HTML)</div>
+      <textarea id="input" rows="18" spellcheck="false"></textarea>
+    </div>
+    <div class="pane">
+      <div class="pane-label">見出し構造</div>
+      <div class="toc-tree" id="tree"></div>
+    </div>
+  </div>
+
+  <h2>オプション</h2>
+  <div class="card" style="display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;">
+    <label for="format" style="color:var(--muted);font-size:0.95rem;">入力フォーマット</label>
+    <select id="format" style="width:auto;">
+      <option value="auto" selected>自動判定</option>
+      <option value="markdown">Markdown</option>
+      <option value="html">HTML</option>
+    </select>
+
+    <label for="minLvl" style="color:var(--muted);font-size:0.95rem;">最小レベル</label>
+    <select id="minLvl" style="width:auto;">
+      <option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option>
+    </select>
+
+    <label for="maxLvl" style="color:var(--muted);font-size:0.95rem;">最大レベル</label>
+    <select id="maxLvl" style="width:auto;">
+      <option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option>
+    </select>
+
+    <label for="numbered" style="color:var(--muted);font-size:0.95rem;">スタイル</label>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;">
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.95rem;">
+        <input type="radio" name="style" value="bullet" checked style="width:auto;"> 箇条書き (- / &lt;ul&gt;)
+      </label>
+      <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.95rem;">
+        <input type="radio" name="style" value="numbered" style="width:auto;"> 番号付き (1. / &lt;ol&gt;)
+      </label>
+    </div>
+
+    <label for="anchors" style="color:var(--muted);font-size:0.95rem;">リンク</label>
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:0.95rem;">
+      <input type="checkbox" id="anchors" checked style="width:auto;"> アンカーリンクを付ける (#slug)
+    </label>
+  </div>
+
+  <div class="tabs" style="margin-top:18px;" role="tablist">
+    <button type="button" class="active" data-out="md">Markdown</button>
+    <button type="button" data-out="html">HTML</button>
+    <button type="button" data-out="htmlPretty">HTML (整形)</button>
+    <button type="button" data-out="text">プレーンテキスト</button>
+  </div>
+
+  <pre class="code" id="output" style="white-space:pre-wrap;"></pre>
+
+  <div class="actions" style="margin-top:8px;">
+    <button type="button" id="copy" class="primary">コピー</button>
+  </div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    アンカーは GitHub 風の slug (英字小文字化、空白を <code>-</code>、記号除去、日本語はそのまま) を生成します。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    const SAMPLE =
+      '# 大見出し (h1)\n\n' +
+      '## はじめに\n\n本文…\n\n' +
+      '## 主な特徴\n\n' +
+      '### 高速\n本文…\n\n### 軽量\n本文…\n\n' +
+      '## 使い方\n\n### インストール\n\n### 設定\n\n## おわりに\n';
+
+    function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function escapeAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+
+    function slugify(s) {
+      return String(s)
+        .toLowerCase()
+        .trim()
+        .replace(/[^\p{L}\p{N}\s-]/gu, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+    }
+    function uniqueSlug(slug, used) {
+      if (!used.has(slug)) { used.add(slug); return slug; }
+      let i = 1;
+      while (used.has(slug + '-' + i)) i++;
+      const u = slug + '-' + i;
+      used.add(u);
+      return u;
+    }
+
+    function detectFormat(text) {
+      if (/^\s*<\w+|\s<h[1-6][\s>]/i.test(text)) return 'html';
+      return 'markdown';
+    }
+
+    function extractMarkdown(text) {
+      const lines = text.replace(/\r\n?/g, '\n').split('\n');
+      const out = [];
+      let inFence = false;
+      for (const line of lines) {
+        if (/^(```|~~~)/.test(line)) { inFence = !inFence; continue; }
+        if (inFence) continue;
+        const m = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
+        if (m) out.push({ level: m[1].length, text: m[2].trim() });
+      }
+      return out;
+    }
+
+    function extractHtml(text) {
+      const out = [];
+      const re = /<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        const level = parseInt(m[1], 10);
+        const inner = m[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+        if (inner) out.push({ level, text: inner });
+      }
+      return out;
+    }
+
+    function buildTree(headings, minL, maxL) {
+      const filtered = headings.filter((h) => h.level >= minL && h.level <= maxL);
+      const used = new Set();
+      filtered.forEach((h) => { h.slug = uniqueSlug(slugify(h.text), used); });
+      return filtered;
+    }
+
+    function renderTree(headings) {
+      if (headings.length === 0) {
+        $('tree').innerHTML = '<div style="color:var(--muted);">見出しが見つかりませんでした。</div>';
+        return;
+      }
+      const minLevel = Math.min(...headings.map((h) => h.level));
+      $('tree').innerHTML = headings.map((h) =>
+        '<div class="h-row" style="padding-left:' + (h.level - minLevel) * 16 + 'px;">' +
+          '<span class="lvl">h' + h.level + '</span>' + escapeHtml(h.text) +
+        '</div>'
+      ).join('');
+    }
+
+    function renderOutput(headings, mode) {
+      if (headings.length === 0) { $('output').textContent = ''; return; }
+      const style = document.querySelector('input[name="style"]:checked').value;
+      const useAnchors = $('anchors').checked;
+      const minLevel = Math.min(...headings.map((h) => h.level));
+
+      if (mode === 'md') {
+        const lines = headings.map((h) => {
+          const indent = '  '.repeat(h.level - minLevel);
+          const marker = style === 'numbered' ? '1.' : '-';
+          const linkText = useAnchors ? '[' + h.text.replace(/\[/g, '\\[').replace(/\]/g, '\\]') + '](#' + h.slug + ')' : h.text;
+          return indent + marker + ' ' + linkText;
+        });
+        $('output').textContent = lines.join('\n');
+        return;
+      }
+      if (mode === 'text') {
+        const lines = headings.map((h) => {
+          const indent = '  '.repeat(h.level - minLevel);
+          return indent + '・ ' + h.text;
+        });
+        $('output').textContent = lines.join('\n');
+        return;
+      }
+      // html, htmlPretty
+      const pretty = mode === 'htmlPretty';
+      const tag = style === 'numbered' ? 'ol' : 'ul';
+      const out = renderHtml(headings, minLevel, tag, useAnchors, pretty);
+      $('output').textContent = out;
+    }
+
+    function renderHtml(headings, baseLvl, tag, useAnchors, pretty) {
+      // ネスト構造を組み立てる
+      let result = '<' + tag + '>';
+      const stack = [baseLvl - 1];
+      headings.forEach((h, i) => {
+        while (stack[stack.length - 1] >= h.level) {
+          result += (pretty ? '\n' + '  '.repeat(stack.length - 1) : '') + '</li>';
+          if (stack[stack.length - 1] > h.level) {
+            stack.pop();
+            result += (pretty ? '\n' + '  '.repeat(stack.length) : '') + '</' + tag + '>';
+          } else {
+            stack.pop();
+          }
+        }
+        while (stack[stack.length - 1] < h.level - 1) {
+          stack.push(stack[stack.length - 1] + 1);
+          result += (pretty ? '\n' + '  '.repeat(stack.length) : '') + '<' + tag + '>';
+        }
+        stack.push(h.level);
+        const linkInner = useAnchors
+          ? '<a href="#' + escapeAttr(h.slug) + '">' + escapeHtml(h.text) + '</a>'
+          : escapeHtml(h.text);
+        result += (pretty ? '\n' + '  '.repeat(stack.length - 1) : '') + '<li>' + linkInner;
+      });
+      while (stack.length > 1) {
+        result += (pretty ? '\n' + '  '.repeat(stack.length - 1) : '') + '</li>';
+        stack.pop();
+        if (stack.length > 0) result += (pretty ? '\n' + '  '.repeat(stack.length - 1) : '') + '</' + tag + '>';
+      }
+      // close root
+      result += (pretty ? '\n' : '') + '</' + tag + '>';
+      // 不正に重複した root 閉じタグを 1 つに
+      result = result.replace(/<\/(ul|ol)>(\s*<\/(ul|ol)>)+\s*$/, '</$1>');
+      return result;
+    }
+
+    function update() {
+      const text = $('input').value;
+      let fmt = $('format').value;
+      if (fmt === 'auto') fmt = detectFormat(text);
+      const headings = fmt === 'html' ? extractHtml(text) : extractMarkdown(text);
+      const minL = parseInt($('minLvl').value, 10);
+      const maxL = parseInt($('maxLvl').value, 10);
+      const filtered = buildTree(headings, Math.min(minL, maxL), Math.max(minL, maxL));
+      renderTree(filtered);
+      const mode = document.querySelector('.tabs button.active').dataset.out;
+      renderOutput(filtered, mode);
+    }
+
+    document.querySelectorAll('.tabs button').forEach((b) => {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('.tabs button').forEach((x) => x.classList.remove('active'));
+        b.classList.add('active');
+        update();
+      });
+    });
+    ['input', 'format', 'minLvl', 'maxLvl', 'anchors'].forEach((id) => {
+      $(id).addEventListener('input', update);
+      $(id).addEventListener('change', update);
+    });
+    document.querySelectorAll('input[name="style"]').forEach((r) => r.addEventListener('change', update));
+
+    $('copy').addEventListener('click', async function () {
+      try {
+        await navigator.clipboard.writeText($('output').textContent);
+        const o = this.textContent; this.textContent = 'コピー済';
+        setTimeout(() => this.textContent = o, 1000);
+      } catch (e) {}
+    });
+
+    $('input').value = SAMPLE;
+    update();
+  })();
+</script>
+</body>
+</html>
