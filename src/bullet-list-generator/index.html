@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>箇条書きジェネレータ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: フォーム行 */
+  .form-row {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 10px 14px;
+    align-items: center;
+    padding: 12px 14px;
+  }
+  .form-row > label {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .form-row .inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    align-items: center;
+  }
+  .form-row .inline label {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    font-size: 0.92rem;
+    cursor: pointer;
+  }
+  .form-row .inline input[type="checkbox"],
+  .form-row .inline input[type="radio"] {
+    width: auto;
+    margin: 0;
+  }
+  .form-row select.short {
+    max-width: 220px;
+  }
+  .form-row input[type="text"].sep {
+    max-width: 260px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .preview {
+    margin-top: 8px;
+    padding: 14px 16px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    line-height: 1.7;
+    max-height: 60vh;
+    overflow: auto;
+  }
+  .preview ul,
+  .preview ol {
+    margin: 0;
+    padding-left: 1.6em;
+  }
+  .preview li { margin: 0.15em 0; }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>箇条書きジェネレータ</h1>
+    <p class="lead">改行・句点・任意の区切りでテキストを分割し、Markdown / HTML の箇条書きを生成します。</p>
+  </header>
+
+  <h2>区切り方</h2>
+  <div class="card form-row">
+    <label>分割ルール</label>
+    <div class="inline" id="splitMode">
+      <label><input type="radio" name="split" value="line" checked>改行</label>
+      <label><input type="radio" name="split" value="period">句点 (。.！？!?)</label>
+      <label><input type="radio" name="split" value="comma">読点・カンマ (、,)</label>
+      <label><input type="radio" name="split" value="blank">空行（段落）</label>
+      <label><input type="radio" name="split" value="custom">任意の文字列</label>
+      <label><input type="radio" name="split" value="regex">正規表現</label>
+    </div>
+
+    <label>区切り文字列</label>
+    <input type="text" id="customSep" class="sep" placeholder="例: ; や ::, 正規表現なら \s*[、,]\s*">
+  </div>
+
+  <h2>出力形式</h2>
+  <div class="card form-row">
+    <label>形式</label>
+    <select id="format" class="short">
+      <option value="md-dash" selected>Markdown ( - )</option>
+      <option value="md-star">Markdown ( * )</option>
+      <option value="md-plus">Markdown ( + )</option>
+      <option value="md-num">Markdown 番号付き ( 1. )</option>
+      <option value="html-ul">HTML &lt;ul&gt;</option>
+      <option value="html-ol">HTML &lt;ol&gt;</option>
+      <option value="plain-dot">記号付きテキスト ( ・)</option>
+      <option value="plain-num">番号付きテキスト ( 1) )</option>
+      <option value="plain-paren">和文番号付き ( ① )</option>
+    </select>
+
+    <label>インデント</label>
+    <select id="indent" class="short">
+      <option value="2" selected>半角スペース 2</option>
+      <option value="4">半角スペース 4</option>
+      <option value="tab">タブ</option>
+    </select>
+
+    <label>番号開始</label>
+    <input type="number" id="startNum" min="0" max="999" value="1" style="max-width:120px;">
+
+    <label>整形</label>
+    <div class="inline">
+      <label><input type="checkbox" id="trim" checked>前後の空白を削除</label>
+      <label><input type="checkbox" id="dropEmpty" checked>空項目を削除</label>
+      <label><input type="checkbox" id="dedupe">重複を削除</label>
+      <label><input type="checkbox" id="stripBullet" checked>既存の箇条書き記号 ( - * ・ 1. 等) を除去</label>
+      <label><input type="checkbox" id="ensurePeriod">末尾に句点を補う</label>
+    </div>
+  </div>
+
+  <h2>入力</h2>
+  <textarea id="input" rows="8" placeholder="箇条書きにしたいテキストを入力…"></textarea>
+
+  <h2>出力 (テキスト)</h2>
+  <textarea id="output" rows="8" readonly></textarea>
+  <div class="actions">
+    <button type="button" id="copy" class="primary">出力をコピー</button>
+    <button type="button" id="clear">クリア</button>
+    <span id="status" style="color:var(--muted);font-size:0.85rem;align-self:center;"></span>
+  </div>
+
+  <h2>プレビュー</h2>
+  <div class="preview" id="preview"></div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    すべての処理はブラウザ上で完結します（外部送信なし）。HTML プレビューでは Markdown 番号付きはそのままテキスト表示します。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    }
+
+    const STRIP_RE = new RegExp(
+      '^(?:[\\u2022\\u30FB\\-\\*\\+\\u25A0\\u25CB\\u25CF\\u25C6\\u2605\\u2606\\u2192]|\\d+[\\.\\)\\u3001\\uFF0E]|[a-zA-Z][\\.\\)]|[\\u2460-\\u2473]|[\\u3007\\u4E00\\u4E8C\\u4E09\\u56DB\\u4E94\\u516D\\u4E03\\u516B\\u4E5D\\u5341]+[\\u3001\\u3002\\.])\\s*'
+    );
+
+    function splitItems(text, mode, sep) {
+      if (text === '') return [];
+      let arr;
+      switch (mode) {
+        case 'line':
+          arr = text.split(/\r?\n/);
+          break;
+        case 'period':
+          arr = text.split(/(?<=[。．！？!?\.])\s*/);
+          break;
+        case 'comma':
+          arr = text.split(/[、,]/);
+          break;
+        case 'blank':
+          arr = text.split(/\r?\n\s*\r?\n/);
+          break;
+        case 'custom': {
+          if (!sep) { arr = [text]; break; }
+          arr = text.split(sep);
+          break;
+        }
+        case 'regex': {
+          if (!sep) { arr = [text]; break; }
+          try {
+            const re = new RegExp(sep, 'g');
+            arr = text.split(re);
+          } catch (e) {
+            return { error: '正規表現エラー: ' + e.message };
+          }
+          break;
+        }
+        default:
+          arr = [text];
+      }
+      return arr;
+    }
+
+    function buildIndent(kind) {
+      if (kind === 'tab') return '\t';
+      return ' '.repeat(parseInt(kind, 10) || 2);
+    }
+
+    function circledNumber(n) {
+      if (n >= 1 && n <= 20) return String.fromCharCode(0x2460 + n - 1);
+      return '(' + n + ')';
+    }
+
+    function render(items, fmt, startNum) {
+      switch (fmt) {
+        case 'md-dash':
+          return items.map((s) => '- ' + s).join('\n');
+        case 'md-star':
+          return items.map((s) => '* ' + s).join('\n');
+        case 'md-plus':
+          return items.map((s) => '+ ' + s).join('\n');
+        case 'md-num':
+          return items.map((s, i) => (startNum + i) + '. ' + s).join('\n');
+        case 'html-ul':
+          return '<ul>\n' + items.map((s) => '  <li>' + escapeHtml(s) + '</li>').join('\n') + '\n</ul>';
+        case 'html-ol': {
+          const startAttr = startNum !== 1 ? ' start="' + startNum + '"' : '';
+          return '<ol' + startAttr + '>\n' + items.map((s) => '  <li>' + escapeHtml(s) + '</li>').join('\n') + '\n</ol>';
+        }
+        case 'plain-dot':
+          return items.map((s) => '・' + s).join('\n');
+        case 'plain-num':
+          return items.map((s, i) => (startNum + i) + ') ' + s).join('\n');
+        case 'plain-paren':
+          return items.map((s, i) => circledNumber(startNum + i) + ' ' + s).join('\n');
+      }
+      return items.join('\n');
+    }
+
+    function renderPreview(items, fmt, startNum) {
+      const root = $('preview');
+      if (items.length === 0) {
+        root.innerHTML = '<span style="color:var(--muted);">（プレビューなし）</span>';
+        return;
+      }
+      if (fmt === 'html-ol' || fmt === 'md-num' || fmt === 'plain-num' || fmt === 'plain-paren') {
+        const ol = document.createElement('ol');
+        if (startNum !== 1) ol.start = startNum;
+        for (const s of items) {
+          const li = document.createElement('li');
+          li.textContent = s;
+          ol.appendChild(li);
+        }
+        root.innerHTML = '';
+        root.appendChild(ol);
+      } else {
+        const ul = document.createElement('ul');
+        for (const s of items) {
+          const li = document.createElement('li');
+          li.textContent = s;
+          ul.appendChild(li);
+        }
+        root.innerHTML = '';
+        root.appendChild(ul);
+      }
+    }
+
+    function update() {
+      const text = $('input').value;
+      const mode = document.querySelector('input[name="split"]:checked').value;
+      const sep = $('customSep').value;
+      const fmt = $('format').value;
+      const startNum = parseInt($('startNum').value, 10) || 1;
+      const trim = $('trim').checked;
+      const dropEmpty = $('dropEmpty').checked;
+      const dedupe = $('dedupe').checked;
+      const stripBullet = $('stripBullet').checked;
+      const ensurePeriod = $('ensurePeriod').checked;
+
+      const splitResult = splitItems(text, mode, sep);
+      if (splitResult && splitResult.error) {
+        $('status').textContent = splitResult.error;
+        $('status').style.color = 'var(--removed-fg)';
+        $('output').value = '';
+        $('preview').innerHTML = '<span style="color:var(--removed-fg);">' + escapeHtml(splitResult.error) + '</span>';
+        return;
+      }
+      $('status').textContent = '';
+      $('status').style.color = 'var(--muted)';
+
+      let items = splitResult;
+
+      if (trim) items = items.map((s) => s.replace(/^[\s　]+|[\s　]+$/g, ''));
+      if (stripBullet) items = items.map((s) => s.replace(STRIP_RE, ''));
+      if (dropEmpty) items = items.filter((s) => s.length > 0);
+      if (dedupe) {
+        const seen = new Set();
+        items = items.filter((s) => (seen.has(s) ? false : (seen.add(s), true)));
+      }
+      if (ensurePeriod) {
+        items = items.map((s) => {
+          if (s.length === 0) return s;
+          const last = s[s.length - 1];
+          if ('。．.!?！？'.includes(last)) return s;
+          return s + '。';
+        });
+      }
+
+      // indent currently applied to nothing because input is flat; placeholder for future nested support.
+      const out = render(items, fmt, startNum);
+      $('output').value = out;
+      renderPreview(items, fmt, startNum);
+    }
+
+    document.querySelectorAll('input[name="split"], #format, #indent').forEach((el) => el.addEventListener('change', update));
+    ['customSep', 'startNum', 'trim', 'dropEmpty', 'dedupe', 'stripBullet', 'ensurePeriod', 'input'].forEach((id) => {
+      $(id).addEventListener('input', update);
+      $(id).addEventListener('change', update);
+    });
+
+    $('copy').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('output').value);
+        $('copy').textContent = 'コピーしました';
+        setTimeout(() => { $('copy').textContent = '出力をコピー'; }, 1200);
+      } catch (e) {
+        $('output').select();
+        document.execCommand('copy');
+      }
+    });
+    $('clear').addEventListener('click', () => {
+      $('input').value = '';
+      update();
+    });
+
+    update();
+  })();
+</script>
+</body>
+</html>
