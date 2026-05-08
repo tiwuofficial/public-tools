@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>テキスト統計 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: ヒストグラム */
+  .hist {
+    margin-top: 6px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+  }
+  .hist .row {
+    display: grid;
+    grid-template-columns: 110px 1fr 70px 50px;
+    gap: 10px;
+    align-items: center;
+    margin: 3px 0;
+    font-size: 0.88rem;
+  }
+  .hist .row .lbl { color: var(--muted); }
+  .hist .row .bar-wrap {
+    background: var(--bg);
+    border-radius: 4px;
+    overflow: hidden;
+    height: 10px;
+  }
+  .hist .row .bar {
+    height: 100%;
+    background: var(--accent);
+  }
+  .hist .row .num,
+  .hist .row .pct {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .hist .row .pct { color: var(--muted); font-size: 0.82rem; }
+
+  .top-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 6px;
+    font-size: 0.92rem;
+  }
+  .top-table th, .top-table td {
+    border-bottom: 1px solid var(--border);
+    padding: 6px 12px;
+    text-align: left;
+  }
+  .top-table th { color: var(--muted); font-weight: 500; background: var(--bg); }
+  .top-table td.num,
+  .top-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .top-table tbody tr:hover { background: var(--bg); }
+
+  .extracted {
+    margin-top: 6px;
+    list-style: none;
+    padding: 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    max-height: 220px;
+    overflow-y: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.88rem;
+  }
+  .extracted li {
+    padding: 4px 14px;
+    border-bottom: 1px solid var(--border);
+    word-break: break-all;
+  }
+  .extracted li:last-child { border-bottom: none; }
+  .empty { color: var(--muted); padding: 6px 14px; font-size: 0.88rem; }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>テキスト統計</h1>
+    <p class="lead">単語・文末パターンの頻度ランキング、文長ヒストグラム、URL や数字の自動抽出など、文字数カウンタでは見えない統計を表示します。</p>
+  </header>
+
+  <h2>本文</h2>
+  <textarea id="input" rows="12" placeholder="統計を取りたいテキストを貼り付け…"></textarea>
+
+  <h2>サマリー</h2>
+  <div class="stats">
+    <div class="stat"><div class="label">総文字数 (空白除く)</div><div class="value" id="sChars">0</div></div>
+    <div class="stat"><div class="label">語の延べ数 (token)</div><div class="value" id="sTokens">0</div></div>
+    <div class="stat"><div class="label">語の異なり数 (type)</div><div class="value" id="sTypes">0</div></div>
+    <div class="stat"><div class="label">語彙の多様性 TTR</div><div class="value" id="sTtr">0</div></div>
+    <div class="stat"><div class="label">文の数</div><div class="value" id="sSent">0</div></div>
+    <div class="stat"><div class="label">段落数</div><div class="value" id="sPara">0</div></div>
+  </div>
+
+  <h2>文の長さ分布</h2>
+  <div class="hist" id="hist"></div>
+
+  <h2>頻出する単語 (上位 20)</h2>
+  <div style="overflow-x:auto;">
+    <table class="top-table" id="wordTable">
+      <thead>
+        <tr><th style="width:50px;" class="num">#</th><th>単語</th><th class="num" style="width:90px;">出現</th><th class="num" style="width:90px;">割合</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <h2>頻出する文末 (上位 10)</h2>
+  <div style="overflow-x:auto;">
+    <table class="top-table" id="endingTable">
+      <thead>
+        <tr><th class="num" style="width:50px;">#</th><th>末尾 (3 字 + 句点)</th><th class="num" style="width:90px;">回数</th><th class="num" style="width:90px;">割合</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <h2>繰り返されるフレーズ (3 文字以上, 上位 15)</h2>
+  <div style="overflow-x:auto;">
+    <table class="top-table" id="phraseTable">
+      <thead>
+        <tr><th class="num" style="width:50px;">#</th><th>フレーズ</th><th class="num" style="width:80px;">長さ</th><th class="num" style="width:80px;">回数</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <h2>抽出</h2>
+  <div class="split-2">
+    <div class="pane">
+      <div class="pane-label">URL <span id="cUrl" style="color:var(--muted);font-size:0.85rem;"></span></div>
+      <ul class="extracted" id="lUrl"></ul>
+    </div>
+    <div class="pane">
+      <div class="pane-label">メールアドレス <span id="cMail" style="color:var(--muted);font-size:0.85rem;"></span></div>
+      <ul class="extracted" id="lMail"></ul>
+    </div>
+  </div>
+  <div class="split-2" style="margin-top:8px;">
+    <div class="pane">
+      <div class="pane-label">数字・金額 <span id="cNum" style="color:var(--muted);font-size:0.85rem;"></span></div>
+      <ul class="extracted" id="lNum"></ul>
+    </div>
+    <div class="pane">
+      <div class="pane-label">@ メンション / # ハッシュ <span id="cTag" style="color:var(--muted);font-size:0.85rem;"></span></div>
+      <ul class="extracted" id="lTag"></ul>
+    </div>
+  </div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    日本語の単語抽出は形態素解析を行わず、ひらがな/カタカナ/漢字/英数の連続を 1 単語として扱う簡易ロジックです（外部依存なし）。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    const RE_NON_WS = /\S/g;
+    const RE_SENT_BREAK = new RegExp('(?<=[\\u3002\\uFF01\\uFF1F\\.!?])\\s*');
+    // single-word splitter: groups of (kanji|hiragana|katakana with sokuon|alnum)
+    const RE_TOKEN = new RegExp('[\\u4E00-\\u9FFF\\u3400-\\u4DBF]+|[\\u3041-\\u3096\\u309F]+|[\\u30A1-\\u30FA\\u30FC\\u30FF]+|[A-Za-z][A-Za-z\\-\']*|\\d+(?:[\\.,]\\d+)*', 'g');
+    const RE_URL = new RegExp('https?://[^\\s\\u3000\\u3001\\u3002\\uFF0C\\uFF0E"\'<>]+', 'g');
+    const RE_MAIL = new RegExp('[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}', 'g');
+    const RE_NUM = new RegExp('[¥$€£￥]?\\d+(?:[\\.,]\\d+)*(?:%|円|円|％|kg|km|m|cm|mm|時|分|秒|個|人|名|歳)?', 'g');
+    const RE_TAG = new RegExp('[#＃@＠][A-Za-z0-9_\\u3041-\\u3096\\u30A1-\\u30FA\\u4E00-\\u9FFF]+', 'g');
+
+    function countMatches(text, re) {
+      const m = text.match(re);
+      return m ? m.length : 0;
+    }
+
+    function splitSentences(text) {
+      return text.split(RE_SENT_BREAK).map((s) => s.trim()).filter((s) => s.length > 0);
+    }
+    function splitParagraphs(text) {
+      return text.split(/\n\s*\n+/).map((s) => s.trim()).filter((s) => s.length > 0);
+    }
+    function visibleLen(s) {
+      return countMatches(s, RE_NON_WS);
+    }
+
+    function tokenize(text) {
+      RE_TOKEN.lastIndex = 0;
+      const out = [];
+      let m;
+      while ((m = RE_TOKEN.exec(text)) !== null) {
+        if (m[0].length === 0) { RE_TOKEN.lastIndex++; continue; }
+        out.push(m[0]);
+      }
+      return out;
+    }
+
+    function topN(map, n) {
+      const arr = [];
+      for (const [k, v] of map) arr.push([k, v]);
+      arr.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ja'));
+      return arr.slice(0, n);
+    }
+
+    function findRepeatedPhrases(text, minLen, minCount, topK) {
+      // For each starting index, find the maximal substring of length minLen..50 that occurs ≥ minCount times.
+      // Approach: count substrings of length minLen..maxLen, but cap maxLen to keep it bounded.
+      const counts = new Map();
+      const maxLen = Math.min(20, Math.max(minLen, 6));
+      for (let len = minLen; len <= maxLen; len++) {
+        const seen = new Map();
+        for (let i = 0; i + len <= text.length; i++) {
+          const s = text.slice(i, i + len);
+          if (/\s/.test(s)) continue;
+          seen.set(s, (seen.get(s) || 0) + 1);
+        }
+        for (const [s, c] of seen) {
+          if (c >= minCount) counts.set(s, c);
+        }
+      }
+      // Filter: keep substring only if it's a "maximal" — drop subsumed ones whose extension also reaches minCount.
+      const kept = [];
+      for (const [s, c] of counts) {
+        let dominated = false;
+        for (const [t, c2] of counts) {
+          if (t.length > s.length && t.indexOf(s) !== -1 && c2 >= c) {
+            dominated = true; break;
+          }
+        }
+        if (!dominated) kept.push([s, c]);
+      }
+      kept.sort((a, b) => b[1] * b[0].length - a[1] * a[0].length || b[0].length - a[0].length);
+      return kept.slice(0, topK);
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    }
+
+    function fillSimpleList(rootId, countId, items) {
+      const root = $(rootId);
+      const count = $(countId);
+      root.innerHTML = '';
+      if (items.length === 0) {
+        const li = document.createElement('li');
+        li.className = 'empty';
+        li.textContent = '（なし）';
+        root.appendChild(li);
+        count.textContent = '';
+        return;
+      }
+      // Dedupe and count
+      const m = new Map();
+      for (const it of items) m.set(it, (m.get(it) || 0) + 1);
+      const arr = topN(m, 50);
+      for (const [k, v] of arr) {
+        const li = document.createElement('li');
+        if (v > 1) {
+          li.textContent = k + '  ×' + v;
+        } else {
+          li.textContent = k;
+        }
+        root.appendChild(li);
+      }
+      count.textContent = '(' + items.length + ' 件 / ' + m.size + ' 種)';
+    }
+
+    function update() {
+      const text = $('input').value;
+      const sentences = splitSentences(text);
+      const paragraphs = splitParagraphs(text);
+      const totalChars = visibleLen(text);
+
+      // Tokens
+      const tokens = tokenize(text);
+      const tokenCount = tokens.length;
+      const freq = new Map();
+      for (const t of tokens) freq.set(t, (freq.get(t) || 0) + 1);
+      const typeCount = freq.size;
+      const ttr = tokenCount > 0 ? typeCount / tokenCount : 0;
+
+      $('sChars').textContent = totalChars.toLocaleString('ja-JP');
+      $('sTokens').textContent = tokenCount.toLocaleString('ja-JP');
+      $('sTypes').textContent = typeCount.toLocaleString('ja-JP');
+      $('sTtr').textContent = ttr ? ttr.toFixed(3) : '0';
+      $('sSent').textContent = sentences.length.toLocaleString('ja-JP');
+      $('sPara').textContent = paragraphs.length.toLocaleString('ja-JP');
+
+      // Sentence length histogram
+      const buckets = [
+        { from: 1,   to: 20,  label: '〜20 字' },
+        { from: 21,  to: 40,  label: '21〜40 字' },
+        { from: 41,  to: 60,  label: '41〜60 字' },
+        { from: 61,  to: 80,  label: '61〜80 字' },
+        { from: 81,  to: 100, label: '81〜100 字' },
+        { from: 101, to: 150, label: '101〜150 字' },
+        { from: 151, to: 1e9, label: '151 字 以上' },
+      ];
+      const counts = new Array(buckets.length).fill(0);
+      for (const s of sentences) {
+        const n = visibleLen(s);
+        for (let i = 0; i < buckets.length; i++) {
+          if (n >= buckets[i].from && n <= buckets[i].to) { counts[i]++; break; }
+        }
+      }
+      const maxCnt = Math.max(1, ...counts);
+      const totalSent = sentences.length || 1;
+      const histRoot = $('hist');
+      histRoot.innerHTML = '';
+      for (let i = 0; i < buckets.length; i++) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        const c = counts[i];
+        const pct = sentences.length === 0 ? 0 : (c / totalSent) * 100;
+        row.innerHTML =
+          '<span class="lbl">' + buckets[i].label + '</span>' +
+          '<div class="bar-wrap"><div class="bar" style="width:' + ((c / maxCnt) * 100).toFixed(1) + '%"></div></div>' +
+          '<span class="num">' + c + '</span>' +
+          '<span class="pct">' + pct.toFixed(1) + '%</span>';
+        histRoot.appendChild(row);
+      }
+
+      // Word top
+      const wordRows = topN(freq, 20);
+      const wbody = $('wordTable').querySelector('tbody');
+      wbody.innerHTML = '';
+      wordRows.forEach(([k, v], i) => {
+        const tr = document.createElement('tr');
+        const pct = tokenCount === 0 ? 0 : (v / tokenCount) * 100;
+        tr.innerHTML =
+          '<td class="num">' + (i + 1) + '</td>' +
+          '<td>' + escapeHtml(k) + '</td>' +
+          '<td class="num">' + v + '</td>' +
+          '<td class="num">' + pct.toFixed(2) + '%</td>';
+        wbody.appendChild(tr);
+      });
+      if (wordRows.length === 0) {
+        wbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted);text-align:center;">（単語なし）</td></tr>';
+      }
+
+      // Endings (last 3 chars of sentence + punct)
+      const endMap = new Map();
+      for (const s of sentences) {
+        const trim = s.replace(/\s+/g, '');
+        const tail = trim.slice(-4);
+        if (tail.length === 0) continue;
+        endMap.set(tail, (endMap.get(tail) || 0) + 1);
+      }
+      const eRows = topN(endMap, 10);
+      const ebody = $('endingTable').querySelector('tbody');
+      ebody.innerHTML = '';
+      eRows.forEach(([k, v], i) => {
+        const tr = document.createElement('tr');
+        const pct = sentences.length === 0 ? 0 : (v / sentences.length) * 100;
+        tr.innerHTML =
+          '<td class="num">' + (i + 1) + '</td>' +
+          '<td>' + escapeHtml(k) + '</td>' +
+          '<td class="num">' + v + '</td>' +
+          '<td class="num">' + pct.toFixed(2) + '%</td>';
+        ebody.appendChild(tr);
+      });
+      if (eRows.length === 0) {
+        ebody.innerHTML = '<tr><td colspan="4" style="color:var(--muted);text-align:center;">（文末データなし）</td></tr>';
+      }
+
+      // Phrases
+      const phrases = findRepeatedPhrases(text, 3, 2, 15);
+      const pbody = $('phraseTable').querySelector('tbody');
+      pbody.innerHTML = '';
+      phrases.forEach(([s, c], i) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td class="num">' + (i + 1) + '</td>' +
+          '<td>' + escapeHtml(s) + '</td>' +
+          '<td class="num">' + s.length + '</td>' +
+          '<td class="num">' + c + '</td>';
+        pbody.appendChild(tr);
+      });
+      if (phrases.length === 0) {
+        pbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted);text-align:center;">（繰り返しフレーズなし）</td></tr>';
+      }
+
+      // Extractions
+      fillSimpleList('lUrl',  'cUrl',  text.match(RE_URL)  || []);
+      fillSimpleList('lMail', 'cMail', text.match(RE_MAIL) || []);
+      fillSimpleList('lNum',  'cNum',  text.match(RE_NUM)  || []);
+      fillSimpleList('lTag',  'cTag',  text.match(RE_TAG)  || []);
+    }
+
+    $('input').addEventListener('input', update);
+    update();
+  })();
+</script>
+</body>
+</html>
