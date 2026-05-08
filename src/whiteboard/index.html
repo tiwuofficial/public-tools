@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ホワイトボード - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: ツールバーとキャンバス */
+  .wb-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    padding: 8px 12px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 10px;
+  }
+  .wb-toolbar .group {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .wb-toolbar .sep {
+    width: 1px;
+    height: 22px;
+    background: var(--border);
+    margin: 0 4px;
+  }
+  .wb-toolbar button.tool {
+    padding: 6px 10px;
+    font-size: 0.86rem;
+  }
+  .wb-toolbar button.tool.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .wb-toolbar input[type="color"] { padding: 0; height: 28px; width: 36px; border-radius: 4px; }
+  .wb-toolbar input[type="range"] { width: 130px; vertical-align: middle; }
+  .wb-toolbar label {
+    color: var(--muted);
+    font-size: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .save-stat {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-left: auto;
+  }
+
+  .stage {
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: auto;
+    height: 70vh;
+    min-height: 480px;
+  }
+  .stage svg {
+    display: block;
+    background:
+      linear-gradient(var(--bg) 1px, transparent 1px) 0 0 / 24px 24px,
+      linear-gradient(90deg, var(--bg) 1px, transparent 1px) 0 0 / 24px 24px,
+      var(--card);
+    width: 2400px;
+    height: 1600px;
+    cursor: crosshair;
+  }
+  .stage svg.tool-select { cursor: default; }
+  .stage svg.tool-eraser { cursor: not-allowed; }
+  .stage svg.tool-text   { cursor: text; }
+  .stage svg.tool-note   { cursor: copy; }
+  .stage svg.dragging    { cursor: grabbing; }
+
+  .wb-element { transition: filter 0.1s ease; }
+  .wb-element.selected {
+    filter: drop-shadow(0 0 0.5px var(--accent)) drop-shadow(0 0 4px var(--accent));
+  }
+
+  .note-fo {
+    overflow: visible;
+  }
+  .note-fo .note-body {
+    width: 180px;
+    min-height: 110px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 0.92rem;
+    line-height: 1.5;
+    color: #1f2328;
+    box-shadow: 0 6px 12px rgba(15, 23, 42, 0.12), 0 1px 2px rgba(15, 23, 42, 0.08);
+    word-break: break-word;
+    white-space: pre-wrap;
+    user-select: text;
+    outline: none;
+  }
+  .text-fo .text-body {
+    padding: 4px 6px;
+    border-radius: 4px;
+    color: inherit;
+    background: transparent;
+    outline: none;
+    word-break: break-word;
+    white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>ホワイトボード</h1>
+    <p class="lead">SVG ベースの自由描画キャンバス。ペン・直線・矩形・テキスト・付箋を配置できます。入力はブラウザに自動保存（外部送信なし）。</p>
+  </header>
+
+  <div class="wb-toolbar">
+    <div class="group">
+      <button type="button" class="tool" data-tool="select">選択</button>
+      <button type="button" class="tool active" data-tool="pen">ペン</button>
+      <button type="button" class="tool" data-tool="line">直線</button>
+      <button type="button" class="tool" data-tool="rect">矩形</button>
+      <button type="button" class="tool" data-tool="text">テキスト</button>
+      <button type="button" class="tool" data-tool="note">付箋</button>
+      <button type="button" class="tool" data-tool="eraser">消去</button>
+    </div>
+    <span class="sep"></span>
+    <div class="group">
+      <label>色 <input type="color" id="stroke" value="#1f2328"></label>
+      <label>太さ <input type="range" id="width" min="1" max="20" value="3"><span id="widthVal">3</span>px</label>
+    </div>
+    <span class="sep"></span>
+    <div class="group">
+      <label>付箋色
+        <select id="noteColor" style="font:inherit;padding:4px 8px;">
+          <option value="#fef3c7" selected>黄</option>
+          <option value="#bbf7d0">緑</option>
+          <option value="#bfdbfe">青</option>
+          <option value="#fbcfe8">桃</option>
+          <option value="#fed7aa">橙</option>
+          <option value="#ddd6fe">紫</option>
+        </select>
+      </label>
+    </div>
+    <span class="sep"></span>
+    <div class="group">
+      <button type="button" id="undo">元に戻す</button>
+      <button type="button" id="redo">やり直し</button>
+      <button type="button" id="deleteSel">選択を削除</button>
+      <button type="button" id="clearAll">全消去</button>
+    </div>
+    <span class="sep"></span>
+    <div class="group">
+      <button type="button" id="exportPng">PNG 保存</button>
+      <button type="button" id="downloadJson">JSON 保存</button>
+      <button type="button" id="loadJson">JSON 読込</button>
+      <input type="file" id="fileInput" accept="application/json,.json" style="display:none;">
+    </div>
+    <span class="save-stat" id="saveStat"></span>
+  </div>
+
+  <div class="stage" id="stage">
+    <svg id="svg" viewBox="0 0 2400 1600" xmlns="http://www.w3.org/2000/svg">
+      <g id="elements"></g>
+    </svg>
+  </div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:14px;">
+    操作: ペンはドラッグで描画、直線/矩形は始点→終点をドラッグ、テキスト/付箋はクリックで追加（Enter で確定）、選択ツールでドラッグ移動。Ctrl+Z で取り消し、Ctrl+Shift+Z でやり直し。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const STORAGE_KEY = 'public-tools.whiteboard.v1';
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const XHTML_NS = 'http://www.w3.org/1999/xhtml';
+
+    const svg = $('svg');
+    const layer = $('elements');
+    const stage = $('stage');
+
+    let state = { elements: [], seq: 1 };
+    let history = []; // snapshots of state.elements
+    let future = [];
+    let currentTool = 'pen';
+    let drawing = null;
+    let dragging = null;
+    let selectedId = null;
+
+    function snapshot() {
+      history.push(JSON.parse(JSON.stringify(state.elements)));
+      if (history.length > 100) history.shift();
+      future.length = 0;
+    }
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (obj && Array.isArray(obj.elements)) {
+          state.elements = obj.elements
+            .filter((e) => e && typeof e === 'object' && typeof e.type === 'string')
+            .map((e) => ({ ...e, id: typeof e.id === 'number' ? e.id : (state.seq++) }));
+          state.seq = Math.max(state.seq, state.elements.reduce((m, e) => Math.max(m, e.id || 0), 0) + 1);
+        }
+      } catch (e) {}
+    }
+    function save() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ elements: state.elements }));
+        flashSave();
+      } catch (e) {}
+    }
+    let flashTimer;
+    function flashSave() {
+      const el = $('saveStat');
+      el.textContent = '保存しました';
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { el.textContent = ''; }, 1100);
+    }
+
+    function setTool(name) {
+      currentTool = name;
+      document.querySelectorAll('.tool').forEach((b) => b.classList.toggle('active', b.dataset.tool === name));
+      svg.classList.remove('tool-select', 'tool-eraser', 'tool-text', 'tool-note');
+      if (name === 'select') svg.classList.add('tool-select');
+      if (name === 'eraser') svg.classList.add('tool-eraser');
+      if (name === 'text') svg.classList.add('tool-text');
+      if (name === 'note') svg.classList.add('tool-note');
+      // clear in-progress
+      drawing = null;
+      // hide selection if switching away
+      if (name !== 'select') selectId(null);
+    }
+    document.querySelectorAll('.tool').forEach((b) => {
+      b.addEventListener('click', () => setTool(b.dataset.tool));
+    });
+
+    function getPoint(evt) {
+      const pt = svg.createSVGPoint();
+      pt.x = evt.clientX;
+      pt.y = evt.clientY;
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return { x: 0, y: 0 };
+      const { x, y } = pt.matrixTransform(ctm.inverse());
+      return { x, y };
+    }
+
+    function addElement(el) {
+      el.id = state.seq++;
+      state.elements.push(el);
+      renderElement(el);
+      save();
+    }
+
+    function deleteElement(id) {
+      const i = state.elements.findIndex((e) => e.id === id);
+      if (i < 0) return;
+      state.elements.splice(i, 1);
+      const node = layer.querySelector('[data-id="' + id + '"]');
+      if (node) node.remove();
+      save();
+    }
+
+    function selectId(id) {
+      selectedId = id;
+      layer.querySelectorAll('.wb-element.selected').forEach((n) => n.classList.remove('selected'));
+      if (id != null) {
+        const node = layer.querySelector('[data-id="' + id + '"]');
+        if (node) node.classList.add('selected');
+      }
+    }
+
+    function renderAll() {
+      layer.innerHTML = '';
+      state.elements.forEach(renderElement);
+    }
+
+    function renderElement(el) {
+      let node;
+      switch (el.type) {
+        case 'path': {
+          node = document.createElementNS(SVG_NS, 'path');
+          node.setAttribute('d', el.d);
+          node.setAttribute('stroke', el.stroke);
+          node.setAttribute('stroke-width', el.width);
+          node.setAttribute('stroke-linecap', 'round');
+          node.setAttribute('stroke-linejoin', 'round');
+          node.setAttribute('fill', 'none');
+          break;
+        }
+        case 'line': {
+          node = document.createElementNS(SVG_NS, 'line');
+          node.setAttribute('x1', el.x1);
+          node.setAttribute('y1', el.y1);
+          node.setAttribute('x2', el.x2);
+          node.setAttribute('y2', el.y2);
+          node.setAttribute('stroke', el.stroke);
+          node.setAttribute('stroke-width', el.width);
+          node.setAttribute('stroke-linecap', 'round');
+          break;
+        }
+        case 'rect': {
+          node = document.createElementNS(SVG_NS, 'rect');
+          const x = Math.min(el.x1, el.x2);
+          const y = Math.min(el.y1, el.y2);
+          const w = Math.abs(el.x2 - el.x1);
+          const h = Math.abs(el.y2 - el.y1);
+          node.setAttribute('x', x);
+          node.setAttribute('y', y);
+          node.setAttribute('width', w);
+          node.setAttribute('height', h);
+          node.setAttribute('stroke', el.stroke);
+          node.setAttribute('stroke-width', el.width);
+          node.setAttribute('fill', 'none');
+          node.setAttribute('rx', '4');
+          break;
+        }
+        case 'text': {
+          const fo = document.createElementNS(SVG_NS, 'foreignObject');
+          fo.setAttribute('x', el.x);
+          fo.setAttribute('y', el.y);
+          fo.setAttribute('width', '600');
+          fo.setAttribute('height', '60');
+          fo.classList.add('text-fo');
+          const div = document.createElementNS(XHTML_NS, 'div');
+          div.className = 'text-body';
+          div.style.color = el.color;
+          div.style.fontSize = (el.size || 18) + 'px';
+          div.style.fontWeight = '600';
+          div.contentEditable = 'true';
+          div.spellcheck = false;
+          div.textContent = el.text || '';
+          div.addEventListener('input', () => {
+            el.text = div.textContent;
+            save();
+          });
+          div.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') div.blur();
+          });
+          fo.appendChild(div);
+          node = fo;
+          break;
+        }
+        case 'note': {
+          const fo = document.createElementNS(SVG_NS, 'foreignObject');
+          fo.setAttribute('x', el.x);
+          fo.setAttribute('y', el.y);
+          fo.setAttribute('width', '200');
+          fo.setAttribute('height', '140');
+          fo.classList.add('note-fo');
+          const div = document.createElementNS(XHTML_NS, 'div');
+          div.className = 'note-body';
+          div.style.background = el.color;
+          div.contentEditable = 'true';
+          div.spellcheck = false;
+          div.textContent = el.text || '';
+          div.addEventListener('input', () => {
+            el.text = div.textContent;
+            save();
+          });
+          fo.appendChild(div);
+          node = fo;
+          break;
+        }
+      }
+      if (!node) return;
+      node.classList.add('wb-element');
+      node.dataset.id = el.id;
+
+      // Per-element interactions
+      node.addEventListener('mousedown', (e) => onElementMouseDown(e, el));
+      // Prevent text fields from auto-deleting via eraser when editing
+      if (el.type === 'text' || el.type === 'note') {
+        const editable = node.querySelector('[contenteditable]');
+        if (editable) {
+          editable.addEventListener('mousedown', (e) => e.stopPropagation());
+        }
+      }
+      layer.appendChild(node);
+    }
+
+    function onElementMouseDown(e, el) {
+      if (e.button !== 0) return;
+      if (currentTool === 'eraser') {
+        e.preventDefault();
+        deleteElement(el.id);
+        return;
+      }
+      if (currentTool === 'select') {
+        e.preventDefault();
+        selectId(el.id);
+        const start = getPoint(e);
+        const orig = JSON.parse(JSON.stringify(el));
+        dragging = { el, orig, startX: start.x, startY: start.y };
+        svg.classList.add('dragging');
+      }
+    }
+
+    function moveElement(el, dx, dy, orig) {
+      switch (el.type) {
+        case 'path':
+          el.d = shiftPath(orig.d, dx, dy);
+          break;
+        case 'line':
+          el.x1 = orig.x1 + dx; el.y1 = orig.y1 + dy;
+          el.x2 = orig.x2 + dx; el.y2 = orig.y2 + dy;
+          break;
+        case 'rect':
+          el.x1 = orig.x1 + dx; el.y1 = orig.y1 + dy;
+          el.x2 = orig.x2 + dx; el.y2 = orig.y2 + dy;
+          break;
+        case 'text':
+        case 'note':
+          el.x = orig.x + dx; el.y = orig.y + dy;
+          break;
+      }
+    }
+    function shiftPath(d, dx, dy) {
+      // Shift each command's coords by (dx, dy). Path emitted by us only uses absolute M/L commands.
+      return d.replace(/([ML])\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)/g, (_, cmd, x, y) => {
+        return cmd + (parseFloat(x) + dx) + ' ' + (parseFloat(y) + dy);
+      });
+    }
+    function rerenderOne(el) {
+      const old = layer.querySelector('[data-id="' + el.id + '"]');
+      if (old) old.remove();
+      renderElement(el);
+      if (el.id === selectedId) {
+        const node = layer.querySelector('[data-id="' + el.id + '"]');
+        if (node) node.classList.add('selected');
+      }
+    }
+
+    // Stage interactions
+    svg.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      // If clicking blank area in select mode, deselect
+      if (currentTool === 'select') {
+        if (e.target === svg || e.target === layer) {
+          selectId(null);
+        }
+        return;
+      }
+      if (currentTool === 'eraser') return;
+
+      const p = getPoint(e);
+      const stroke = $('stroke').value;
+      const widthVal = parseInt($('width').value, 10) || 3;
+
+      if (currentTool === 'pen') {
+        snapshot();
+        drawing = {
+          type: 'path',
+          stroke, width: widthVal,
+          points: [p],
+          d: 'M' + p.x.toFixed(1) + ' ' + p.y.toFixed(1),
+        };
+        const tmp = document.createElementNS(SVG_NS, 'path');
+        tmp.setAttribute('d', drawing.d);
+        tmp.setAttribute('stroke', stroke);
+        tmp.setAttribute('stroke-width', widthVal);
+        tmp.setAttribute('stroke-linecap', 'round');
+        tmp.setAttribute('stroke-linejoin', 'round');
+        tmp.setAttribute('fill', 'none');
+        tmp.id = '__draftPath';
+        layer.appendChild(tmp);
+        e.preventDefault();
+        return;
+      }
+      if (currentTool === 'line' || currentTool === 'rect') {
+        snapshot();
+        drawing = {
+          type: currentTool, stroke, width: widthVal,
+          x1: p.x, y1: p.y, x2: p.x, y2: p.y,
+        };
+        const tmp = document.createElementNS(SVG_NS, currentTool === 'line' ? 'line' : 'rect');
+        tmp.setAttribute('stroke', stroke);
+        tmp.setAttribute('stroke-width', widthVal);
+        tmp.setAttribute('fill', 'none');
+        tmp.setAttribute('stroke-linecap', 'round');
+        tmp.id = '__draftShape';
+        layer.appendChild(tmp);
+        e.preventDefault();
+        return;
+      }
+      if (currentTool === 'text') {
+        snapshot();
+        const el = { type: 'text', x: p.x, y: p.y - 10, text: '', color: stroke, size: 20 };
+        addElement(el);
+        const node = layer.querySelector('[data-id="' + el.id + '"] [contenteditable]');
+        if (node) node.focus();
+        e.preventDefault();
+        return;
+      }
+      if (currentTool === 'note') {
+        snapshot();
+        const color = $('noteColor').value;
+        const el = { type: 'note', x: p.x - 100, y: p.y - 70, text: '', color };
+        addElement(el);
+        const node = layer.querySelector('[data-id="' + el.id + '"] [contenteditable]');
+        if (node) node.focus();
+        e.preventDefault();
+        return;
+      }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (drawing) {
+        const p = getPoint(e);
+        if (drawing.type === 'path') {
+          drawing.points.push(p);
+          drawing.d += ' L' + p.x.toFixed(1) + ' ' + p.y.toFixed(1);
+          const tmp = document.getElementById('__draftPath');
+          if (tmp) tmp.setAttribute('d', drawing.d);
+        } else if (drawing.type === 'line') {
+          drawing.x2 = p.x; drawing.y2 = p.y;
+          const tmp = document.getElementById('__draftShape');
+          if (tmp) {
+            tmp.setAttribute('x1', drawing.x1);
+            tmp.setAttribute('y1', drawing.y1);
+            tmp.setAttribute('x2', drawing.x2);
+            tmp.setAttribute('y2', drawing.y2);
+          }
+        } else if (drawing.type === 'rect') {
+          drawing.x2 = p.x; drawing.y2 = p.y;
+          const x = Math.min(drawing.x1, drawing.x2);
+          const y = Math.min(drawing.y1, drawing.y2);
+          const w = Math.abs(drawing.x2 - drawing.x1);
+          const h = Math.abs(drawing.y2 - drawing.y1);
+          const tmp = document.getElementById('__draftShape');
+          if (tmp) {
+            tmp.setAttribute('x', x); tmp.setAttribute('y', y);
+            tmp.setAttribute('width', w); tmp.setAttribute('height', h);
+            tmp.setAttribute('rx', '4');
+          }
+        }
+      }
+      if (dragging) {
+        const p = getPoint(e);
+        const dx = p.x - dragging.startX;
+        const dy = p.y - dragging.startY;
+        moveElement(dragging.el, dx, dy, dragging.orig);
+        rerenderOne(dragging.el);
+      }
+    });
+    window.addEventListener('mouseup', () => {
+      if (drawing) {
+        // remove draft
+        const tmp = document.getElementById('__draftPath') || document.getElementById('__draftShape');
+        if (tmp) tmp.remove();
+        const d = drawing;
+        drawing = null;
+        if (d.type === 'path') {
+          if (d.points.length < 2) return;
+          addElement({ type: 'path', d: d.d, stroke: d.stroke, width: d.width });
+        } else if (d.type === 'line' || d.type === 'rect') {
+          if (Math.hypot(d.x2 - d.x1, d.y2 - d.y1) < 3) return;
+          addElement({ type: d.type, x1: d.x1, y1: d.y1, x2: d.x2, y2: d.y2, stroke: d.stroke, width: d.width });
+        }
+      }
+      if (dragging) {
+        svg.classList.remove('dragging');
+        dragging = null;
+        save();
+      }
+    });
+
+    // Toolbar bindings
+    $('width').addEventListener('input', () => {
+      $('widthVal').textContent = $('width').value;
+    });
+    $('undo').addEventListener('click', undo);
+    $('redo').addEventListener('click', redo);
+    $('deleteSel').addEventListener('click', () => {
+      if (selectedId == null) return;
+      snapshot();
+      deleteElement(selectedId);
+      selectedId = null;
+    });
+    $('clearAll').addEventListener('click', () => {
+      if (state.elements.length === 0) return;
+      if (!confirm('すべての要素を削除しますか？（取り消し可能）')) return;
+      snapshot();
+      state.elements = [];
+      renderAll();
+      save();
+    });
+
+    function undo() {
+      if (history.length === 0) return;
+      future.push(JSON.parse(JSON.stringify(state.elements)));
+      state.elements = history.pop();
+      renderAll();
+      save();
+    }
+    function redo() {
+      if (future.length === 0) return;
+      history.push(JSON.parse(JSON.stringify(state.elements)));
+      state.elements = future.pop();
+      renderAll();
+      save();
+    }
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        undo();
+      } else if ((e.ctrlKey || e.metaKey) && (e.shiftKey && e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) {
+        e.preventDefault();
+        redo();
+      } else if (e.key === 'Delete' && selectedId != null) {
+        snapshot();
+        deleteElement(selectedId);
+        selectedId = null;
+      }
+    });
+
+    // Export / Import
+    $('exportPng').addEventListener('click', exportPng);
+    $('downloadJson').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify({ elements: state.elements }, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = 'whiteboard-' + stamp + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    });
+    $('loadJson').addEventListener('click', () => $('fileInput').click());
+    $('fileInput').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const obj = JSON.parse(String(reader.result));
+          if (obj && Array.isArray(obj.elements)) {
+            snapshot();
+            state.elements = obj.elements
+              .filter((el) => el && typeof el === 'object')
+              .map((el) => ({ ...el, id: state.seq++ }));
+            renderAll();
+            save();
+          }
+        } catch (err) {
+          alert('JSON の読み込みに失敗: ' + err.message);
+        }
+        $('fileInput').value = '';
+      };
+      reader.readAsText(f);
+    });
+
+    function exportPng() {
+      // Compute bounding box of all elements; fall back to full canvas
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      const W = 2400, H = 1600;
+      const m = 40;
+      for (const el of state.elements) {
+        if (el.type === 'path') {
+          const matches = el.d.match(/-?\d+(?:\.\d+)?/g) || [];
+          for (let i = 0; i + 1 < matches.length; i += 2) {
+            const x = parseFloat(matches[i]);
+            const y = parseFloat(matches[i + 1]);
+            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+          }
+        } else if (el.type === 'line' || el.type === 'rect') {
+          minX = Math.min(minX, el.x1, el.x2); maxX = Math.max(maxX, el.x1, el.x2);
+          minY = Math.min(minY, el.y1, el.y2); maxY = Math.max(maxY, el.y1, el.y2);
+        } else if (el.type === 'text') {
+          minX = Math.min(minX, el.x); maxX = Math.max(maxX, el.x + 600);
+          minY = Math.min(minY, el.y); maxY = Math.max(maxY, el.y + 60);
+        } else if (el.type === 'note') {
+          minX = Math.min(minX, el.x); maxX = Math.max(maxX, el.x + 200);
+          minY = Math.min(minY, el.y); maxY = Math.max(maxY, el.y + 140);
+        }
+      }
+      if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 800; maxY = 600; }
+      minX = Math.max(0, minX - m); minY = Math.max(0, minY - m);
+      maxX = Math.min(W, maxX + m); maxY = Math.min(H, maxY + m);
+      const w = Math.max(1, maxX - minX);
+      const h = Math.max(1, maxY - minY);
+
+      const clone = svg.cloneNode(true);
+      clone.setAttribute('viewBox', minX + ' ' + minY + ' ' + w + ' ' + h);
+      clone.setAttribute('width', w);
+      clone.setAttribute('height', h);
+      clone.removeAttribute('id');
+      // White background rect
+      const bg = document.createElementNS(SVG_NS, 'rect');
+      bg.setAttribute('x', minX);
+      bg.setAttribute('y', minY);
+      bg.setAttribute('width', w);
+      bg.setAttribute('height', h);
+      bg.setAttribute('fill', '#ffffff');
+      clone.insertBefore(bg, clone.firstChild);
+      const xml = new XMLSerializer().serializeToString(clone);
+      const svg64 = btoa(unescape(encodeURIComponent(xml)));
+      const dataUrl = 'data:image/svg+xml;base64,' + svg64;
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const out = canvas.toDataURL('image/png');
+        const a = document.createElement('a');
+        a.href = out;
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        a.download = 'whiteboard-' + stamp + '.png';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      };
+      img.onerror = () => {
+        alert('PNG 変換に失敗しました（ブラウザの制約か、要素が無効である可能性）');
+      };
+      img.src = dataUrl;
+    }
+
+    load();
+    renderAll();
+    setTool('pen');
+  })();
+</script>
+</body>
+</html>
