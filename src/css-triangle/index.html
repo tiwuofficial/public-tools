@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CSS triangle ジェネレータ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 方向ボタン・プレビュー */
+  .dir-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 56px);
+    grid-template-rows: repeat(3, 56px);
+    gap: 6px;
+  }
+  .dir-grid button {
+    padding: 0;
+    font-size: 1.4rem;
+    line-height: 1;
+    height: 56px;
+  }
+  .dir-grid button.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .dir-grid .empty { visibility: hidden; }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 10px 14px;
+    align-items: center;
+    padding: 12px 14px;
+  }
+  .form-grid > label { color: var(--muted); font-size: 0.9rem; }
+  .form-grid .inline { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+  .form-grid input[type="number"] { max-width: 110px; }
+  .form-grid input[type="range"] { width: 220px; }
+  .form-grid input[type="color"] { padding: 0; height: 30px; width: 50px; border-radius: 4px; }
+
+  .preview-area {
+    position: relative;
+    background:
+      linear-gradient(45deg, #f3f4f6 25%, transparent 25%, transparent 75%, #f3f4f6 75%) 0 0 / 16px 16px,
+      linear-gradient(45deg, #f3f4f6 25%, transparent 25%, transparent 75%, #f3f4f6 75%) 8px 8px / 16px 16px,
+      var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    min-height: 280px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  #triangle {
+    width: 0;
+    height: 0;
+    border-style: solid;
+  }
+  .preset-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 0 0;
+  }
+  .preset-row button { padding: 4px 10px; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>CSS triangle ジェネレータ</h1>
+    <p class="lead">向き・サイズ・色を指定して CSS の三角形（border ハック）を生成します。吹き出しの先端などに利用できます。</p>
+  </header>
+
+  <h2>向き</h2>
+  <div class="card" style="display:flex;align-items:center;gap:18px;padding:14px 16px;">
+    <div class="dir-grid" id="dirGrid">
+      <button type="button" data-dir="tl" title="左上">◤</button>
+      <button type="button" data-dir="up" title="上">▲</button>
+      <button type="button" data-dir="tr" title="右上">◥</button>
+      <button type="button" data-dir="left" title="左">◀</button>
+      <button type="button" class="empty"></button>
+      <button type="button" data-dir="right" title="右">▶</button>
+      <button type="button" data-dir="bl" title="左下">◣</button>
+      <button type="button" data-dir="down" title="下" class="active">▼</button>
+      <button type="button" data-dir="br" title="右下">◢</button>
+    </div>
+    <div style="color:var(--muted);font-size:0.88rem;">
+      上下左右に加え、4 つの直角三角形 (◤◥◣◢) も指定できます。
+    </div>
+  </div>
+
+  <h2>サイズ・色</h2>
+  <div class="card form-grid">
+    <label>幅 (px)</label>
+    <div class="inline">
+      <input type="range" id="w" min="4" max="400" value="100">
+      <input type="number" id="wNum" min="0" max="400" value="100">
+    </div>
+
+    <label>高さ (px)</label>
+    <div class="inline">
+      <input type="range" id="h" min="4" max="400" value="80">
+      <input type="number" id="hNum" min="0" max="400" value="80">
+    </div>
+
+    <label>色</label>
+    <div class="inline">
+      <input type="color" id="color" value="#2563eb">
+      <input type="text" id="colorHex" value="#2563eb" style="max-width:120px;">
+    </div>
+
+    <label>クラス名</label>
+    <div class="inline">
+      <input type="text" id="className" value="triangle" style="max-width:200px;">
+    </div>
+
+    <span></span>
+    <div class="preset-row">
+      <button type="button" data-preset='{"dir":"down","w":100,"h":80,"color":"#2563eb"}'>吹き出し下</button>
+      <button type="button" data-preset='{"dir":"up","w":100,"h":80,"color":"#16a34a"}'>吹き出し上</button>
+      <button type="button" data-preset='{"dir":"right","w":80,"h":100,"color":"#dc2626"}'>右矢印</button>
+      <button type="button" data-preset='{"dir":"tr","w":80,"h":80,"color":"#f59e0b"}'>右上 (リボン)</button>
+      <button type="button" data-preset='{"dir":"down","w":40,"h":20,"color":"#0f172a"}'>セレクト風キャレット</button>
+    </div>
+  </div>
+
+  <h2>プレビュー</h2>
+  <div class="preview-area">
+    <span id="triangle"></span>
+  </div>
+
+  <h2>HTML</h2>
+  <pre class="code" id="htmlOut"></pre>
+  <h2>CSS</h2>
+  <pre class="code" id="cssOut"></pre>
+  <div class="actions">
+    <button type="button" id="copyAll" class="primary">HTML + CSS をコピー</button>
+    <button type="button" id="copyCss">CSS だけコピー</button>
+  </div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    border-color のうち 1 辺だけを不透明にし、他を <code>transparent</code> にすることで三角形になります。境界に半透明な縁が出る場合は <code>transform: scale(1.001)</code> や <code>-webkit-font-smoothing</code> 系の対策を併用してください。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    const triangle = $('triangle');
+    let dir = 'down';
+
+    function applyTriangle() {
+      const w = Math.max(0, parseInt($('w').value, 10) || 0);
+      const h = Math.max(0, parseInt($('h').value, 10) || 0);
+      const c = $('colorHex').value;
+
+      // Reset
+      triangle.style.width = '0';
+      triangle.style.height = '0';
+      triangle.style.borderStyle = 'solid';
+      triangle.style.borderColor = 'transparent';
+      triangle.style.borderTopWidth = '0';
+      triangle.style.borderRightWidth = '0';
+      triangle.style.borderBottomWidth = '0';
+      triangle.style.borderLeftWidth = '0';
+
+      const half = (w / 2);
+      let css = {};
+      switch (dir) {
+        case 'up':
+          css = {
+            'border-style': 'solid',
+            'border-color': 'transparent transparent ' + c + ' transparent',
+            'border-width': '0 ' + half + 'px ' + h + 'px ' + half + 'px',
+            'width': '0',
+            'height': '0',
+          };
+          break;
+        case 'down':
+          css = {
+            'border-style': 'solid',
+            'border-color': c + ' transparent transparent transparent',
+            'border-width': h + 'px ' + half + 'px 0 ' + half + 'px',
+            'width': '0',
+            'height': '0',
+          };
+          break;
+        case 'left':
+          css = {
+            'border-style': 'solid',
+            'border-color': 'transparent ' + c + ' transparent transparent',
+            'border-width': (h / 2) + 'px ' + w + 'px ' + (h / 2) + 'px 0',
+            'width': '0',
+            'height': '0',
+          };
+          break;
+        case 'right':
+          css = {
+            'border-style': 'solid',
+            'border-color': 'transparent transparent transparent ' + c,
+            'border-width': (h / 2) + 'px 0 ' + (h / 2) + 'px ' + w + 'px',
+            'width': '0',
+            'height': '0',
+          };
+          break;
+        case 'tl':
+          // top-left: filled in top-left corner
+          css = {
+            'border-style': 'solid',
+            'border-color': c + ' transparent transparent transparent',
+            'border-width': h + 'px ' + w + 'px 0 0',
+            'width': '0',
+            'height': '0',
+          };
+          break;
+        case 'tr':
+          css = {
+            'border-style': 'solid',
+            'border-color': 'transparent ' + c + ' transparent transparent',
+            'border-width': '0 ' + w + 'px ' + h + 'px 0',
+            'width': '0',
+            'height': '0',
+          };
+          break;
+        case 'bl':
+          css = {
+            'border-style': 'solid',
+            'border-color': 'transparent transparent transparent ' + c,
+            'border-width': h + 'px 0 0 ' + w + 'px',
+            'width': '0',
+            'height': '0',
+          };
+          break;
+        case 'br':
+          css = {
+            'border-style': 'solid',
+            'border-color': 'transparent transparent ' + c + ' transparent',
+            'border-width': '0 0 ' + h + 'px ' + w + 'px',
+            'width': '0',
+            'height': '0',
+          };
+          break;
+      }
+      Object.entries(css).forEach(([k, v]) => triangle.style.setProperty(k, v));
+
+      const cls = ($('className').value.trim() || 'triangle').replace(/[^A-Za-z0-9_\-]/g, '_');
+      $('htmlOut').textContent = '<span class="' + cls + '"></span>';
+      const lines = ['.' + cls + ' {'];
+      Object.keys(css).forEach((k) => lines.push('  ' + k + ': ' + css[k] + ';'));
+      lines.push('}');
+      $('cssOut').textContent = lines.join('\n');
+    }
+
+    // Direction buttons
+    document.querySelectorAll('#dirGrid button[data-dir]').forEach((b) => {
+      b.addEventListener('click', () => {
+        dir = b.dataset.dir;
+        document.querySelectorAll('#dirGrid button').forEach((x) => x.classList.remove('active'));
+        b.classList.add('active');
+        applyTriangle();
+      });
+    });
+
+    function bindPair(rangeId, numId) {
+      $(rangeId).addEventListener('input', () => { $(numId).value = $(rangeId).value; applyTriangle(); });
+      $(numId).addEventListener('input', () => {
+        const v = Math.max(0, Math.min(400, parseInt($(numId).value, 10) || 0));
+        $(rangeId).value = v;
+        applyTriangle();
+      });
+    }
+    bindPair('w', 'wNum');
+    bindPair('h', 'hNum');
+
+    $('color').addEventListener('input', () => { $('colorHex').value = $('color').value; applyTriangle(); });
+    $('colorHex').addEventListener('input', () => {
+      const v = $('colorHex').value.trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) { $('color').value = v; applyTriangle(); }
+    });
+    $('className').addEventListener('input', applyTriangle);
+
+    document.querySelectorAll('button[data-preset]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const p = JSON.parse(b.dataset.preset);
+        dir = p.dir;
+        document.querySelectorAll('#dirGrid button').forEach((x) => x.classList.toggle('active', x.dataset.dir === dir));
+        $('w').value = p.w; $('wNum').value = p.w;
+        $('h').value = p.h; $('hNum').value = p.h;
+        $('color').value = p.color; $('colorHex').value = p.color;
+        applyTriangle();
+      });
+    });
+
+    async function copy(text, btnId, label) {
+      try {
+        await navigator.clipboard.writeText(text);
+        const el = $(btnId);
+        const old = el.textContent;
+        el.textContent = 'コピーしました';
+        setTimeout(() => { el.textContent = old; }, 1100);
+      } catch (e) {}
+    }
+    $('copyAll').addEventListener('click', () => {
+      copy($('htmlOut').textContent + '\n\n<style>\n' + $('cssOut').textContent + '\n</style>', 'copyAll');
+    });
+    $('copyCss').addEventListener('click', () => copy($('cssOut').textContent, 'copyCss'));
+
+    applyTriangle();
+  })();
+</script>
+</body>
+</html>
