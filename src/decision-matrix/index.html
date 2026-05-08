@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>意思決定マトリクス - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: マトリクス表 */
+  .form-row {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 8px 14px;
+    align-items: center;
+    padding: 12px 14px;
+  }
+  .form-row > label { color: var(--muted); font-size: 0.9rem; }
+  .form-row .inline { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+  .form-row input[type="number"] { max-width: 110px; }
+  .form-row input[type="text"] { padding: 6px 10px; font-size: 0.92rem; }
+
+  .matrix-wrap {
+    overflow-x: auto;
+    margin-top: 8px;
+  }
+  table.dm {
+    border-collapse: collapse;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    min-width: 720px;
+  }
+  table.dm th,
+  table.dm td {
+    border: 1px solid var(--border);
+    padding: 6px 8px;
+    text-align: center;
+    vertical-align: middle;
+    font-size: 0.92rem;
+  }
+  table.dm th {
+    background: var(--bg);
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 0.85rem;
+    position: relative;
+  }
+  table.dm th .col-tools,
+  table.dm th .row-tools {
+    display: flex;
+    gap: 2px;
+    justify-content: center;
+    margin-top: 4px;
+  }
+  table.dm th button {
+    padding: 1px 6px;
+    font-size: 0.7rem;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    background: transparent;
+  }
+  table.dm th button:hover { color: var(--fg); border-color: var(--accent); }
+  table.dm th input[type="text"] {
+    width: 100%;
+    min-width: 110px;
+    padding: 4px 6px;
+    font-size: 0.9rem;
+    text-align: center;
+    background: transparent;
+    border: 1px solid transparent;
+  }
+  table.dm th input[type="text"]:focus { background: var(--card); border-color: var(--accent); }
+  table.dm th input[type="number"] {
+    width: 60px;
+    padding: 2px 6px;
+    text-align: center;
+    font-size: 0.85rem;
+  }
+  table.dm td input[type="number"] {
+    width: 60px;
+    padding: 4px 6px;
+    text-align: center;
+    font-size: 0.92rem;
+    background: transparent;
+    border: 1px solid transparent;
+  }
+  table.dm td input[type="number"]:focus { background: var(--card); border-color: var(--accent); border-radius: 4px; }
+  table.dm td.score-cell {
+    background: rgba(37, 99, 235, var(--score-w, 0));
+  }
+  table.dm tr.winner td.total {
+    background: var(--added-bg);
+    color: var(--added-fg);
+    font-weight: 700;
+  }
+  table.dm td.option-name {
+    text-align: left;
+    background: var(--bg);
+    padding: 6px 10px;
+  }
+  table.dm td.option-name input[type="text"] {
+    width: 100%;
+    padding: 4px 6px;
+    background: transparent;
+    border: 1px solid transparent;
+    font-size: 0.95rem;
+    font-weight: 500;
+  }
+  table.dm td.option-name input[type="text"]:focus { background: var(--card); border-color: var(--accent); border-radius: 4px; }
+  table.dm tr.head-weight th {
+    background: var(--card);
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+  .add-row-btns { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+
+  .summary-row {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.6;
+  }
+  .summary-row b { color: var(--fg); }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>意思決定マトリクス</h1>
+    <p class="lead">複数の選択肢を、重み付きの評価軸で得点化して比較します。加重合計で最も高い案をハイライトします。</p>
+  </header>
+
+  <div class="card form-row">
+    <label>テーマ</label>
+    <input type="text" id="title" placeholder="例: 新システムの選定">
+
+    <label>採点スケール</label>
+    <div class="inline">
+      <input type="number" id="scaleMax" min="3" max="100" value="10">
+      <span style="color:var(--muted);font-size:0.85rem;">（0 〜 上記の整数で採点）</span>
+    </div>
+
+    <label>採点の意味</label>
+    <div class="inline">
+      <select id="scaleDir">
+        <option value="hi" selected>高いほど良い（高評価）</option>
+        <option value="lo">低いほど良い（小さい方が良い）</option>
+      </select>
+      <span style="color:var(--muted);font-size:0.82rem;">※「低いほど良い」を選ぶと加重合計の昇順で勝者を決めます</span>
+    </div>
+  </div>
+
+  <h2>マトリクス</h2>
+  <div class="matrix-wrap">
+    <table class="dm" id="matrix">
+      <thead>
+        <tr id="headerRow"></tr>
+        <tr id="weightRow" class="head-weight"></tr>
+      </thead>
+      <tbody id="body"></tbody>
+    </table>
+  </div>
+
+  <div class="add-row-btns">
+    <button type="button" id="addOption" class="primary">+ 選択肢（行）</button>
+    <button type="button" id="addCriterion">+ 評価軸（列）</button>
+    <button type="button" id="presetTool">プリセット: ツール選定</button>
+    <button type="button" id="presetVendor">プリセット: ベンダ選定</button>
+    <button type="button" id="presetIdea">プリセット: アイデア比較</button>
+    <button type="button" id="clearAll">すべて消去</button>
+  </div>
+
+  <div class="summary-row" id="summary"></div>
+
+  <div class="actions" style="margin-top:14px;">
+    <button type="button" id="copyMd" class="primary">Markdown コピー</button>
+    <button type="button" id="copyJson">JSON コピー</button>
+    <button type="button" id="downloadJson">JSON 保存</button>
+    <button type="button" id="loadJson">JSON 読込</button>
+    <input type="file" id="fileInput" accept="application/json,.json" style="display:none;">
+    <span id="saveStat" style="color:var(--muted);font-size:0.85rem;align-self:center;"></span>
+  </div>
+
+  <h2>Markdown プレビュー</h2>
+  <pre class="code" id="mdOut"></pre>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    各セルの背景の濃さは「重み × 得点」を可視化したものです。空欄セルは 0 として計算します。重み・得点は数値以外を入れると 0 扱いになります。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const STORAGE_KEY = 'public-tools.decision-matrix.v1';
+
+    let state = {
+      title: '',
+      scaleMax: 10,
+      scaleDir: 'hi',
+      criteria: [], // [{ name, weight }]
+      options: [],  // [{ name, scores: { critIdx: number } }]
+    };
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (!obj || typeof obj !== 'object') return;
+        state.title = typeof obj.title === 'string' ? obj.title : '';
+        state.scaleMax = Number(obj.scaleMax) || 10;
+        state.scaleDir = obj.scaleDir === 'lo' ? 'lo' : 'hi';
+        state.criteria = Array.isArray(obj.criteria) ? obj.criteria.map((c) => ({
+          name: typeof c.name === 'string' ? c.name : '',
+          weight: Number(c.weight) || 1,
+        })) : [];
+        state.options = Array.isArray(obj.options) ? obj.options.map((o) => ({
+          name: typeof o.name === 'string' ? o.name : '',
+          scores: (o.scores && typeof o.scores === 'object') ? Object.fromEntries(
+            Object.entries(o.scores).map(([k, v]) => [k, Number(v) || 0])
+          ) : {},
+        })) : [];
+      } catch (e) {}
+    }
+    function save() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        flashSave();
+      } catch (e) {}
+    }
+    let flashTimer;
+    function flashSave() {
+      const el = $('saveStat');
+      el.textContent = '保存しました';
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { el.textContent = ''; }, 1100);
+    }
+
+    function presetTool() {
+      state.criteria = [
+        { name: 'コスト',     weight: 4 },
+        { name: '使いやすさ', weight: 5 },
+        { name: '機能の豊富さ', weight: 4 },
+        { name: '導入の速さ', weight: 3 },
+        { name: 'サポート',   weight: 3 },
+      ];
+      state.options = [
+        { name: 'ツール A', scores: {} },
+        { name: 'ツール B', scores: {} },
+        { name: 'ツール C', scores: {} },
+      ];
+    }
+    function presetVendor() {
+      state.criteria = [
+        { name: '価格',     weight: 5 },
+        { name: '品質',     weight: 5 },
+        { name: '実績',     weight: 3 },
+        { name: '担当者の対応', weight: 3 },
+        { name: '納期',     weight: 4 },
+      ];
+      state.options = [
+        { name: 'ベンダ X', scores: {} },
+        { name: 'ベンダ Y', scores: {} },
+        { name: 'ベンダ Z', scores: {} },
+      ];
+    }
+    function presetIdea() {
+      state.criteria = [
+        { name: '実現性',   weight: 4 },
+        { name: 'インパクト', weight: 5 },
+        { name: 'コスト',   weight: 3 },
+        { name: '差別化',   weight: 4 },
+      ];
+      state.options = [
+        { name: 'アイデア A', scores: {} },
+        { name: 'アイデア B', scores: {} },
+        { name: 'アイデア C', scores: {} },
+      ];
+    }
+
+    function totalOf(o) {
+      let t = 0;
+      state.criteria.forEach((c, i) => {
+        const score = Number(o.scores[i]) || 0;
+        t += score * (Number(c.weight) || 0);
+      });
+      return t;
+    }
+
+    function maxPossible() {
+      const w = state.criteria.reduce((s, c) => s + (Number(c.weight) || 0), 0);
+      return w * (Number(state.scaleMax) || 10);
+    }
+
+    function isWinner(idx) {
+      if (state.options.length === 0) return false;
+      const totals = state.options.map(totalOf);
+      if (state.scaleDir === 'lo') {
+        const min = Math.min(...totals);
+        return totals[idx] === min && min > 0; // not all zero
+      } else {
+        const max = Math.max(...totals);
+        return totals[idx] === max && max > 0;
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    }
+
+    function render() {
+      $('title').value = state.title;
+      $('scaleMax').value = state.scaleMax;
+      $('scaleDir').value = state.scaleDir;
+
+      const head = $('headerRow');
+      head.innerHTML = '';
+      const corner = document.createElement('th');
+      corner.style.minWidth = '160px';
+      corner.style.background = 'var(--card)';
+      corner.textContent = '選択肢 ＼ 評価軸';
+      head.appendChild(corner);
+      state.criteria.forEach((c, i) => {
+        const th = document.createElement('th');
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.value = c.name;
+        inp.placeholder = '評価軸 ' + (i + 1);
+        inp.addEventListener('input', () => { c.name = inp.value; save(); renderMd(); });
+        const tools = document.createElement('div');
+        tools.className = 'col-tools';
+        const left = document.createElement('button');
+        left.type = 'button'; left.textContent = '←';
+        left.title = '左へ';
+        left.addEventListener('click', () => moveCrit(i, -1));
+        const right = document.createElement('button');
+        right.type = 'button'; right.textContent = '→';
+        right.title = '右へ';
+        right.addEventListener('click', () => moveCrit(i, 1));
+        const del = document.createElement('button');
+        del.type = 'button'; del.textContent = '×';
+        del.title = '削除';
+        del.addEventListener('click', () => removeCrit(i));
+        tools.append(left, right, del);
+        th.appendChild(inp);
+        th.appendChild(tools);
+        head.appendChild(th);
+      });
+      const totalTh = document.createElement('th');
+      totalTh.textContent = '加重合計';
+      totalTh.style.background = 'var(--bg)';
+      totalTh.style.minWidth = '110px';
+      head.appendChild(totalTh);
+
+      const wrow = $('weightRow');
+      wrow.innerHTML = '';
+      const wcorner = document.createElement('th');
+      wcorner.textContent = '重み →';
+      wrow.appendChild(wcorner);
+      state.criteria.forEach((c, i) => {
+        const th = document.createElement('th');
+        const winp = document.createElement('input');
+        winp.type = 'number';
+        winp.min = 1; winp.max = 10;
+        winp.value = c.weight;
+        winp.addEventListener('input', () => {
+          c.weight = Math.max(0, Number(winp.value) || 0);
+          save();
+          renderBody();
+          renderSummary();
+          renderMd();
+        });
+        th.appendChild(winp);
+        wrow.appendChild(th);
+      });
+      const wtot = document.createElement('th');
+      wtot.textContent = (state.criteria.reduce((s, c) => s + (Number(c.weight) || 0), 0));
+      wrow.appendChild(wtot);
+
+      renderBody();
+      renderSummary();
+      renderMd();
+    }
+
+    function renderBody() {
+      const body = $('body');
+      body.innerHTML = '';
+      const scaleMax = Math.max(1, Number(state.scaleMax) || 10);
+      const totalWeight = state.criteria.reduce((s, c) => s + (Number(c.weight) || 0), 0) || 1;
+
+      state.options.forEach((o, oi) => {
+        const tr = document.createElement('tr');
+        if (isWinner(oi)) tr.classList.add('winner');
+
+        const nameTd = document.createElement('td');
+        nameTd.className = 'option-name';
+        const nameInp = document.createElement('input');
+        nameInp.type = 'text';
+        nameInp.value = o.name;
+        nameInp.placeholder = '選択肢 ' + (oi + 1);
+        nameInp.addEventListener('input', () => { o.name = nameInp.value; save(); renderMd(); });
+        const tools = document.createElement('div');
+        tools.className = 'row-tools';
+        tools.style.display = 'flex';
+        tools.style.gap = '4px';
+        tools.style.marginTop = '4px';
+        const up = document.createElement('button');
+        up.type = 'button'; up.textContent = '↑';
+        up.style.padding = '1px 7px'; up.style.fontSize = '0.7rem';
+        up.style.color = 'var(--muted)';
+        up.addEventListener('click', () => moveOpt(oi, -1));
+        const dn = document.createElement('button');
+        dn.type = 'button'; dn.textContent = '↓';
+        dn.style.padding = '1px 7px'; dn.style.fontSize = '0.7rem';
+        dn.style.color = 'var(--muted)';
+        dn.addEventListener('click', () => moveOpt(oi, 1));
+        const dup = document.createElement('button');
+        dup.type = 'button'; dup.textContent = '複製';
+        dup.style.padding = '1px 7px'; dup.style.fontSize = '0.7rem';
+        dup.style.color = 'var(--muted)';
+        dup.addEventListener('click', () => duplicateOpt(oi));
+        const del = document.createElement('button');
+        del.type = 'button'; del.textContent = '×';
+        del.style.padding = '1px 7px'; del.style.fontSize = '0.7rem';
+        del.style.color = 'var(--muted)';
+        del.title = '削除';
+        del.addEventListener('click', () => removeOpt(oi));
+        tools.append(up, dn, dup, del);
+        nameTd.append(nameInp, tools);
+        tr.appendChild(nameTd);
+
+        state.criteria.forEach((c, ci) => {
+          const td = document.createElement('td');
+          td.className = 'score-cell';
+          const inp = document.createElement('input');
+          inp.type = 'number';
+          inp.min = 0;
+          inp.max = scaleMax;
+          inp.step = 1;
+          inp.value = (o.scores[ci] != null) ? o.scores[ci] : '';
+          inp.placeholder = '0';
+          inp.addEventListener('input', () => {
+            const v = inp.value === '' ? 0 : Math.max(0, Math.min(scaleMax, Number(inp.value) || 0));
+            o.scores[ci] = v;
+            // update bg shading
+            const norm = (v * (Number(c.weight) || 0)) / (scaleMax * Math.max(1, Number(c.weight) || 1));
+            td.style.setProperty('--score-w', (0.06 + norm * 0.4).toFixed(3));
+            // recompute total cell + winner classes
+            updateTotals();
+            save();
+            renderMd();
+          });
+          const score = Number(o.scores[ci]) || 0;
+          const norm = (score * (Number(c.weight) || 0)) / (scaleMax * Math.max(1, Number(c.weight) || 1));
+          td.style.setProperty('--score-w', (0.06 + norm * 0.4).toFixed(3));
+          td.appendChild(inp);
+          tr.appendChild(td);
+        });
+
+        const totalTd = document.createElement('td');
+        totalTd.className = 'total';
+        totalTd.dataset.optIdx = oi;
+        totalTd.textContent = totalOf(o).toLocaleString('ja-JP');
+        tr.appendChild(totalTd);
+
+        body.appendChild(tr);
+      });
+
+      if (state.options.length === 0) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = state.criteria.length + 2;
+        td.style.color = 'var(--muted)';
+        td.style.padding = '20px';
+        td.textContent = '選択肢を追加してください。';
+        tr.appendChild(td);
+        body.appendChild(tr);
+      }
+    }
+
+    function updateTotals() {
+      const body = $('body');
+      const trs = body.querySelectorAll('tr');
+      trs.forEach((tr, i) => {
+        if (!state.options[i]) return;
+        const td = tr.querySelector('td.total');
+        if (td) td.textContent = totalOf(state.options[i]).toLocaleString('ja-JP');
+        tr.classList.toggle('winner', isWinner(i));
+      });
+      renderSummary();
+    }
+
+    function renderSummary() {
+      const totals = state.options.map((o) => ({ name: o.name, total: totalOf(o) }));
+      const max = maxPossible();
+      const sorted = totals.slice().sort((a, b) => state.scaleDir === 'lo' ? a.total - b.total : b.total - a.total);
+      const lines = [];
+      if (totals.length === 0) {
+        lines.push('（選択肢がありません）');
+      } else {
+        lines.push('採点スケール: <b>0 〜 ' + state.scaleMax + '</b> ／ 重み合計: <b>' +
+          state.criteria.reduce((s, c) => s + (Number(c.weight) || 0), 0) +
+          '</b> ／ 加重合計の最大値: <b>' + max + '</b>');
+        lines.push('順位: ' + sorted.map((s, i) => (i + 1) + ' 位 <b>' + escapeHtml(s.name || '(無名)') + '</b> (' + s.total + ')').join(' ／ '));
+      }
+      $('summary').innerHTML = lines.join('<br>');
+    }
+
+    function renderMd() {
+      const lines = [];
+      lines.push('# 意思決定マトリクス' + (state.title ? ': ' + state.title : ''));
+      lines.push('');
+      lines.push('採点スケール: 0〜' + state.scaleMax + ' （' + (state.scaleDir === 'lo' ? '低いほど良い' : '高いほど良い') + '）');
+      lines.push('');
+      // Markdown table
+      const headers = ['選択肢'].concat(state.criteria.map((c) => c.name + ' ×' + c.weight)).concat(['加重合計']);
+      lines.push('| ' + headers.join(' | ') + ' |');
+      lines.push('|' + headers.map(() => '---').join('|') + '|');
+      state.options.forEach((o) => {
+        const row = [o.name || ''];
+        state.criteria.forEach((c, i) => row.push(String(o.scores[i] != null ? o.scores[i] : 0)));
+        row.push(String(totalOf(o)));
+        lines.push('| ' + row.join(' | ') + ' |');
+      });
+      lines.push('');
+      const sorted = state.options.slice().sort((a, b) => state.scaleDir === 'lo' ? totalOf(a) - totalOf(b) : totalOf(b) - totalOf(a));
+      if (sorted.length > 0) {
+        lines.push('## 順位');
+        sorted.forEach((o, i) => lines.push((i + 1) + '. **' + (o.name || '(無名)') + '**: ' + totalOf(o)));
+      }
+      $('mdOut').textContent = lines.join('\n').trim() + '\n';
+    }
+
+    // mutations
+    function moveCrit(idx, dir) {
+      const j = idx + dir;
+      if (j < 0 || j >= state.criteria.length) return;
+      [state.criteria[idx], state.criteria[j]] = [state.criteria[j], state.criteria[idx]];
+      // also swap scores keys per option
+      state.options.forEach((o) => {
+        const a = o.scores[idx]; const b = o.scores[j];
+        if (a == null) delete o.scores[j]; else o.scores[j] = a;
+        if (b == null) delete o.scores[idx]; else o.scores[idx] = b;
+      });
+      save(); render();
+    }
+    function removeCrit(idx) {
+      if (!confirm('評価軸「' + (state.criteria[idx].name || ('Col ' + (idx + 1))) + '」を削除しますか？')) return;
+      state.criteria.splice(idx, 1);
+      state.options.forEach((o) => {
+        // shift down: keys > idx -> minus 1
+        const newScores = {};
+        Object.entries(o.scores).forEach(([k, v]) => {
+          const ki = parseInt(k, 10);
+          if (ki < idx) newScores[ki] = v;
+          else if (ki > idx) newScores[ki - 1] = v;
+        });
+        o.scores = newScores;
+      });
+      save(); render();
+    }
+    function moveOpt(idx, dir) {
+      const j = idx + dir;
+      if (j < 0 || j >= state.options.length) return;
+      [state.options[idx], state.options[j]] = [state.options[j], state.options[idx]];
+      save(); render();
+    }
+    function duplicateOpt(idx) {
+      const o = state.options[idx];
+      const c = JSON.parse(JSON.stringify(o));
+      c.name = (c.name || '選択肢') + ' (複製)';
+      state.options.splice(idx + 1, 0, c);
+      save(); render();
+    }
+    function removeOpt(idx) {
+      if (!confirm('選択肢「' + (state.options[idx].name || ('Row ' + (idx + 1))) + '」を削除しますか？')) return;
+      state.options.splice(idx, 1);
+      save(); render();
+    }
+
+    // Toolbar bindings
+    $('title').addEventListener('input', () => { state.title = $('title').value; save(); renderMd(); });
+    $('scaleMax').addEventListener('input', () => {
+      const v = Math.max(3, Math.min(100, parseInt($('scaleMax').value, 10) || 10));
+      state.scaleMax = v;
+      save(); render();
+    });
+    $('scaleDir').addEventListener('change', () => {
+      state.scaleDir = $('scaleDir').value;
+      save(); render();
+    });
+    $('addOption').addEventListener('click', () => {
+      state.options.push({ name: '選択肢 ' + (state.options.length + 1), scores: {} });
+      save(); render();
+    });
+    $('addCriterion').addEventListener('click', () => {
+      state.criteria.push({ name: '評価軸 ' + (state.criteria.length + 1), weight: 3 });
+      save(); render();
+    });
+    $('presetTool').addEventListener('click', () => { presetTool(); save(); render(); });
+    $('presetVendor').addEventListener('click', () => { presetVendor(); save(); render(); });
+    $('presetIdea').addEventListener('click', () => { presetIdea(); save(); render(); });
+    $('clearAll').addEventListener('click', () => {
+      if (!confirm('すべての行・列・点数を削除しますか？')) return;
+      state.criteria = [];
+      state.options = [];
+      save(); render();
+    });
+
+    $('copyMd').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText($('mdOut').textContent); flash('copyMd','Markdown コピー'); } catch (e) {}
+    });
+    $('copyJson').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(JSON.stringify(state, null, 2)); flash('copyJson','JSON コピー'); } catch (e) {}
+    });
+    function flash(id, label) {
+      const el = $(id); el.textContent = 'コピーしました';
+      setTimeout(() => el.textContent = label, 1100);
+    }
+    $('downloadJson').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = 'decision-matrix-' + stamp + '.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    });
+    $('loadJson').addEventListener('click', () => $('fileInput').click());
+    $('fileInput').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const obj = JSON.parse(String(reader.result));
+          if (obj && typeof obj === 'object') {
+            state.title = typeof obj.title === 'string' ? obj.title : '';
+            state.scaleMax = Number(obj.scaleMax) || 10;
+            state.scaleDir = obj.scaleDir === 'lo' ? 'lo' : 'hi';
+            state.criteria = Array.isArray(obj.criteria) ? obj.criteria.map((c) => ({
+              name: typeof c.name === 'string' ? c.name : '',
+              weight: Number(c.weight) || 1,
+            })) : [];
+            state.options = Array.isArray(obj.options) ? obj.options.map((o) => ({
+              name: typeof o.name === 'string' ? o.name : '',
+              scores: (o.scores && typeof o.scores === 'object') ? Object.fromEntries(
+                Object.entries(o.scores).map(([k, v]) => [k, Number(v) || 0])
+              ) : {},
+            })) : [];
+            save(); render();
+          }
+        } catch (err) {
+          alert('JSON の読み込みに失敗: ' + err.message);
+        }
+        $('fileInput').value = '';
+      };
+      reader.readAsText(f);
+    });
+
+    load();
+    if (state.criteria.length === 0 && state.options.length === 0) {
+      presetTool();
+    }
+    render();
+  })();
+</script>
+</body>
+</html>
