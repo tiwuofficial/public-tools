@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crontab ジェネレータ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local */
+  .field-grid {
+    display: grid;
+    grid-template-columns: 130px 1fr 1fr 1fr 1fr;
+    gap: 8px 10px;
+    align-items: center;
+    padding: 12px 14px;
+  }
+  .field-grid > label { color: var(--muted); font-size: 0.9rem; }
+  .field-grid select,
+  .field-grid input[type="text"] {
+    padding: 5px 8px;
+    font-size: 0.9rem;
+  }
+  .field-grid input[type="text"] {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .cron-output {
+    margin-top: 12px;
+    padding: 16px 18px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    text-align: center;
+  }
+  .cron-expr {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.06em;
+    word-break: break-all;
+  }
+  .cron-expr.invalid { color: var(--danger); }
+  .cron-human {
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+
+  .preset-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 14px 14px;
+  }
+  .preset-row button {
+    padding: 4px 10px;
+    font-size: 0.85rem;
+  }
+
+  .runs-list {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .runs-list li {
+    display: grid;
+    grid-template-columns: 30px 1fr 1fr;
+    gap: 10px;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--border);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.92rem;
+  }
+  .runs-list li:last-child { border-bottom: none; }
+  .runs-list li .num { color: var(--muted); text-align: right; }
+  .runs-list li .delta { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>Crontab ジェネレータ</h1>
+    <p class="lead">5 フィールド (分・時・日・月・曜日) を GUI で組み立て、cron 式とその意味、次回実行時刻のプレビューを表示します。</p>
+  </header>
+
+  <h2>各フィールド</h2>
+  <div class="card field-grid" id="fields">
+    <span></span>
+    <strong style="text-align:center;font-size:0.85rem;color:var(--muted);">モード</strong>
+    <strong style="text-align:center;font-size:0.85rem;color:var(--muted);">値（モードに応じて）</strong>
+    <strong style="text-align:center;font-size:0.85rem;color:var(--muted);">範囲</strong>
+    <strong style="text-align:center;font-size:0.85rem;color:var(--muted);">出力</strong>
+  </div>
+
+  <div class="preset-row">
+    <button type="button" data-preset="* * * * *">毎分</button>
+    <button type="button" data-preset="*/5 * * * *">5 分ごと</button>
+    <button type="button" data-preset="0 * * * *">毎時 (00 分)</button>
+    <button type="button" data-preset="0 0 * * *">毎日 0:00</button>
+    <button type="button" data-preset="0 9 * * 1-5">平日 9:00</button>
+    <button type="button" data-preset="0 0 * * 0">毎週日曜 0:00</button>
+    <button type="button" data-preset="0 0 1 * *">毎月 1 日 0:00</button>
+    <button type="button" data-preset="*/15 9-17 * * 1-5">平日 9-17 時 / 15 分ごと</button>
+  </div>
+
+  <h2>cron 式</h2>
+  <div class="cron-output">
+    <div class="cron-expr" id="exprOut">* * * * *</div>
+    <div class="cron-human" id="humanOut"></div>
+  </div>
+  <div class="actions" style="margin-top:8px;">
+    <button type="button" id="copyExpr" class="primary">cron 式をコピー</button>
+    <span id="status" style="color:var(--muted);font-size:0.85rem;align-self:center;"></span>
+  </div>
+
+  <h2>次の実行（最大 10 件）</h2>
+  <ul class="runs-list" id="runs"></ul>
+
+  <h2>cron 式を貼り付けてパース</h2>
+  <div class="card form-grid" style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 14px;">
+    <input type="text" id="parseInput" placeholder="例: 0 9 * * 1-5">
+    <button type="button" id="parseBtn">フォームに反映</button>
+  </div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    本ツールは標準の 5 フィールド POSIX cron をサポートします（拡張形 <code>?</code>, <code>L</code>, <code>W</code> や 6 番目の秒フィールドは非対応）。次回実行はブラウザのローカル時刻で計算します。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    const FIELDS = [
+      { key: 'min',   label: '分',     min: 0, max: 59 },
+      { key: 'hour',  label: '時',     min: 0, max: 23 },
+      { key: 'dom',   label: '日',     min: 1, max: 31 },
+      { key: 'month', label: '月',     min: 1, max: 12 },
+      { key: 'dow',   label: '曜日',   min: 0, max: 6 },
+    ];
+    const DOW_JA = ['日', '月', '火', '水', '木', '金', '土'];
+    const MONTH_JA = ['1','2','3','4','5','6','7','8','9','10','11','12'];
+
+    let state = {};
+    FIELDS.forEach((f) => { state[f.key] = { mode: 'every', value: '' }; });
+
+    function buildRow(f) {
+      const row = document.createElement('div');
+      row.style.display = 'contents';
+
+      const lbl = document.createElement('label');
+      lbl.textContent = f.label + ' (' + f.min + '–' + f.max + ')';
+      row.appendChild(lbl);
+
+      const sel = document.createElement('select');
+      const modes = [
+        { id: 'every',    label: '毎 (*)' },
+        { id: 'specific', label: '特定値（カンマ区切り）' },
+        { id: 'step',     label: 'N ごと (*/N)' },
+        { id: 'range',    label: '範囲 (a–b)' },
+        { id: 'rangeStep',label: '範囲 + N ごと (a–b/N)' },
+      ];
+      modes.forEach((m) => {
+        const opt = document.createElement('option');
+        opt.value = m.id; opt.textContent = m.label;
+        sel.appendChild(opt);
+      });
+      sel.dataset.field = f.key;
+      sel.addEventListener('change', () => {
+        state[f.key].mode = sel.value;
+        sel.value = state[f.key].mode;
+        update();
+      });
+      row.appendChild(sel);
+
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.dataset.field = f.key;
+      inp.placeholder = f.key === 'dow' ? '0=日 6=土 (例: 1-5)' : (f.key === 'min' ? '例: 0,15,30,45' : '例: 1,15');
+      inp.addEventListener('input', () => {
+        state[f.key].value = inp.value;
+        update();
+      });
+      row.appendChild(inp);
+
+      const range = document.createElement('div');
+      range.style.color = 'var(--muted)';
+      range.style.fontSize = '0.82rem';
+      if (f.key === 'dow') range.textContent = '0=日 1=月 2=火 3=水 4=木 5=金 6=土';
+      else if (f.key === 'month') range.textContent = '1=Jan ... 12=Dec';
+      else range.textContent = f.min + ' 〜 ' + f.max;
+      row.appendChild(range);
+
+      const out = document.createElement('div');
+      out.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+      out.style.fontWeight = '600';
+      out.style.textAlign = 'center';
+      out.dataset.field = f.key;
+      out.dataset.role = 'piece';
+      row.appendChild(out);
+
+      return row;
+    }
+
+    function buildFields() {
+      const root = $('fields');
+      FIELDS.forEach((f) => root.appendChild(buildRow(f)));
+    }
+
+    function pieceFor(f) {
+      const s = state[f.key];
+      const v = (s.value || '').trim();
+      switch (s.mode) {
+        case 'every': return '*';
+        case 'specific': return v || '*';
+        case 'step': return v ? '*/' + v : '*';
+        case 'range': return v || '*';
+        case 'rangeStep': return v || '*';
+      }
+      return '*';
+    }
+
+    function buildExpr() {
+      return FIELDS.map(pieceFor).join(' ');
+    }
+
+    function syncForm() {
+      FIELDS.forEach((f) => {
+        const sel = document.querySelector('select[data-field="' + f.key + '"]');
+        const inp = document.querySelector('input[type="text"][data-field="' + f.key + '"]');
+        sel.value = state[f.key].mode;
+        inp.value = state[f.key].value;
+        const piece = pieceFor(f);
+        const out = document.querySelector('div[data-role="piece"][data-field="' + f.key + '"]');
+        out.textContent = piece;
+      });
+    }
+
+    // Parse a single field token into a list of allowed values within [min,max].
+    function parseField(token, min, max) {
+      const t = (token || '').trim();
+      if (!t) return null;
+      const allowed = new Set();
+      const parts = t.split(',');
+      for (const p of parts) {
+        if (!p) return null;
+        const m = p.match(/^(\*|\d+(?:-\d+)?)(?:\/(\d+))?$/);
+        if (!m) return null;
+        let lo = min, hi = max;
+        if (m[1] !== '*') {
+          const r = m[1].split('-');
+          lo = parseInt(r[0], 10);
+          hi = r.length === 2 ? parseInt(r[1], 10) : lo;
+          if (Number.isNaN(lo) || Number.isNaN(hi)) return null;
+          if (lo < min || hi > max || lo > hi) return null;
+        }
+        const step = m[2] ? parseInt(m[2], 10) : 1;
+        if (step <= 0) return null;
+        for (let v = lo; v <= hi; v += step) allowed.add(v);
+      }
+      return Array.from(allowed).sort((a, b) => a - b);
+    }
+
+    function explain() {
+      const parts = [];
+      const f = FIELDS;
+
+      const minVals = parseField(pieceFor(f[0]), 0, 59);
+      const hourVals = parseField(pieceFor(f[1]), 0, 23);
+      const domVals = parseField(pieceFor(f[2]), 1, 31);
+      const monthVals = parseField(pieceFor(f[3]), 1, 12);
+      const dowVals = parseField(pieceFor(f[4]), 0, 6);
+      if (!minVals || !hourVals || !domVals || !monthVals || !dowVals) {
+        return null;
+      }
+
+      function describeListInRange(vals, min, max) {
+        if (vals.length === max - min + 1) return null; // every
+        if (vals.length === 1) return null; // single value
+        // detect step
+        if (vals.length >= 2) {
+          const step = vals[1] - vals[0];
+          let isStep = step >= 2;
+          for (let i = 2; i < vals.length; i++) {
+            if (vals[i] - vals[i - 1] !== step) { isStep = false; break; }
+          }
+          if (isStep && vals[0] === min && vals[vals.length - 1] + step > max) {
+            return step + ' ごと';
+          }
+        }
+        return null;
+      }
+
+      // hour:min part
+      let timePart;
+      if (minVals.length === 60 && hourVals.length === 24) {
+        timePart = '毎分';
+      } else if (minVals.length === 1 && hourVals.length === 24) {
+        timePart = '毎時 ' + minVals[0] + ' 分';
+      } else if (minVals.length === 1 && hourVals.length === 1) {
+        timePart = pad2(hourVals[0]) + ':' + pad2(minVals[0]);
+      } else if (hourVals.length === 24) {
+        const desc = describeListInRange(minVals, 0, 59);
+        timePart = desc ? ('毎時 ' + desc) : ('毎時 ' + minVals.map(pad2).join(',') + ' 分');
+      } else if (minVals.length === 1) {
+        const desc = describeListInRange(hourVals, 0, 23);
+        if (desc) timePart = pad2(minVals[0]) + ' 分・' + desc + ' (時)';
+        else timePart = hourVals.map(pad2).join(',') + ':' + pad2(minVals[0]);
+      } else {
+        const minDesc = describeListInRange(minVals, 0, 59);
+        const hourDesc = describeListInRange(hourVals, 0, 23);
+        const minStr = minDesc ? minDesc : minVals.map(pad2).join(',');
+        const hourStr = hourDesc ? hourDesc : hourVals.map(pad2).join(',');
+        timePart = '時: ' + hourStr + ' / 分: ' + minStr;
+      }
+
+      // month
+      let monthPart = '';
+      if (monthVals.length !== 12) {
+        monthPart = monthVals.map((v) => v + '月').join(',');
+      }
+
+      // dom / dow
+      let dayPart = '';
+      const allDom = domVals.length === 31;
+      const allDow = dowVals.length === 7;
+      if (allDom && allDow) {
+        dayPart = '';
+      } else if (allDom && !allDow) {
+        dayPart = dowVals.map((v) => DOW_JA[v] + '曜').join('・');
+      } else if (!allDom && allDow) {
+        dayPart = domVals.map((v) => v + '日').join(',');
+      } else {
+        dayPart = '日: ' + domVals.join(',') + ' または ' + dowVals.map((v) => DOW_JA[v] + '曜').join('・');
+      }
+
+      const segments = [];
+      if (monthPart) segments.push(monthPart);
+      if (dayPart) segments.push(dayPart);
+      segments.push(timePart);
+      return segments.join(' ／ ');
+
+      function pad2(n) { return String(n).padStart(2, '0'); }
+    }
+
+    function nextRuns(maxCount, maxIterations) {
+      const minVals = parseField(pieceFor(FIELDS[0]), 0, 59);
+      const hourVals = parseField(pieceFor(FIELDS[1]), 0, 23);
+      const domVals = parseField(pieceFor(FIELDS[2]), 1, 31);
+      const monthVals = parseField(pieceFor(FIELDS[3]), 1, 12);
+      const dowVals = parseField(pieceFor(FIELDS[4]), 0, 6);
+      if (!minVals || !hourVals || !domVals || !monthVals || !dowVals) return null;
+
+      const minSet = new Set(minVals);
+      const hourSet = new Set(hourVals);
+      const domSet = new Set(domVals);
+      const monthSet = new Set(monthVals);
+      const dowSet = new Set(dowVals);
+
+      // POSIX rule: if both DOM and DOW are restricted (not '*'), match either.
+      const domRestricted = domVals.length !== 31;
+      const dowRestricted = dowVals.length !== 7;
+
+      const out = [];
+      const start = new Date();
+      start.setSeconds(0, 0);
+      // bump to next minute
+      start.setMinutes(start.getMinutes() + 1);
+      let cur = start;
+
+      const limit = maxIterations || (60 * 24 * 366 * 4);
+      let iterations = 0;
+      while (out.length < maxCount && iterations < limit) {
+        iterations++;
+        const month = cur.getMonth() + 1;
+        if (!monthSet.has(month)) {
+          // jump to first day of next month
+          cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1, 0, 0, 0, 0);
+          continue;
+        }
+        const dom = cur.getDate();
+        const dow = cur.getDay();
+        const dayOk = (() => {
+          if (domRestricted && dowRestricted) return domSet.has(dom) || dowSet.has(dow);
+          return domSet.has(dom) && dowSet.has(dow);
+        })();
+        if (!dayOk) {
+          cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 1, 0, 0, 0, 0);
+          continue;
+        }
+        const hour = cur.getHours();
+        if (!hourSet.has(hour)) {
+          cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate(), cur.getHours() + 1, 0, 0, 0);
+          continue;
+        }
+        const min = cur.getMinutes();
+        if (!minSet.has(min)) {
+          cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate(), cur.getHours(), cur.getMinutes() + 1, 0, 0);
+          continue;
+        }
+        out.push(new Date(cur));
+        cur = new Date(cur.getTime() + 60000);
+      }
+      return out;
+    }
+
+    function fmtDate(d) {
+      const w = ['日','月','火','水','木','金','土'][d.getDay()];
+      const y = d.getFullYear();
+      const M = String(d.getMonth() + 1).padStart(2, '0');
+      const D = String(d.getDate()).padStart(2, '0');
+      const h = String(d.getHours()).padStart(2, '0');
+      const m = String(d.getMinutes()).padStart(2, '0');
+      return y + '-' + M + '-' + D + ' (' + w + ') ' + h + ':' + m;
+    }
+    function fmtDelta(d) {
+      const ms = d.getTime() - Date.now();
+      const sec = Math.max(0, Math.floor(ms / 1000));
+      const min = Math.floor(sec / 60);
+      const hr = Math.floor(min / 60);
+      const day = Math.floor(hr / 24);
+      if (day > 0) return day + ' 日 ' + (hr % 24) + ' 時間後';
+      if (hr > 0) return hr + ' 時間 ' + (min % 60) + ' 分後';
+      if (min > 0) return min + ' 分後';
+      return sec + ' 秒後';
+    }
+
+    function update() {
+      syncForm();
+      const expr = buildExpr();
+      const exprEl = $('exprOut');
+      exprEl.textContent = expr;
+      exprEl.classList.remove('invalid');
+
+      const human = explain();
+      if (human === null) {
+        exprEl.classList.add('invalid');
+        $('humanOut').textContent = '※ どこかのフィールドが不正な値です。範囲・形式を確認してください。';
+        $('runs').innerHTML = '<li><span class="num">—</span><span style="grid-column:span 2;color:var(--muted);">（不正な式のため表示できません）</span></li>';
+        return;
+      }
+      $('humanOut').textContent = human;
+
+      const runs = nextRuns(10);
+      const list = $('runs');
+      list.innerHTML = '';
+      if (!runs || runs.length === 0) {
+        const li = document.createElement('li');
+        li.innerHTML = '<span class="num">—</span><span style="grid-column:span 2;color:var(--muted);">（一致する次回実行が見つかりません）</span>';
+        list.appendChild(li);
+      } else {
+        runs.forEach((d, i) => {
+          const li = document.createElement('li');
+          li.innerHTML = '<span class="num">' + (i + 1) + '.</span><span>' + fmtDate(d) + '</span><span class="delta">' + fmtDelta(d) + '</span>';
+          list.appendChild(li);
+        });
+      }
+    }
+
+    function applyExpression(expr) {
+      const tokens = expr.trim().split(/\s+/);
+      if (tokens.length !== 5) return false;
+      // Reset to "every" mode then assign value if token != '*'
+      FIELDS.forEach((f, i) => {
+        const t = tokens[i];
+        if (t === '*') {
+          state[f.key].mode = 'every';
+          state[f.key].value = '';
+        } else if (/^\*\/(\d+)$/.test(t)) {
+          state[f.key].mode = 'step';
+          state[f.key].value = t.slice(2);
+        } else if (/^\d+-\d+\/\d+$/.test(t)) {
+          state[f.key].mode = 'rangeStep';
+          state[f.key].value = t;
+        } else if (/^\d+-\d+$/.test(t)) {
+          state[f.key].mode = 'range';
+          state[f.key].value = t;
+        } else {
+          state[f.key].mode = 'specific';
+          state[f.key].value = t;
+        }
+      });
+      return true;
+    }
+
+    document.querySelectorAll('button[data-preset]').forEach((b) => {
+      b.addEventListener('click', () => {
+        applyExpression(b.dataset.preset);
+        update();
+      });
+    });
+
+    $('parseBtn').addEventListener('click', () => {
+      const v = $('parseInput').value.trim();
+      if (!v) return;
+      if (applyExpression(v)) {
+        update();
+        $('status').textContent = 'パースしました';
+        setTimeout(() => $('status').textContent = '', 1200);
+      } else {
+        alert('cron 式の形式が認識できませんでした（5 フィールド必要です）');
+      }
+    });
+
+    $('copyExpr').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('exprOut').textContent);
+        const el = $('copyExpr');
+        const old = el.textContent;
+        el.textContent = 'コピーしました';
+        setTimeout(() => { el.textContent = old; }, 1100);
+      } catch (e) {}
+    });
+
+    buildFields();
+    update();
+  })();
+</script>
+</body>
+</html>
