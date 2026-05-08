@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ブレインストーミング - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 付箋ボード */
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 12px;
+  }
+  .toolbar .group {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .toolbar .sep {
+    width: 1px;
+    height: 22px;
+    background: var(--border);
+    margin: 0 4px;
+  }
+  .color-row {
+    display: inline-flex;
+    gap: 4px;
+  }
+  .color-swatch {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    border: 1px solid rgba(0,0,0,0.08);
+    cursor: pointer;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.04);
+  }
+  .color-swatch.active {
+    outline: 2px solid var(--fg);
+    outline-offset: 1px;
+  }
+  .save-stat {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-left: auto;
+  }
+
+  .board-wrap {
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .board {
+    position: relative;
+    width: 100%;
+    height: 70vh;
+    min-height: 480px;
+    overflow: auto;
+    background:
+      linear-gradient(var(--bg) 1px, transparent 1px) 0 0 / 24px 24px,
+      linear-gradient(90deg, var(--bg) 1px, transparent 1px) 0 0 / 24px 24px,
+      var(--card);
+  }
+  .canvas-area {
+    position: relative;
+    width: 2400px;
+    height: 1600px;
+  }
+  .note {
+    position: absolute;
+    width: 180px;
+    min-height: 110px;
+    padding: 10px 12px 30px;
+    border-radius: 6px;
+    box-shadow: 0 6px 12px rgba(15, 23, 42, 0.12), 0 1px 2px rgba(15, 23, 42, 0.08);
+    font-size: 0.92rem;
+    line-height: 1.5;
+    color: #1f2328;
+    cursor: grab;
+    user-select: text;
+    transition: box-shadow 0.15s ease;
+  }
+  .note.dragging {
+    cursor: grabbing;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.2);
+    z-index: 10;
+  }
+  .note .text {
+    outline: none;
+    min-height: 60px;
+    word-break: break-word;
+    white-space: pre-wrap;
+    cursor: text;
+  }
+  .note .meta {
+    position: absolute;
+    bottom: 6px;
+    left: 10px;
+    right: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.7rem;
+    color: rgba(31, 35, 40, 0.55);
+  }
+  .note .actions {
+    display: flex;
+    gap: 4px;
+  }
+  .note .actions button {
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    color: rgba(31, 35, 40, 0.75);
+    padding: 1px 7px;
+    font-size: 0.7rem;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .note .actions button:hover {
+    color: #b91c1c;
+    border-color: #fecaca;
+  }
+  .empty-board-hint {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 0.95rem;
+    pointer-events: none;
+  }
+  .grouped-md {
+    margin-top: 14px;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>ブレインストーミング</h1>
+    <p class="lead">付箋を自由に追加・移動・色分けしてアイデア出しを行います。入力はブラウザに自動保存されます（外部送信なし）。</p>
+  </header>
+
+  <div class="toolbar">
+    <div class="group">
+      <button type="button" id="addNote" class="primary">+ 付箋を追加</button>
+      <span class="sep"></span>
+      <span style="color:var(--muted);font-size:0.85rem;">色:</span>
+      <div class="color-row" id="colorRow"></div>
+    </div>
+    <span class="sep"></span>
+    <div class="group">
+      <button type="button" id="layoutGrid">グリッド整列</button>
+      <button type="button" id="layoutByColor">色ごとに集める</button>
+    </div>
+    <span class="sep"></span>
+    <div class="group">
+      <button type="button" id="copyMd">Markdown コピー</button>
+      <button type="button" id="copyJson">JSON コピー</button>
+      <button type="button" id="downloadJson">JSON 保存</button>
+      <button type="button" id="loadJson">JSON 読込</button>
+      <input type="file" id="fileInput" accept="application/json,.json" style="display:none;">
+      <button type="button" id="clearAll">すべて消去</button>
+    </div>
+    <span class="save-stat" id="saveStat"></span>
+  </div>
+
+  <div class="board-wrap">
+    <div class="board" id="board">
+      <div class="canvas-area" id="canvas"></div>
+    </div>
+  </div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:14px;">
+    付箋: クリックで編集、ドラッグで移動、× で削除。色は新規追加時の選択色が適用されます（既存付箋の色は付箋上で個別に変更も可能）。
+  </p>
+
+  <h2>Markdown プレビュー</h2>
+  <pre class="code grouped-md" id="mdOut"></pre>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const STORAGE_KEY = 'public-tools.brainstorming.v1';
+
+    const COLORS = [
+      { id: 'yellow', bg: '#fef3c7', label: '黄' },
+      { id: 'green',  bg: '#bbf7d0', label: '緑' },
+      { id: 'blue',   bg: '#bfdbfe', label: '青' },
+      { id: 'pink',   bg: '#fbcfe8', label: '桃' },
+      { id: 'orange', bg: '#fed7aa', label: '橙' },
+      { id: 'purple', bg: '#ddd6fe', label: '紫' },
+      { id: 'cyan',   bg: '#a5f3fc', label: '水' },
+      { id: 'gray',   bg: '#e5e7eb', label: '灰' },
+    ];
+
+    let state = {
+      notes: [],
+      activeColor: 'yellow',
+      seq: 1,
+    };
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (obj && Array.isArray(obj.notes)) {
+          state.notes = obj.notes
+            .filter((n) => n && typeof n === 'object')
+            .map((n) => ({
+              id: typeof n.id === 'number' ? n.id : (state.seq++),
+              x: Number.isFinite(n.x) ? n.x : 40,
+              y: Number.isFinite(n.y) ? n.y : 40,
+              color: COLORS.find((c) => c.id === n.color) ? n.color : 'yellow',
+              text: typeof n.text === 'string' ? n.text : '',
+            }));
+          state.seq = Math.max(state.seq, state.notes.reduce((m, n) => Math.max(m, n.id || 0), 0) + 1);
+          if (typeof obj.activeColor === 'string' && COLORS.find((c) => c.id === obj.activeColor)) {
+            state.activeColor = obj.activeColor;
+          }
+        }
+      } catch (e) {}
+    }
+    function save() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          notes: state.notes,
+          activeColor: state.activeColor,
+        }));
+        flashSave();
+      } catch (e) {}
+    }
+    let flashTimer;
+    function flashSave() {
+      const el = $('saveStat');
+      el.textContent = '保存しました';
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { el.textContent = ''; }, 1100);
+    }
+
+    function renderColorRow() {
+      const row = $('colorRow');
+      row.innerHTML = '';
+      COLORS.forEach((c) => {
+        const sw = document.createElement('span');
+        sw.className = 'color-swatch';
+        sw.style.background = c.bg;
+        sw.title = c.label;
+        if (c.id === state.activeColor) sw.classList.add('active');
+        sw.addEventListener('click', () => {
+          state.activeColor = c.id;
+          save();
+          renderColorRow();
+        });
+        row.appendChild(sw);
+      });
+    }
+
+    function colorBg(id) {
+      const c = COLORS.find((x) => x.id === id) || COLORS[0];
+      return c.bg;
+    }
+    function colorLabel(id) {
+      const c = COLORS.find((x) => x.id === id) || COLORS[0];
+      return c.label;
+    }
+
+    function buildNoteEl(n) {
+      const el = document.createElement('div');
+      el.className = 'note';
+      el.style.background = colorBg(n.color);
+      el.style.left = n.x + 'px';
+      el.style.top = n.y + 'px';
+      el.dataset.id = n.id;
+
+      const text = document.createElement('div');
+      text.className = 'text';
+      text.contentEditable = 'true';
+      text.spellcheck = false;
+      text.textContent = n.text;
+      text.addEventListener('input', () => {
+        n.text = text.textContent;
+        save();
+        renderMd();
+      });
+      text.addEventListener('mousedown', (e) => e.stopPropagation());
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      const colorSel = document.createElement('select');
+      colorSel.style.font = 'inherit';
+      colorSel.style.background = 'transparent';
+      colorSel.style.border = 'none';
+      colorSel.style.color = 'inherit';
+      COLORS.forEach((c) => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.label;
+        if (c.id === n.color) opt.selected = true;
+        colorSel.appendChild(opt);
+      });
+      colorSel.addEventListener('change', () => {
+        n.color = colorSel.value;
+        el.style.background = colorBg(n.color);
+        save();
+        renderMd();
+      });
+      colorSel.addEventListener('mousedown', (e) => e.stopPropagation());
+      const acts = document.createElement('div');
+      acts.className = 'actions';
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = '× 削除';
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!confirm('この付箋を削除しますか？')) return;
+        state.notes = state.notes.filter((x) => x.id !== n.id);
+        save();
+        renderBoard();
+      });
+      acts.appendChild(del);
+      meta.append(colorSel, acts);
+
+      el.append(text, meta);
+
+      // drag
+      let drag = null;
+      el.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        if (e.target === text) return; // editing
+        drag = {
+          startX: e.clientX,
+          startY: e.clientY,
+          origX: n.x,
+          origY: n.y,
+        };
+        el.classList.add('dragging');
+        e.preventDefault();
+      });
+      window.addEventListener('mousemove', (e) => {
+        if (!drag) return;
+        const dx = e.clientX - drag.startX;
+        const dy = e.clientY - drag.startY;
+        n.x = Math.max(0, drag.origX + dx);
+        n.y = Math.max(0, drag.origY + dy);
+        el.style.left = n.x + 'px';
+        el.style.top = n.y + 'px';
+      });
+      window.addEventListener('mouseup', () => {
+        if (drag) {
+          drag = null;
+          el.classList.remove('dragging');
+          save();
+          renderMd();
+        }
+      });
+
+      return el;
+    }
+
+    function renderBoard() {
+      const cv = $('canvas');
+      cv.innerHTML = '';
+      if (state.notes.length === 0) {
+        const hint = document.createElement('div');
+        hint.className = 'empty-board-hint';
+        hint.textContent = '右上の「+ 付箋を追加」または ダブルクリックで付箋を配置できます。';
+        cv.appendChild(hint);
+      }
+      state.notes.forEach((n) => cv.appendChild(buildNoteEl(n)));
+      renderMd();
+    }
+
+    function addNote(opts) {
+      opts = opts || {};
+      const board = $('board');
+      const cv = $('canvas');
+      const cvRect = cv.getBoundingClientRect();
+      const offsetX = board.scrollLeft + 24;
+      const offsetY = board.scrollTop + 24;
+      const x = Number.isFinite(opts.x) ? opts.x : (offsetX + (Math.random() * 60));
+      const y = Number.isFinite(opts.y) ? opts.y : (offsetY + (Math.random() * 60));
+      const note = {
+        id: state.seq++,
+        x,
+        y,
+        color: state.activeColor,
+        text: '',
+      };
+      state.notes.push(note);
+      save();
+      renderBoard();
+      // focus the latest
+      const el = $('canvas').lastElementChild;
+      if (el && el.classList && el.classList.contains('note')) {
+        const t = el.querySelector('.text');
+        if (t) {
+          t.focus();
+          // place caret at end
+          const range = document.createRange();
+          range.selectNodeContents(t);
+          range.collapse(false);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      }
+    }
+
+    function layoutGrid() {
+      const cols = 6;
+      const W = 200, H = 130;
+      const baseX = 24, baseY = 24;
+      state.notes.forEach((n, i) => {
+        n.x = baseX + (i % cols) * W;
+        n.y = baseY + Math.floor(i / cols) * H;
+      });
+      save();
+      renderBoard();
+    }
+    function layoutByColor() {
+      const groups = {};
+      COLORS.forEach((c) => { groups[c.id] = []; });
+      state.notes.forEach((n) => { (groups[n.color] || groups.yellow).push(n); });
+      const W = 200, H = 130;
+      const baseX = 24, colSpacing = 220;
+      let groupIdx = 0;
+      COLORS.forEach((c) => {
+        const arr = groups[c.id];
+        if (!arr || arr.length === 0) return;
+        arr.forEach((n, i) => {
+          n.x = baseX + groupIdx * colSpacing;
+          n.y = 24 + i * H;
+        });
+        groupIdx++;
+      });
+      save();
+      renderBoard();
+    }
+
+    function renderMd() {
+      const lines = [];
+      lines.push('# ブレインストーミング');
+      lines.push('');
+      const groups = {};
+      COLORS.forEach((c) => { groups[c.id] = []; });
+      state.notes.forEach((n) => {
+        (groups[n.color] || groups.yellow).push(n.text.trim());
+      });
+      let any = false;
+      COLORS.forEach((c) => {
+        const arr = (groups[c.id] || []).filter((t) => t.length > 0);
+        if (arr.length === 0) return;
+        any = true;
+        lines.push('## ' + c.label + ' (' + arr.length + ')');
+        arr.forEach((t) => lines.push('- ' + t.replace(/\n+/g, ' / ')));
+        lines.push('');
+      });
+      if (!any) lines.push('（まだ付箋がありません）');
+      $('mdOut').textContent = lines.join('\n').trim() + '\n';
+    }
+
+    // Event wiring
+    $('addNote').addEventListener('click', () => addNote());
+    $('layoutGrid').addEventListener('click', () => {
+      if (state.notes.length === 0) return;
+      if (!confirm('すべての付箋をグリッド状に整列しますか？')) return;
+      layoutGrid();
+    });
+    $('layoutByColor').addEventListener('click', () => {
+      if (state.notes.length === 0) return;
+      if (!confirm('色ごとに列を作って整列しますか？')) return;
+      layoutByColor();
+    });
+    $('board').addEventListener('dblclick', (e) => {
+      if (e.target.closest('.note')) return;
+      const board = $('board');
+      const rect = $('canvas').getBoundingClientRect();
+      addNote({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    });
+
+    $('copyMd').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('mdOut').textContent);
+        flashCopy('copyMd', 'Markdown コピー');
+      } catch (e) {}
+    });
+    $('copyJson').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(state, null, 2));
+        flashCopy('copyJson', 'JSON コピー');
+      } catch (e) {}
+    });
+    function flashCopy(id, label) {
+      const el = $(id);
+      el.textContent = 'コピーしました';
+      setTimeout(() => { el.textContent = label; }, 1100);
+    }
+    $('downloadJson').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = 'brainstorming-' + stamp + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    });
+    $('loadJson').addEventListener('click', () => $('fileInput').click());
+    $('fileInput').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const obj = JSON.parse(String(reader.result));
+          if (obj && Array.isArray(obj.notes)) {
+            state.notes = obj.notes
+              .filter((n) => n && typeof n === 'object')
+              .map((n) => ({
+                id: state.seq++,
+                x: Number.isFinite(n.x) ? n.x : 40,
+                y: Number.isFinite(n.y) ? n.y : 40,
+                color: COLORS.find((c) => c.id === n.color) ? n.color : 'yellow',
+                text: typeof n.text === 'string' ? n.text : '',
+              }));
+            save();
+            renderBoard();
+          }
+        } catch (err) {
+          alert('JSON の読み込みに失敗しました: ' + err.message);
+        }
+        $('fileInput').value = '';
+      };
+      reader.readAsText(f);
+    });
+    $('clearAll').addEventListener('click', () => {
+      if (!confirm('すべての付箋を削除しますか？（取り消せません）')) return;
+      state.notes = [];
+      save();
+      renderBoard();
+    });
+
+    load();
+    renderColorRow();
+    renderBoard();
+  })();
+</script>
+</body>
+</html>
