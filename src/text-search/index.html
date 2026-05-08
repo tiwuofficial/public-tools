@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文字検索 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 検索キーワード行 */
+  .kw-list { display: flex; flex-direction: column; gap: 6px; }
+  .kw-row {
+    display: grid;
+    grid-template-columns: 22px 1fr auto;
+    gap: 8px;
+    align-items: center;
+  }
+  .kw-row .swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+  .kw-row input[type="text"] { padding: 6px 10px; font-size: 0.92rem; }
+  .kw-row button { padding: 4px 10px; font-size: 0.85rem; }
+  .opt-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 22px;
+    padding: 10px 14px;
+  }
+  .opt-row label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.92rem;
+    cursor: pointer;
+  }
+  .opt-row label input[type="checkbox"] { width: auto; margin: 0; }
+  .preview {
+    margin-top: 12px;
+    padding: 14px 16px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.92rem;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 60vh;
+    overflow: auto;
+  }
+  .hit {
+    padding: 0 2px;
+    border-radius: 2px;
+    color: inherit;
+  }
+  .hit-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+    font-size: 0.9rem;
+  }
+  .hit-table th,
+  .hit-table td {
+    padding: 6px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .hit-table th { color: var(--muted); font-weight: 500; background: var(--bg); }
+  .hit-table tbody tr:hover { background: var(--bg); }
+  .hit-table .ctx {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .hit-table .ctx .hit { color: var(--fg); }
+  .badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 0.78rem;
+    border: 1px solid var(--border);
+  }
+  .stats-mini {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 8px 0 0;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  .stats-mini b { color: var(--fg); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>文字検索</h1>
+    <p class="lead">テキスト中のキーワードを検索し、件数・行/列位置・ハイライトを表示します。複数キーワードを色分けして同時検索できます。</p>
+  </header>
+
+  <h2>検索キーワード</h2>
+  <div class="card">
+    <div class="kw-list" id="kwList"></div>
+    <div class="actions" style="margin-top:10px;">
+      <button type="button" id="addKw">+ キーワードを追加</button>
+    </div>
+  </div>
+
+  <h2>オプション</h2>
+  <div class="card opt-row" id="opts">
+    <label><input type="checkbox" data-op="ci" checked>大文字小文字を区別しない</label>
+    <label><input type="checkbox" data-op="word">単語単位で一致 (\b)</label>
+    <label><input type="checkbox" data-op="regex">正規表現として扱う</label>
+    <label><input type="checkbox" data-op="multiline">複数行モード (^$ を行頭末で)</label>
+  </div>
+
+  <h2>テキスト</h2>
+  <textarea id="input" rows="10" placeholder="検索対象のテキストを入力…"></textarea>
+  <div class="stats-mini" id="totalStats"></div>
+
+  <h2>ハイライト</h2>
+  <div class="preview" id="preview"></div>
+
+  <h2>ヒット一覧</h2>
+  <div id="banner"></div>
+  <div style="overflow-x:auto;">
+    <table class="hit-table" id="hitTable">
+      <thead>
+        <tr><th style="width:60px;">行</th><th style="width:60px;">列</th><th style="width:90px;">キーワード</th><th>前後の文脈</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    検索はブラウザ上で完結します（外部送信なし）。正規表現モードでは各キーワードを正規表現として扱います。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const COLORS = [
+      '#fde68a', '#bbf7d0', '#bfdbfe', '#fbcfe8',
+      '#fed7aa', '#ddd6fe', '#a5f3fc', '#fecaca',
+    ];
+    let kws = [{ q: '', color: COLORS[0] }];
+
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    }
+    function escapeRegex(s) {
+      return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function buildRegex(q, opts, idx) {
+      if (!q) return null;
+      let pat = opts.regex ? q : escapeRegex(q);
+      if (opts.word) pat = '\\b' + pat + '\\b';
+      let flags = 'g';
+      if (opts.ci) flags += 'i';
+      if (opts.multiline) flags += 'm';
+      try {
+        return new RegExp(pat, flags);
+      } catch (e) {
+        return { error: e.message, idx };
+      }
+    }
+
+    function getOpts() {
+      const m = {};
+      document.querySelectorAll('#opts input[type="checkbox"]').forEach((el) => {
+        m[el.dataset.op] = el.checked;
+      });
+      return m;
+    }
+
+    function renderKwList() {
+      const root = $('kwList');
+      root.innerHTML = '';
+      kws.forEach((kw, i) => {
+        const row = document.createElement('div');
+        row.className = 'kw-row';
+        const sw = document.createElement('span');
+        sw.className = 'swatch';
+        sw.style.background = kw.color;
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.value = kw.q;
+        inp.placeholder = 'キーワード ' + (i + 1);
+        inp.addEventListener('input', () => { kws[i].q = inp.value; update(); });
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = '削除';
+        del.addEventListener('click', () => {
+          kws.splice(i, 1);
+          if (kws.length === 0) kws.push({ q: '', color: COLORS[0] });
+          renderKwList();
+          update();
+        });
+        row.append(sw, inp, del);
+        root.appendChild(row);
+      });
+    }
+
+    function update() {
+      const text = $('input').value;
+      const opts = getOpts();
+      const banner = $('banner');
+      banner.innerHTML = '';
+
+      const compiled = kws.map((kw, i) => ({
+        q: kw.q,
+        color: kw.color,
+        re: buildRegex(kw.q, opts, i),
+      }));
+
+      const errors = compiled.filter((x) => x.re && x.re.error);
+      if (errors.length) {
+        banner.innerHTML = '<div class="banner error">正規表現エラー: ' + escapeHtml(errors[0].re.error) + '</div>';
+      }
+
+      const hits = [];
+      compiled.forEach((c, ki) => {
+        if (!c.re || c.re.error) return;
+        let m;
+        c.re.lastIndex = 0;
+        let safety = 0;
+        while ((m = c.re.exec(text)) !== null) {
+          if (m[0].length === 0) {
+            c.re.lastIndex++;
+            if (++safety > 1e6) break;
+            continue;
+          }
+          hits.push({ start: m.index, end: m.index + m[0].length, text: m[0], ki, color: c.color });
+          if (++safety > 1e6) break;
+        }
+      });
+      hits.sort((a, b) => a.start - b.start || a.end - b.end);
+
+      // resolve overlaps: keep earliest, drop overlapped (used only for highlight rendering)
+      const flat = [];
+      let prevEnd = -1;
+      for (const h of hits) {
+        if (h.start >= prevEnd) {
+          flat.push(h);
+          prevEnd = h.end;
+        }
+      }
+
+      // Highlight render
+      let html = '';
+      let i = 0;
+      for (const h of flat) {
+        if (h.start > i) html += escapeHtml(text.slice(i, h.start));
+        html += '<mark class="hit" style="background:' + h.color + ';">' + escapeHtml(text.slice(h.start, h.end)) + '</mark>';
+        i = h.end;
+      }
+      if (i < text.length) html += escapeHtml(text.slice(i));
+      $('preview').innerHTML = html || '<span style="color:var(--muted);">（プレビューなし）</span>';
+
+      // Position table (using all hits, not just non-overlap)
+      const lineStarts = [0];
+      for (let p = 0; p < text.length; p++) {
+        if (text.charCodeAt(p) === 10) lineStarts.push(p + 1);
+      }
+      function locOf(idx) {
+        let lo = 0, hi = lineStarts.length - 1;
+        while (lo < hi) {
+          const mid = (lo + hi + 1) >> 1;
+          if (lineStarts[mid] <= idx) lo = mid;
+          else hi = mid - 1;
+        }
+        return { line: lo + 1, col: idx - lineStarts[lo] + 1, lineStart: lineStarts[lo] };
+      }
+
+      const tbody = $('hitTable').querySelector('tbody');
+      tbody.innerHTML = '';
+      const MAX_ROWS = 500;
+      const limited = hits.slice(0, MAX_ROWS);
+      for (const h of limited) {
+        const loc = locOf(h.start);
+        const lineEnd = text.indexOf('\n', loc.lineStart);
+        const lineText = text.slice(loc.lineStart, lineEnd === -1 ? text.length : lineEnd);
+        const before = lineText.slice(0, h.start - loc.lineStart);
+        const matched = lineText.slice(h.start - loc.lineStart, h.end - loc.lineStart);
+        const after = lineText.slice(h.end - loc.lineStart);
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td>' + loc.line + '</td>' +
+          '<td>' + loc.col + '</td>' +
+          '<td><span class="badge" style="background:' + h.color + ';">' + escapeHtml(kws[h.ki].q || '(空)') + '</span></td>' +
+          '<td class="ctx">' + escapeHtml(before) +
+            '<mark class="hit" style="background:' + h.color + ';">' + escapeHtml(matched) + '</mark>' +
+            escapeHtml(after) + '</td>';
+        tbody.appendChild(tr);
+      }
+      if (hits.length > MAX_ROWS) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td colspan="4" style="color:var(--muted);text-align:center;">…ヒットが多すぎるため最初の ' + MAX_ROWS + ' 件のみ表示</td>';
+        tbody.appendChild(tr);
+      }
+
+      // totals per keyword
+      const counts = kws.map(() => 0);
+      for (const h of hits) counts[h.ki]++;
+      const totalText = counts.map((n, i) => '<span style="color:var(--fg);"><b>' + n + '</b></span> 件 (<span style="background:' + kws[i].color + ';padding:0 6px;border-radius:3px;">' + escapeHtml(kws[i].q || '(空)') + '</span>)').join(' / ');
+      const charLen = text.length;
+      const lineLen = text === '' ? 0 : text.split('\n').length;
+      $('totalStats').innerHTML = '対象: <b>' + charLen.toLocaleString('ja-JP') + '</b> 文字 / <b>' + lineLen.toLocaleString('ja-JP') + '</b> 行 ・ ヒット: ' + (hits.length ? totalText : '<span style="color:var(--muted);">0 件</span>');
+    }
+
+    $('addKw').addEventListener('click', () => {
+      kws.push({ q: '', color: COLORS[kws.length % COLORS.length] });
+      renderKwList();
+    });
+    document.querySelectorAll('#opts input[type="checkbox"]').forEach((el) => el.addEventListener('change', update));
+    $('input').addEventListener('input', update);
+
+    renderKwList();
+    update();
+  })();
+</script>
+</body>
+</html>
