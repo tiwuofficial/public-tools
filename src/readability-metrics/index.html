@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>記事の読みやすさ指標 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: メータ */
+  .meter-row {
+    display: grid;
+    grid-template-columns: 200px 1fr 80px;
+    gap: 10px 16px;
+    align-items: center;
+    margin-top: 8px;
+  }
+  .meter-row .label { color: var(--muted); font-size: 0.9rem; }
+  .meter {
+    position: relative;
+    height: 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .meter > .bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    background: var(--accent);
+    border-radius: inherit;
+    transition: width 0.18s ease;
+  }
+  .meter > .bar.warn   { background: #d97706; }
+  .meter > .bar.danger { background: #dc2626; }
+  .meter > .bar.good   { background: #16a34a; }
+  .meter-row .val {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    font-size: 0.92rem;
+  }
+
+  .judge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    margin-left: 8px;
+    border: 1px solid var(--border);
+  }
+  .judge.good   { background: #e6ffed; color: #166534; border-color: #bbf7d0; }
+  .judge.warn   { background: #fef3c7; color: #854d0e; border-color: #fde68a; }
+  .judge.danger { background: var(--removed-bg); color: var(--removed-fg); border-color: #fecaca; }
+
+  .longest-list {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+  }
+  .longest-list li {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    margin-bottom: 6px;
+    font-size: 0.92rem;
+    line-height: 1.6;
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 10px;
+    align-items: baseline;
+  }
+  .longest-list li .n {
+    text-align: right;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  .longest-list li.danger .n { color: var(--removed-fg); }
+  .longest-list li.warn   .n { color: #854d0e; }
+
+  .composition {
+    margin-top: 6px;
+    height: 18px;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    display: flex;
+  }
+  .composition span {
+    display: inline-block;
+    height: 100%;
+    font-size: 0.7rem;
+    color: #fff;
+    text-align: center;
+    line-height: 18px;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 8px;
+    font-size: 0.85rem;
+  }
+  .legend span.dot {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>記事の読みやすさ指標</h1>
+    <p class="lead">テキストの一文平均文字数・漢字比率・句読点バランス・最長文などを可視化し、読みづらさの傾向を把握します。</p>
+  </header>
+
+  <h2>本文</h2>
+  <textarea id="input" rows="12" placeholder="記事本文を貼り付けてください…"></textarea>
+
+  <h2>サマリー</h2>
+  <div class="stats">
+    <div class="stat"><div class="label">総文字数 (空白除く)</div><div class="value" id="sChars">0</div></div>
+    <div class="stat"><div class="label">文の数</div><div class="value" id="sSent">0</div></div>
+    <div class="stat"><div class="label">段落数</div><div class="value" id="sPara">0</div></div>
+    <div class="stat"><div class="label">読点 ( 、 )</div><div class="value" id="sComma">0</div></div>
+    <div class="stat"><div class="label">句点 ( 。 )</div><div class="value" id="sPeriod">0</div></div>
+  </div>
+
+  <h2>主要な指標</h2>
+  <div class="card">
+    <div class="meter-row">
+      <span class="label">一文の平均文字数 <span class="judge" id="jSentAvg"></span></span>
+      <div class="meter"><div class="bar" id="bSentAvg" style="width:0;"></div></div>
+      <span class="val" id="vSentAvg">0</span>
+    </div>
+    <div class="meter-row">
+      <span class="label">一文の最長文字数 <span class="judge" id="jSentMax"></span></span>
+      <div class="meter"><div class="bar" id="bSentMax" style="width:0;"></div></div>
+      <span class="val" id="vSentMax">0</span>
+    </div>
+    <div class="meter-row">
+      <span class="label">漢字比率 <span class="judge" id="jKanji"></span></span>
+      <div class="meter"><div class="bar" id="bKanji" style="width:0;"></div></div>
+      <span class="val" id="vKanji">0%</span>
+    </div>
+    <div class="meter-row">
+      <span class="label">ひらがな比率 <span class="judge" id="jHira"></span></span>
+      <div class="meter"><div class="bar" id="bHira" style="width:0;"></div></div>
+      <span class="val" id="vHira">0%</span>
+    </div>
+    <div class="meter-row">
+      <span class="label">一文あたりの読点 <span class="judge" id="jCommaPerSent"></span></span>
+      <div class="meter"><div class="bar" id="bCommaPerSent" style="width:0;"></div></div>
+      <span class="val" id="vCommaPerSent">0</span>
+    </div>
+    <div class="meter-row">
+      <span class="label">段落あたりの文数 <span class="judge" id="jSentPerPara"></span></span>
+      <div class="meter"><div class="bar" id="bSentPerPara" style="width:0;"></div></div>
+      <span class="val" id="vSentPerPara">0</span>
+    </div>
+  </div>
+
+  <h2>文字種の構成</h2>
+  <div class="composition" id="comp"></div>
+  <div class="legend">
+    <span><span class="dot" style="background:#2563eb;"></span>漢字 <b id="legKanji">0</b></span>
+    <span><span class="dot" style="background:#16a34a;"></span>ひらがな <b id="legHira">0</b></span>
+    <span><span class="dot" style="background:#d97706;"></span>カタカナ <b id="legKata">0</b></span>
+    <span><span class="dot" style="background:#7c3aed;"></span>英数字 <b id="legAlnum">0</b></span>
+    <span><span class="dot" style="background:#9ca3af;"></span>記号・空白 <b id="legSym">0</b></span>
+  </div>
+
+  <h2>長すぎる文 (上位 5 件)</h2>
+  <ul class="longest-list" id="longest"></ul>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    判定の目安: 一文 60 文字以下 / 漢字比率 20–35% / 一文あたり読点 1–3 個 / 段落あたり 2–4 文 程度がバランスの良い目安とされています（媒体や読者層により最適値は変動します）。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    // Character class regex
+    const RE_KANJI = new RegExp('[\\u4E00-\\u9FFF\\u3400-\\u4DBF\\uF900-\\uFAFF]', 'g');
+    const RE_HIRA = new RegExp('[\\u3041-\\u3096\\u309F]', 'g');
+    const RE_KATA = new RegExp('[\\u30A1-\\u30FA\\u30FC\\u30FF\\uFF66-\\uFF9F]', 'g');
+    const RE_ALNUM = new RegExp('[A-Za-z0-9\\uFF21-\\uFF3A\\uFF41-\\uFF5A\\uFF10-\\uFF19]', 'g');
+    const RE_NON_WS = new RegExp('\\S', 'g');
+    const RE_SENT_BREAK = new RegExp('(?<=[\\u3002\\uFF01\\uFF1F\\.!?])\\s*');
+
+    function countMatches(text, re) {
+      const m = text.match(re);
+      return m ? m.length : 0;
+    }
+
+    function splitSentences(text) {
+      // Split on Japanese sentence-end punctuation or western .!?
+      const parts = text.split(RE_SENT_BREAK);
+      return parts.map((s) => s.trim()).filter((s) => s.length > 0);
+    }
+    function splitParagraphs(text) {
+      return text.split(/\n\s*\n+/).map((s) => s.trim()).filter((s) => s.length > 0);
+    }
+    function visibleLen(s) {
+      // count non-whitespace chars (full-width and half-width)
+      return countMatches(s, RE_NON_WS);
+    }
+
+    function setMeter(barId, valId, judgeId, value, formatter, ranges) {
+      const pct = Math.max(0, Math.min(1, ranges.scale(value)));
+      const bar = $(barId);
+      bar.style.width = (pct * 100).toFixed(1) + '%';
+      bar.classList.remove('warn', 'danger', 'good');
+      let cls = ranges.classFor(value);
+      if (cls) bar.classList.add(cls);
+      $(valId).textContent = formatter(value);
+      const j = $(judgeId);
+      const label = ranges.label(value);
+      j.textContent = label.text;
+      j.className = 'judge ' + label.cls;
+      if (!label.text) j.style.display = 'none';
+      else j.style.display = 'inline-block';
+    }
+
+    function classifyByThresholds(value, good, warn) {
+      // value below `good` is good; below `warn` is warn; above is danger
+      if (value <= good) return { cls: 'good', text: '読みやすい' };
+      if (value <= warn) return { cls: 'warn', text: 'やや長め' };
+      return { cls: 'danger', text: '長すぎ' };
+    }
+
+    function update() {
+      const text = $('input').value;
+
+      const sentences = splitSentences(text);
+      const paragraphs = splitParagraphs(text);
+      const sentenceCount = sentences.length;
+      const paragraphCount = paragraphs.length;
+      const totalChars = visibleLen(text);
+
+      const kanji = countMatches(text, RE_KANJI);
+      const hira = countMatches(text, RE_HIRA);
+      const kata = countMatches(text, RE_KATA);
+      const alnum = countMatches(text, RE_ALNUM);
+      const counted = kanji + hira + kata + alnum;
+      const sym = Math.max(0, totalChars - counted);
+
+      const commaCount = (text.match(/[、，]/g) || []).length;
+      const periodCount = (text.match(/[。．]/g) || []).length;
+
+      const sentLens = sentences.map(visibleLen);
+      const sentAvg = sentLens.length ? sentLens.reduce((a, b) => a + b, 0) / sentLens.length : 0;
+      const sentMax = sentLens.length ? Math.max.apply(null, sentLens) : 0;
+      const commaPerSent = sentenceCount ? commaCount / sentenceCount : 0;
+      const sentPerPara = paragraphCount ? sentenceCount / paragraphCount : 0;
+      const kanjiRate = totalChars ? kanji / totalChars : 0;
+      const hiraRate = totalChars ? hira / totalChars : 0;
+
+      $('sChars').textContent = totalChars.toLocaleString('ja-JP');
+      $('sSent').textContent = sentenceCount.toLocaleString('ja-JP');
+      $('sPara').textContent = paragraphCount.toLocaleString('ja-JP');
+      $('sComma').textContent = commaCount.toLocaleString('ja-JP');
+      $('sPeriod').textContent = periodCount.toLocaleString('ja-JP');
+
+      // Meters
+      setMeter('bSentAvg', 'vSentAvg', 'jSentAvg', sentAvg,
+        (v) => v.toFixed(1) + ' 字',
+        {
+          scale: (v) => v / 120,
+          classFor: (v) => v <= 60 ? 'good' : (v <= 80 ? 'warn' : 'danger'),
+          label: (v) => classifyByThresholds(v, 60, 80),
+        });
+
+      setMeter('bSentMax', 'vSentMax', 'jSentMax', sentMax,
+        (v) => v + ' 字',
+        {
+          scale: (v) => v / 200,
+          classFor: (v) => v <= 80 ? 'good' : (v <= 120 ? 'warn' : 'danger'),
+          label: (v) => sentenceCount === 0 ? { cls: '', text: '' } : classifyByThresholds(v, 80, 120),
+        });
+
+      setMeter('bKanji', 'vKanji', 'jKanji', kanjiRate,
+        (v) => (v * 100).toFixed(1) + '%',
+        {
+          scale: (v) => v,
+          classFor: (v) => (v >= 0.20 && v <= 0.35) ? 'good' : ((v >= 0.10 && v <= 0.45) ? 'warn' : 'danger'),
+          label: (v) => {
+            if (totalChars === 0) return { cls: '', text: '' };
+            if (v >= 0.20 && v <= 0.35) return { cls: 'good', text: 'バランス◎' };
+            if (v < 0.20) return { cls: 'warn', text: '漢字少なめ' };
+            if (v <= 0.45) return { cls: 'warn', text: '漢字多め' };
+            return { cls: 'danger', text: '漢字過多' };
+          },
+        });
+
+      setMeter('bHira', 'vHira', 'jHira', hiraRate,
+        (v) => (v * 100).toFixed(1) + '%',
+        {
+          scale: (v) => v,
+          classFor: (v) => (v >= 0.40 && v <= 0.65) ? 'good' : ((v >= 0.30 && v <= 0.75) ? 'warn' : 'danger'),
+          label: (v) => totalChars === 0 ? { cls: '', text: '' } :
+            (v >= 0.40 && v <= 0.65) ? { cls: 'good', text: 'バランス◎' } :
+            (v < 0.40 ? { cls: 'warn', text: 'ひらがな少なめ' } : { cls: 'warn', text: 'ひらがな多め' }),
+        });
+
+      setMeter('bCommaPerSent', 'vCommaPerSent', 'jCommaPerSent', commaPerSent,
+        (v) => v.toFixed(2) + ' 個',
+        {
+          scale: (v) => v / 5,
+          classFor: (v) => (v >= 0.5 && v <= 3) ? 'good' : ((v < 4) ? 'warn' : 'danger'),
+          label: (v) => sentenceCount === 0 ? { cls: '', text: '' } :
+            (v < 0.5) ? { cls: 'warn', text: '読点少なめ' } :
+            (v <= 3) ? { cls: 'good', text: '適切' } :
+            (v <= 4) ? { cls: 'warn', text: 'やや多い' } :
+            { cls: 'danger', text: '読点過多' },
+        });
+
+      setMeter('bSentPerPara', 'vSentPerPara', 'jSentPerPara', sentPerPara,
+        (v) => v.toFixed(2) + ' 文',
+        {
+          scale: (v) => v / 8,
+          classFor: (v) => (v >= 1 && v <= 4) ? 'good' : (v <= 6 ? 'warn' : 'danger'),
+          label: (v) => paragraphCount === 0 ? { cls: '', text: '' } :
+            (v >= 1 && v <= 4) ? { cls: 'good', text: '適切' } :
+            (v < 1) ? { cls: 'warn', text: '段落短すぎ' } :
+            (v <= 6) ? { cls: 'warn', text: 'やや長め' } :
+            { cls: 'danger', text: '段落長すぎ' },
+        });
+
+      // composition bar
+      const colors = ['#2563eb', '#16a34a', '#d97706', '#7c3aed', '#9ca3af'];
+      const counts = [kanji, hira, kata, alnum, sym];
+      const total = counts.reduce((a, b) => a + b, 0) || 1;
+      const labels = ['漢字', 'ひらがな', 'カタカナ', '英数字', '記号・空白'];
+      const comp = $('comp');
+      comp.innerHTML = '';
+      for (let i = 0; i < counts.length; i++) {
+        const w = (counts[i] / total) * 100;
+        if (w === 0) continue;
+        const span = document.createElement('span');
+        span.style.width = w.toFixed(2) + '%';
+        span.style.background = colors[i];
+        if (w >= 8) span.textContent = labels[i] + ' ' + w.toFixed(0) + '%';
+        comp.appendChild(span);
+      }
+      $('legKanji').textContent = kanji.toLocaleString('ja-JP');
+      $('legHira').textContent = hira.toLocaleString('ja-JP');
+      $('legKata').textContent = kata.toLocaleString('ja-JP');
+      $('legAlnum').textContent = alnum.toLocaleString('ja-JP');
+      $('legSym').textContent = sym.toLocaleString('ja-JP');
+
+      // longest sentences
+      const ranked = sentences
+        .map((s) => ({ s, n: visibleLen(s) }))
+        .sort((a, b) => b.n - a.n)
+        .slice(0, 5);
+      const root = $('longest');
+      root.innerHTML = '';
+      if (ranked.length === 0) {
+        const li = document.createElement('li');
+        li.innerHTML = '<span class="n">—</span><span style="color:var(--muted);">（文がありません）</span>';
+        root.appendChild(li);
+      } else {
+        for (const r of ranked) {
+          const li = document.createElement('li');
+          if (r.n > 120) li.classList.add('danger');
+          else if (r.n > 80) li.classList.add('warn');
+          li.innerHTML = '<span class="n">' + r.n + ' 字</span><span></span>';
+          li.lastChild.textContent = r.s.length > 200 ? r.s.slice(0, 200) + '…' : r.s;
+          root.appendChild(li);
+        }
+      }
+    }
+
+    $('input').addEventListener('input', update);
+    update();
+  })();
+</script>
+</body>
+</html>
