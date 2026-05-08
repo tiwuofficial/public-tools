@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KPT 振り返り - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 3 列 KPT */
+  .meta-row {
+    display: grid;
+    grid-template-columns: 110px 1fr 110px 1fr;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .meta-row label { color: var(--muted); font-size: 0.9rem; }
+
+  .kpt-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+  }
+  .kpt-cell {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    min-height: 360px;
+  }
+  .kpt-cell h3 {
+    margin: 0 0 4px;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .kpt-cell h3 .tag {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.95rem;
+  }
+  .kpt-cell .axis {
+    color: var(--muted);
+    font-size: 0.8rem;
+    margin: 0 0 10px;
+  }
+  .kpt-cell.keep   h3 .tag { background: #16a34a; }
+  .kpt-cell.problem h3 .tag { background: #dc2626; }
+  .kpt-cell.try    h3 .tag { background: #2563eb; }
+
+  .kpt-cell ul {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    max-height: 460px;
+  }
+  .kpt-cell ul li {
+    display: grid;
+    grid-template-columns: 16px 1fr auto;
+    align-items: start;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 0.92rem;
+  }
+  .kpt-cell ul li:hover { background: var(--bg); }
+  .kpt-cell ul li .bullet { color: var(--muted); }
+  .kpt-cell ul li .text {
+    word-break: break-word;
+    white-space: pre-wrap;
+    cursor: text;
+    line-height: 1.55;
+  }
+  .kpt-cell ul li button {
+    padding: 1px 8px;
+    font-size: 0.75rem;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    visibility: hidden;
+  }
+  .kpt-cell ul li:hover button { visibility: visible; }
+  .kpt-cell .add-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px;
+  }
+  .kpt-cell .add-row input { padding: 6px 10px; font-size: 0.9rem; }
+  .kpt-cell .add-row button { padding: 6px 12px; font-size: 0.85rem; }
+  .empty-hint {
+    color: var(--muted);
+    font-size: 0.85rem;
+    padding: 4px 8px;
+  }
+
+  .out-actions {
+    margin-top: 18px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .save-stat {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-left: 6px;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>KPT 振り返り</h1>
+    <p class="lead">Keep（続けたいこと）／ Problem（課題）／ Try（次に試すこと）の 3 列で振り返りを行います。入力はブラウザに自動保存されます。</p>
+  </header>
+
+  <div class="meta-row">
+    <label for="title">テーマ</label>
+    <input type="text" id="title" placeholder="例: スプリント 24 振り返り">
+    <label for="dateInp">日付</label>
+    <input type="date" id="dateInp">
+  </div>
+
+  <div class="kpt-grid">
+    <section class="kpt-cell keep" data-key="K">
+      <h3><span class="tag">K</span>Keep（続けたいこと）</h3>
+      <p class="axis">うまくいったこと / 続けたい習慣</p>
+      <ul></ul>
+      <div class="add-row">
+        <input type="text" placeholder="Keep を追加（Enter で確定）">
+        <button type="button" class="primary">追加</button>
+      </div>
+    </section>
+
+    <section class="kpt-cell problem" data-key="P">
+      <h3><span class="tag">P</span>Problem（課題）</h3>
+      <p class="axis">うまくいかなかったこと / 悩み</p>
+      <ul></ul>
+      <div class="add-row">
+        <input type="text" placeholder="Problem を追加（Enter で確定）">
+        <button type="button" class="primary">追加</button>
+      </div>
+    </section>
+
+    <section class="kpt-cell try" data-key="T">
+      <h3><span class="tag">T</span>Try（次に試すこと）</h3>
+      <p class="axis">次のサイクルで試したいアクション</p>
+      <ul></ul>
+      <div class="add-row">
+        <input type="text" placeholder="Try を追加（Enter で確定）">
+        <button type="button" class="primary">追加</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="out-actions">
+    <button type="button" id="copyMd" class="primary">Markdown をコピー</button>
+    <button type="button" id="copyJson">JSON をコピー</button>
+    <button type="button" id="downloadJson">JSON ダウンロード</button>
+    <button type="button" id="loadJson">JSON を読込</button>
+    <input type="file" id="fileInput" accept="application/json,.json" style="display:none;">
+    <button type="button" id="clearAll">すべて消去</button>
+    <span class="save-stat" id="saveStat"></span>
+  </div>
+
+  <h2>Markdown プレビュー</h2>
+  <pre class="code" id="mdOut"></pre>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    Try の項目は次回振り返りで Keep / Problem に分類できます。各項目はクリックで編集モードに切り替わります。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const STORAGE_KEY = 'public-tools.kpt.v1';
+    const KEYS = ['K', 'P', 'T'];
+    const LABELS = {
+      K: { en: 'Keep', ja: '続けたいこと' },
+      P: { en: 'Problem', ja: '課題' },
+      T: { en: 'Try', ja: '次に試すこと' },
+    };
+
+    let state = { title: '', date: '', items: { K: [], P: [], T: [] } };
+
+    function todayStr() {
+      const d = new Date();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return d.getFullYear() + '-' + m + '-' + dd;
+    }
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === 'object') {
+          state.title = typeof obj.title === 'string' ? obj.title : '';
+          state.date = typeof obj.date === 'string' ? obj.date : '';
+          for (const k of KEYS) {
+            const arr = obj.items && Array.isArray(obj.items[k]) ? obj.items[k] : [];
+            state.items[k] = arr.map(String).slice(0, 200);
+          }
+        }
+      } catch (e) {}
+    }
+    function save() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        flashSave();
+      } catch (e) {}
+    }
+    let flashTimer;
+    function flashSave() {
+      const el = $('saveStat');
+      el.textContent = '保存しました';
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { el.textContent = ''; }, 1100);
+    }
+
+    function renderCell(key) {
+      const cell = document.querySelector('.kpt-cell[data-key="' + key + '"]');
+      const ul = cell.querySelector('ul');
+      const items = state.items[key];
+      ul.innerHTML = '';
+      if (items.length === 0) {
+        const hint = document.createElement('div');
+        hint.className = 'empty-hint';
+        hint.textContent = '（まだ項目はありません）';
+        ul.appendChild(hint);
+        return;
+      }
+      items.forEach((text, idx) => {
+        const li = document.createElement('li');
+        const bullet = document.createElement('span');
+        bullet.className = 'bullet';
+        bullet.textContent = '•';
+        const span = document.createElement('span');
+        span.className = 'text';
+        span.textContent = text;
+        span.contentEditable = 'true';
+        span.spellcheck = false;
+        span.addEventListener('blur', () => {
+          state.items[key][idx] = span.textContent.replace(/\s+/g, ' ').trim();
+          save();
+          renderMd();
+        });
+        span.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); span.blur(); }
+        });
+        const acts = document.createElement('span');
+        acts.style.display = 'flex';
+        acts.style.gap = '4px';
+        // Move to other column
+        KEYS.filter((k) => k !== key).forEach((k2) => {
+          const mv = document.createElement('button');
+          mv.type = 'button';
+          mv.textContent = '→' + k2;
+          mv.title = LABELS[k2].en + ' へ移動';
+          mv.addEventListener('click', () => {
+            state.items[key].splice(idx, 1);
+            state.items[k2].push(text);
+            save();
+            renderAll();
+          });
+          acts.appendChild(mv);
+        });
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = '削除';
+        del.addEventListener('click', () => {
+          state.items[key].splice(idx, 1);
+          save();
+          renderCell(key);
+          renderMd();
+        });
+        acts.appendChild(del);
+
+        li.append(bullet, span, acts);
+        ul.appendChild(li);
+      });
+    }
+
+    function renderAll() {
+      $('title').value = state.title;
+      $('dateInp').value = state.date || '';
+      KEYS.forEach(renderCell);
+      renderMd();
+    }
+
+    function renderMd() {
+      const lines = [];
+      let header = '# KPT 振り返り';
+      if (state.title) header += ': ' + state.title;
+      lines.push(header);
+      if (state.date) lines.push('日付: ' + state.date);
+      lines.push('');
+      for (const k of KEYS) {
+        lines.push('## ' + k + ' — ' + LABELS[k].en + '（' + LABELS[k].ja + '）');
+        if (state.items[k].length === 0) {
+          lines.push('- （項目なし）');
+        } else {
+          state.items[k].forEach((t) => lines.push('- ' + t));
+        }
+        lines.push('');
+      }
+      $('mdOut').textContent = lines.join('\n').trim() + '\n';
+    }
+
+    document.querySelectorAll('.kpt-cell').forEach((cell) => {
+      const key = cell.dataset.key;
+      const input = cell.querySelector('.add-row input');
+      const btn = cell.querySelector('.add-row button');
+      function addItem() {
+        const v = input.value.replace(/\s+/g, ' ').trim();
+        if (!v) return;
+        state.items[key].push(v);
+        input.value = '';
+        save();
+        renderCell(key);
+        renderMd();
+      }
+      btn.addEventListener('click', addItem);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); addItem(); }
+      });
+    });
+
+    $('title').addEventListener('input', () => {
+      state.title = $('title').value;
+      save();
+      renderMd();
+    });
+    $('dateInp').addEventListener('input', () => {
+      state.date = $('dateInp').value;
+      save();
+      renderMd();
+    });
+
+    $('copyMd').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('mdOut').textContent);
+        flashBtn('copyMd', 'Markdown をコピー');
+      } catch (e) {}
+    });
+    $('copyJson').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(state, null, 2));
+        flashBtn('copyJson', 'JSON をコピー');
+      } catch (e) {}
+    });
+    function flashBtn(id, label) {
+      const el = $(id);
+      el.textContent = 'コピーしました';
+      setTimeout(() => { el.textContent = label; }, 1100);
+    }
+    $('downloadJson').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = 'kpt-' + stamp + '.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    });
+    $('loadJson').addEventListener('click', () => $('fileInput').click());
+    $('fileInput').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const obj = JSON.parse(String(reader.result));
+          if (obj && typeof obj === 'object') {
+            state.title = typeof obj.title === 'string' ? obj.title : '';
+            state.date = typeof obj.date === 'string' ? obj.date : '';
+            for (const k of KEYS) {
+              state.items[k] = (obj.items && Array.isArray(obj.items[k]) ? obj.items[k] : []).map(String);
+            }
+            save();
+            renderAll();
+          }
+        } catch (err) {
+          alert('JSON の読み込みに失敗しました: ' + err.message);
+        }
+        $('fileInput').value = '';
+      };
+      reader.readAsText(f);
+    });
+    $('clearAll').addEventListener('click', () => {
+      if (!confirm('入力内容をすべて消去しますか？（取り消せません）')) return;
+      state = { title: '', date: '', items: { K: [], P: [], T: [] } };
+      save();
+      renderAll();
+    });
+
+    load();
+    if (!state.date) state.date = todayStr();
+    renderAll();
+  })();
+</script>
+</body>
+</html>
