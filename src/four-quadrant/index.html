@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>4 象限ジェネレータ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 軸ラベル / 4 象限プロット */
+  .fq-form {
+    display: grid;
+    grid-template-columns: 130px 1fr 130px 1fr;
+    gap: 8px 12px;
+    align-items: center;
+    padding: 12px 14px;
+  }
+  .fq-form > label { color: var(--muted); font-size: 0.9rem; }
+  .fq-form input[type="text"] { padding: 6px 10px; font-size: 0.92rem; }
+
+  .stage-wrap {
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px;
+  }
+  .axis-top, .axis-bottom {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.85rem;
+    padding: 4px 0;
+  }
+  .axis-top b, .axis-bottom b { color: var(--fg); }
+  .stage-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .axis-left, .axis-right {
+    writing-mode: vertical-rl;
+    text-orientation: upright;
+    color: var(--muted);
+    font-size: 0.85rem;
+    align-self: center;
+    text-align: center;
+    padding: 0 4px;
+  }
+  .axis-left { transform: rotate(180deg); }
+  .axis-left b, .axis-right b { color: var(--fg); }
+
+  .stage {
+    position: relative;
+    aspect-ratio: 4 / 3;
+    background:
+      repeating-linear-gradient(0deg, transparent 0, transparent 39px, rgba(0,0,0,0.04) 39px, rgba(0,0,0,0.04) 40px),
+      repeating-linear-gradient(90deg, transparent 0, transparent 39px, rgba(0,0,0,0.04) 39px, rgba(0,0,0,0.04) 40px),
+      var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    user-select: none;
+  }
+  .quadrant {
+    position: absolute;
+    width: 50%;
+    height: 50%;
+    pointer-events: none;
+  }
+  .q1 { top: 0; right: 0; background: rgba(22, 163, 74, 0.07); }
+  .q2 { top: 0; left: 0; background: rgba(37, 99, 235, 0.07); }
+  .q3 { bottom: 0; left: 0; background: rgba(220, 38, 38, 0.07); }
+  .q4 { bottom: 0; right: 0; background: rgba(217, 119, 6, 0.07); }
+  .quadrant .lbl {
+    position: absolute;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .q1 .lbl { top: 6px; right: 8px; }
+  .q2 .lbl { top: 6px; left: 8px; }
+  .q3 .lbl { bottom: 6px; left: 8px; }
+  .q4 .lbl { bottom: 6px; right: 8px; }
+  .axis-line {
+    position: absolute;
+    background: rgba(0,0,0,0.25);
+  }
+  .axis-line.h { left: 0; right: 0; height: 1px; top: 50%; }
+  .axis-line.v { top: 0; bottom: 0; width: 1px; left: 50%; }
+
+  .point {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    background: var(--card);
+    border: 2px solid var(--accent);
+    color: var(--fg);
+    border-radius: 999px;
+    padding: 4px 10px 4px 22px;
+    font-size: 0.86rem;
+    font-weight: 600;
+    box-shadow: 0 4px 8px rgba(15, 23, 42, 0.12);
+    cursor: grab;
+    max-width: 220px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .point::before {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    transform: translateY(-50%);
+  }
+  .point.dragging { cursor: grabbing; box-shadow: 0 8px 16px rgba(15,23,42,0.22); z-index: 5; }
+  .point.q-1::before { background: #16a34a; } .point.q-1 { border-color: #16a34a; }
+  .point.q-2::before { background: #2563eb; } .point.q-2 { border-color: #2563eb; }
+  .point.q-3::before { background: #dc2626; } .point.q-3 { border-color: #dc2626; }
+  .point.q-4::before { background: #d97706; } .point.q-4 { border-color: #d97706; }
+  .point .x {
+    margin-left: 6px;
+    color: var(--muted);
+    font-weight: 400;
+    cursor: pointer;
+    visibility: hidden;
+  }
+  .point:hover .x { visibility: visible; }
+
+  .add-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 6px;
+    align-items: center;
+    padding: 10px 14px 0;
+  }
+  .add-row select { max-width: 200px; }
+  .add-row input { padding: 6px 10px; font-size: 0.92rem; }
+
+  .pool-list {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .pool-list li {
+    background: var(--card);
+    border: 1px dashed var(--border);
+    color: var(--muted);
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.86rem;
+    cursor: pointer;
+  }
+
+  .save-stat {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-left: 8px;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>4 象限ジェネレータ</h1>
+    <p class="lead">2 軸（縦・横）で 4 象限に分類する図を作ります。Eisenhower、効果 × 工数、メリット × デメリット など。入力はブラウザに自動保存（外部送信なし）。</p>
+  </header>
+
+  <h2>軸とラベル</h2>
+  <div class="card fq-form">
+    <label>タイトル</label>
+    <input type="text" id="title" placeholder="例: タスク優先度">
+    <span></span><span></span>
+
+    <label>横軸（左 ⇄ 右）</label>
+    <input type="text" id="axisLeft" value="緊急ではない">
+    <label>↔</label>
+    <input type="text" id="axisRight" value="緊急">
+
+    <label>縦軸（上 ⇄ 下）</label>
+    <input type="text" id="axisTop" value="重要">
+    <label>↕</label>
+    <input type="text" id="axisBottom" value="重要ではない">
+
+    <label>右上 (Q1)</label>
+    <input type="text" id="lblQ1" value="すぐやる">
+    <label>左上 (Q2)</label>
+    <input type="text" id="lblQ2" value="計画して取り組む">
+
+    <label>左下 (Q3)</label>
+    <input type="text" id="lblQ3" value="やらない">
+    <label>右下 (Q4)</label>
+    <input type="text" id="lblQ4" value="任せる">
+  </div>
+
+  <div class="actions" style="margin-top:8px;">
+    <button type="button" id="presetEis">プリセット: アイゼンハワー</button>
+    <button type="button" id="presetEffort">プリセット: 効果 × 工数</button>
+    <button type="button" id="presetMeritDemerit">プリセット: メリット × デメリット</button>
+  </div>
+
+  <h2>項目を追加</h2>
+  <div class="card" style="padding:0 0 12px;">
+    <div class="add-row">
+      <input type="text" id="newItem" placeholder="例: 議事録を作成（Enter で追加）">
+      <select id="newQuad">
+        <option value="auto" selected>自動 (中央配置)</option>
+        <option value="1">右上 (Q1)</option>
+        <option value="2">左上 (Q2)</option>
+        <option value="3">左下 (Q3)</option>
+        <option value="4">右下 (Q4)</option>
+      </select>
+      <button type="button" id="addBtn" class="primary">追加</button>
+    </div>
+  </div>
+
+  <h2>4 象限</h2>
+  <div class="stage-wrap">
+    <div class="axis-top"><b id="aTop">上ラベル</b></div>
+    <div class="stage-row">
+      <div class="axis-left"><b id="aLeft">左</b></div>
+      <div class="stage" id="stage">
+        <div class="quadrant q1"><span class="lbl" id="qLbl1"></span></div>
+        <div class="quadrant q2"><span class="lbl" id="qLbl2"></span></div>
+        <div class="quadrant q3"><span class="lbl" id="qLbl3"></span></div>
+        <div class="quadrant q4"><span class="lbl" id="qLbl4"></span></div>
+        <div class="axis-line h"></div>
+        <div class="axis-line v"></div>
+      </div>
+      <div class="axis-right"><b id="aRight">右</b></div>
+    </div>
+    <div class="axis-bottom"><b id="aBottom">下ラベル</b></div>
+  </div>
+
+  <div class="actions" style="margin-top:14px;">
+    <button type="button" id="copyMd" class="primary">Markdown コピー</button>
+    <button type="button" id="copyJson">JSON コピー</button>
+    <button type="button" id="downloadJson">JSON 保存</button>
+    <button type="button" id="loadJson">JSON 読込</button>
+    <input type="file" id="fileInput" accept="application/json,.json" style="display:none;">
+    <button type="button" id="downloadPng">PNG 保存</button>
+    <button type="button" id="clearAll">すべて消去</button>
+    <span class="save-stat" id="saveStat"></span>
+  </div>
+
+  <h2>Markdown プレビュー</h2>
+  <pre class="code" id="mdOut"></pre>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    項目はドラッグで自由に移動でき、配置位置から自動的に象限が判定されます。Q1=右上 / Q2=左上 / Q3=左下 / Q4=右下 です。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const STORAGE_KEY = 'public-tools.four-quadrant.v1';
+
+    // state.points: { id, text, x, y } where x,y are 0..1 inside stage
+    let state = {
+      title: '',
+      axes: { top: '', bottom: '', left: '', right: '' },
+      labels: { q1: '', q2: '', q3: '', q4: '' },
+      points: [],
+      seq: 1,
+    };
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === 'object') {
+          state.title = typeof obj.title === 'string' ? obj.title : '';
+          state.axes = { ...state.axes, ...(obj.axes || {}) };
+          state.labels = { ...state.labels, ...(obj.labels || {}) };
+          state.points = (Array.isArray(obj.points) ? obj.points : [])
+            .filter((p) => p && typeof p === 'object')
+            .map((p) => ({
+              id: typeof p.id === 'number' ? p.id : (state.seq++),
+              text: typeof p.text === 'string' ? p.text : '',
+              x: clamp(typeof p.x === 'number' ? p.x : 0.5, 0, 1),
+              y: clamp(typeof p.y === 'number' ? p.y : 0.5, 0, 1),
+            }));
+          state.seq = Math.max(state.seq, state.points.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1);
+        }
+      } catch (e) {}
+    }
+    function save() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        flashSave();
+      } catch (e) {}
+    }
+    let flashTimer;
+    function flashSave() {
+      const el = $('saveStat');
+      el.textContent = '保存しました';
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { el.textContent = ''; }, 1100);
+    }
+    function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+    function quadrantOf(x, y) {
+      // x,y 0..1 (origin top-left). Q1=top-right, Q2=top-left, Q3=bottom-left, Q4=bottom-right.
+      if (y < 0.5 && x >= 0.5) return 1;
+      if (y < 0.5 && x < 0.5)  return 2;
+      if (y >= 0.5 && x < 0.5) return 3;
+      return 4;
+    }
+
+    function syncForm() {
+      $('title').value = state.title;
+      $('axisTop').value = state.axes.top;
+      $('axisBottom').value = state.axes.bottom;
+      $('axisLeft').value = state.axes.left;
+      $('axisRight').value = state.axes.right;
+      $('lblQ1').value = state.labels.q1;
+      $('lblQ2').value = state.labels.q2;
+      $('lblQ3').value = state.labels.q3;
+      $('lblQ4').value = state.labels.q4;
+      renderAxes();
+    }
+
+    function renderAxes() {
+      $('aTop').textContent = state.axes.top || '上';
+      $('aBottom').textContent = state.axes.bottom || '下';
+      $('aLeft').textContent = state.axes.left || '左';
+      $('aRight').textContent = state.axes.right || '右';
+      $('qLbl1').textContent = state.labels.q1;
+      $('qLbl2').textContent = state.labels.q2;
+      $('qLbl3').textContent = state.labels.q3;
+      $('qLbl4').textContent = state.labels.q4;
+    }
+
+    function renderPoints() {
+      const stage = $('stage');
+      stage.querySelectorAll('.point').forEach((n) => n.remove());
+      state.points.forEach((p) => {
+        const el = document.createElement('div');
+        el.className = 'point q-' + quadrantOf(p.x, p.y);
+        el.style.left = (p.x * 100) + '%';
+        el.style.top = (p.y * 100) + '%';
+        el.title = p.text + '（ダブルクリックで編集）';
+        const span = document.createElement('span');
+        span.textContent = p.text;
+        const x = document.createElement('span');
+        x.className = 'x';
+        x.textContent = '×';
+        x.title = '削除';
+        x.addEventListener('click', (e) => {
+          e.stopPropagation();
+          state.points = state.points.filter((q) => q.id !== p.id);
+          save();
+          renderPoints();
+          renderMd();
+        });
+        el.append(span, x);
+        // Drag
+        let drag = null;
+        el.addEventListener('mousedown', (e) => {
+          if (e.button !== 0) return;
+          if (e.target === x) return;
+          drag = {
+            startX: e.clientX, startY: e.clientY,
+            origX: p.x, origY: p.y,
+            rect: stage.getBoundingClientRect(),
+          };
+          el.classList.add('dragging');
+          e.preventDefault();
+        });
+        window.addEventListener('mousemove', (e) => {
+          if (!drag) return;
+          const dx = (e.clientX - drag.startX) / drag.rect.width;
+          const dy = (e.clientY - drag.startY) / drag.rect.height;
+          p.x = clamp(drag.origX + dx, 0.01, 0.99);
+          p.y = clamp(drag.origY + dy, 0.01, 0.99);
+          el.style.left = (p.x * 100) + '%';
+          el.style.top = (p.y * 100) + '%';
+          el.className = 'point dragging q-' + quadrantOf(p.x, p.y);
+        });
+        window.addEventListener('mouseup', () => {
+          if (drag) {
+            drag = null;
+            el.classList.remove('dragging');
+            save();
+            renderMd();
+          }
+        });
+        el.addEventListener('dblclick', (e) => {
+          e.stopPropagation();
+          const v = prompt('項目テキストを編集', p.text);
+          if (v != null) {
+            p.text = v.trim();
+            save();
+            renderPoints();
+            renderMd();
+          }
+        });
+        stage.appendChild(el);
+      });
+    }
+
+    function renderMd() {
+      const lines = [];
+      lines.push('# 4 象限分析' + (state.title ? ': ' + state.title : ''));
+      lines.push('');
+      lines.push('- 横軸: ' + (state.axes.left || '左') + ' ↔ ' + (state.axes.right || '右'));
+      lines.push('- 縦軸: ' + (state.axes.top || '上') + ' ↕ ' + (state.axes.bottom || '下'));
+      lines.push('');
+      const groups = { 1: [], 2: [], 3: [], 4: [] };
+      state.points.forEach((p) => groups[quadrantOf(p.x, p.y)].push(p.text));
+      [
+        { q: 1, ja: '右上 (' + (state.labels.q1 || 'Q1') + ')' },
+        { q: 2, ja: '左上 (' + (state.labels.q2 || 'Q2') + ')' },
+        { q: 3, ja: '左下 (' + (state.labels.q3 || 'Q3') + ')' },
+        { q: 4, ja: '右下 (' + (state.labels.q4 || 'Q4') + ')' },
+      ].forEach((g) => {
+        lines.push('## ' + g.ja);
+        const items = groups[g.q].filter((t) => t.length > 0);
+        if (items.length === 0) lines.push('- （項目なし）');
+        else items.forEach((t) => lines.push('- ' + t));
+        lines.push('');
+      });
+      $('mdOut').textContent = lines.join('\n').trim() + '\n';
+    }
+
+    function addItem(text, quad) {
+      const t = String(text || '').trim();
+      if (!t) return;
+      let x = 0.5, y = 0.5;
+      switch (quad) {
+        case '1': x = 0.75; y = 0.25; break;
+        case '2': x = 0.25; y = 0.25; break;
+        case '3': x = 0.25; y = 0.75; break;
+        case '4': x = 0.75; y = 0.75; break;
+      }
+      // Slight jitter so multiple new items in the same quadrant don't stack exactly
+      x = clamp(x + (Math.random() - 0.5) * 0.06, 0.05, 0.95);
+      y = clamp(y + (Math.random() - 0.5) * 0.06, 0.05, 0.95);
+      state.points.push({ id: state.seq++, text: t, x, y });
+      save();
+      renderPoints();
+      renderMd();
+    }
+
+    function renderAll() {
+      syncForm();
+      renderPoints();
+      renderMd();
+    }
+
+    // Form bindings
+    [
+      ['title','title'],
+      ['axisTop','axes.top'],['axisBottom','axes.bottom'],['axisLeft','axes.left'],['axisRight','axes.right'],
+      ['lblQ1','labels.q1'],['lblQ2','labels.q2'],['lblQ3','labels.q3'],['lblQ4','labels.q4'],
+    ].forEach(([id, path]) => {
+      $(id).addEventListener('input', () => {
+        const parts = path.split('.');
+        if (parts.length === 1) state[parts[0]] = $(id).value;
+        else state[parts[0]][parts[1]] = $(id).value;
+        save();
+        renderAxes();
+        renderMd();
+      });
+    });
+
+    $('addBtn').addEventListener('click', () => {
+      addItem($('newItem').value, $('newQuad').value);
+      $('newItem').value = '';
+      $('newItem').focus();
+    });
+    $('newItem').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); $('addBtn').click(); }
+    });
+
+    $('presetEis').addEventListener('click', () => {
+      Object.assign(state.axes, { top:'重要', bottom:'重要ではない', left:'緊急ではない', right:'緊急' });
+      Object.assign(state.labels, { q1:'すぐやる', q2:'計画して取り組む', q3:'やらない', q4:'任せる' });
+      save(); renderAll();
+    });
+    $('presetEffort').addEventListener('click', () => {
+      Object.assign(state.axes, { top:'効果が高い', bottom:'効果が低い', left:'工数が小さい', right:'工数が大きい' });
+      Object.assign(state.labels, { q1:'検討する', q2:'すぐ着手', q3:'後回し', q4:'やらない' });
+      save(); renderAll();
+    });
+    $('presetMeritDemerit').addEventListener('click', () => {
+      Object.assign(state.axes, { top:'メリットが大きい', bottom:'メリットが小さい', left:'デメリットが小さい', right:'デメリットが大きい' });
+      Object.assign(state.labels, { q1:'要検討', q2:'採用', q3:'却下', q4:'回避' });
+      save(); renderAll();
+    });
+
+    $('copyMd').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('mdOut').textContent);
+        flash('copyMd', 'Markdown コピー');
+      } catch (e) {}
+    });
+    $('copyJson').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(state, null, 2));
+        flash('copyJson', 'JSON コピー');
+      } catch (e) {}
+    });
+    function flash(id, label) {
+      const el = $(id);
+      el.textContent = 'コピーしました';
+      setTimeout(() => { el.textContent = label; }, 1100);
+    }
+    $('downloadJson').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = 'four-quadrant-' + stamp + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    });
+    $('loadJson').addEventListener('click', () => $('fileInput').click());
+    $('fileInput').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const obj = JSON.parse(String(reader.result));
+          if (obj && typeof obj === 'object') {
+            state.title = typeof obj.title === 'string' ? obj.title : '';
+            state.axes = { ...state.axes, ...(obj.axes || {}) };
+            state.labels = { ...state.labels, ...(obj.labels || {}) };
+            state.points = (Array.isArray(obj.points) ? obj.points : []).map((p) => ({
+              id: state.seq++,
+              text: typeof p.text === 'string' ? p.text : '',
+              x: clamp(typeof p.x === 'number' ? p.x : 0.5, 0, 1),
+              y: clamp(typeof p.y === 'number' ? p.y : 0.5, 0, 1),
+            }));
+            save();
+            renderAll();
+          }
+        } catch (err) {
+          alert('JSON の読み込みに失敗: ' + err.message);
+        }
+        $('fileInput').value = '';
+      };
+      reader.readAsText(f);
+    });
+    $('clearAll').addEventListener('click', () => {
+      if (!confirm('すべての項目を削除しますか？（取り消せません）')) return;
+      state.points = [];
+      save();
+      renderPoints();
+      renderMd();
+    });
+
+    $('downloadPng').addEventListener('click', () => exportPng());
+
+    function exportPng() {
+      const W = 1200, H = 900;
+      const canvas = document.createElement('canvas');
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+      const m = 80;
+      const x0 = m, y0 = m, x1 = W - m, y1 = H - m;
+      const w = x1 - x0, h = y1 - y0;
+
+      // Quadrant fills
+      const fills = ['rgba(22,163,74,0.07)', 'rgba(37,99,235,0.07)', 'rgba(220,38,38,0.07)', 'rgba(217,119,6,0.07)'];
+      ctx.fillStyle = fills[1]; ctx.fillRect(x0, y0, w / 2, h / 2);          // Q2
+      ctx.fillStyle = fills[0]; ctx.fillRect(x0 + w / 2, y0, w / 2, h / 2);  // Q1
+      ctx.fillStyle = fills[2]; ctx.fillRect(x0, y0 + h / 2, w / 2, h / 2);  // Q3
+      ctx.fillStyle = fills[3]; ctx.fillRect(x0 + w / 2, y0 + h / 2, w / 2, h / 2); // Q4
+      // Frame
+      ctx.strokeStyle = '#9ca3af';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x0, y0, w, h);
+      // Axes
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(x0, y0 + h / 2); ctx.lineTo(x1, y0 + h / 2);
+      ctx.moveTo(x0 + w / 2, y0); ctx.lineTo(x0 + w / 2, y1);
+      ctx.stroke();
+      // Title
+      ctx.fillStyle = '#1f2328';
+      ctx.font = '700 28px "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText(state.title || '4 象限分析', W / 2, 24);
+
+      // Axis labels
+      ctx.fillStyle = '#1f2328';
+      ctx.font = '600 18px "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(state.axes.top || '上', W / 2, y0 - 8);
+      ctx.textBaseline = 'top';
+      ctx.fillText(state.axes.bottom || '下', W / 2, y1 + 10);
+      // left / right (rotated)
+      ctx.save();
+      ctx.translate(x0 - 12, H / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.fillText(state.axes.left || '左', 0, 0);
+      ctx.restore();
+      ctx.save();
+      ctx.translate(x1 + 12, H / 2);
+      ctx.rotate(Math.PI / 2);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.fillText(state.axes.right || '右', 0, 0);
+      ctx.restore();
+      // Quadrant labels
+      ctx.font = '600 14px "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif';
+      ctx.fillStyle = '#6b7280';
+      ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+      ctx.fillText(state.labels.q1 || '', x1 - 8, y0 + 6);
+      ctx.textAlign = 'left';
+      ctx.fillText(state.labels.q2 || '', x0 + 8, y0 + 6);
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(state.labels.q3 || '', x0 + 8, y1 - 6);
+      ctx.textAlign = 'right';
+      ctx.fillText(state.labels.q4 || '', x1 - 8, y1 - 6);
+
+      // Points
+      const colorByQuad = { 1: '#16a34a', 2: '#2563eb', 3: '#dc2626', 4: '#d97706' };
+      ctx.font = '600 14px "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif';
+      state.points.forEach((p) => {
+        const px = x0 + p.x * w;
+        const py = y0 + p.y * h;
+        const q = quadrantOf(p.x, p.y);
+        ctx.fillStyle = colorByQuad[q];
+        ctx.beginPath();
+        ctx.arc(px, py, 7, 0, Math.PI * 2);
+        ctx.fill();
+        // Label
+        ctx.fillStyle = '#1f2328';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(p.text, px + 12, py);
+      });
+
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = 'four-quadrant-' + stamp + '.png';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    load();
+    // Apply default axes if blank (first launch)
+    if (!state.axes.top) {
+      state.axes = { top: '重要', bottom: '重要ではない', left: '緊急ではない', right: '緊急' };
+      state.labels = { q1: 'すぐやる', q2: '計画して取り組む', q3: 'やらない', q4: '任せる' };
+    }
+    renderAll();
+  })();
+</script>
+</body>
+</html>
