@@ -1,7 +1,8 @@
 # 共感マップ (Empathy Map)
 
 - カテゴリ: 発想・ビジネスフレームワーク系候補
-- 状態: 未実装
+- 状態: 実装済
+- 実装先: `src/empathy-map/index.html`
 
 ## 概要
 ユーザの内面を 6 領域に分けて理解するフレーム。Says / Thinks / Does / Feels に Pains / Gains を加える。

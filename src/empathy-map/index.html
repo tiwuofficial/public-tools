@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>共感マップ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 共感マップ レイアウト */
+  .em-meta {
+    display: grid;
+    grid-template-columns: 110px 1fr 110px 1fr;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .em-meta label { color: var(--muted); font-size: 0.9rem; }
+
+  .em-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: minmax(220px, auto) minmax(220px, auto) minmax(180px, auto);
+    gap: 12px;
+  }
+  .em-cell {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    min-height: 200px;
+  }
+  .em-cell .head {
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .em-cell h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+  .em-cell .icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.8rem;
+  }
+  .em-cell .hint {
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin: 0 0 8px;
+    line-height: 1.45;
+  }
+  .em-cell ul {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    max-height: 280px;
+  }
+  .em-cell ul li {
+    display: grid;
+    grid-template-columns: 14px 1fr auto;
+    gap: 6px;
+    align-items: start;
+    padding: 4px 6px;
+    border-radius: 5px;
+    font-size: 0.9rem;
+  }
+  .em-cell ul li:hover { background: var(--bg); }
+  .em-cell ul li .bullet { color: var(--muted); }
+  .em-cell ul li .text {
+    word-break: break-word;
+    white-space: pre-wrap;
+    cursor: text;
+    line-height: 1.55;
+  }
+  .em-cell ul li button {
+    padding: 1px 8px;
+    font-size: 0.72rem;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    visibility: hidden;
+  }
+  .em-cell ul li:hover button { visibility: visible; }
+  .em-cell .add-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px;
+  }
+  .em-cell .add-row input {
+    padding: 4px 8px;
+    font-size: 0.88rem;
+  }
+  .em-cell .add-row button {
+    padding: 4px 10px;
+    font-size: 0.8rem;
+  }
+
+  /* placement */
+  .em-cell[data-key="says"]   { grid-column: 1 / span 1; grid-row: 1 / span 1; }
+  .em-cell[data-key="thinks"] { grid-column: 2 / span 1; grid-row: 1 / span 1; }
+  .em-cell[data-key="does"]   { grid-column: 1 / span 1; grid-row: 2 / span 1; }
+  .em-cell[data-key="feels"]  { grid-column: 2 / span 1; grid-row: 2 / span 1; }
+  .em-cell[data-key="pains"]  { grid-column: 1 / span 1; grid-row: 3 / span 1; }
+  .em-cell[data-key="gains"]  { grid-column: 2 / span 1; grid-row: 3 / span 1; }
+
+  .em-cell.says   .icon { background: #1d4ed8; }
+  .em-cell.thinks .icon { background: #7c3aed; }
+  .em-cell.does   .icon { background: #0e7490; }
+  .em-cell.feels  .icon { background: #d97706; }
+  .em-cell.pains  .icon { background: #dc2626; }
+  .em-cell.gains  .icon { background: #16a34a; }
+
+  .empty-hint {
+    color: var(--muted);
+    font-size: 0.85rem;
+    padding: 4px 6px;
+  }
+
+  .out-actions {
+    margin-top: 18px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .save-stat {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-left: 6px;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>共感マップ</h1>
+    <p class="lead">ペルソナの内面を 6 つの観点で書き出し、深く理解するためのフレームです。</p>
+  </header>
+
+  <div class="em-meta">
+    <label for="persona">ペルソナ</label>
+    <input type="text" id="persona" placeholder="例: 30 代共働きの女性 A さん">
+    <label for="context">場面 / 状況</label>
+    <input type="text" id="context" placeholder="例: 帰宅後 子供が寝静まったあとの 30 分">
+  </div>
+
+  <div class="em-grid" id="em"></div>
+
+  <div class="out-actions">
+    <button type="button" id="copyMd" class="primary">Markdown をコピー</button>
+    <button type="button" id="copyJson">JSON をコピー</button>
+    <button type="button" id="downloadJson">JSON ダウンロード</button>
+    <button type="button" id="loadJson">JSON を読込</button>
+    <input type="file" id="fileInput" accept="application/json,.json" style="display:none;">
+    <button type="button" id="clearAll">すべて消去</button>
+    <span class="save-stat" id="saveStat"></span>
+  </div>
+
+  <h2>Markdown プレビュー</h2>
+  <pre class="code" id="mdOut"></pre>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    入力内容はブラウザの localStorage に保存され、外部送信は行いません。クリックで本文編集、× で削除できます。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const STORAGE_KEY = 'public-tools.empathy-map.v1';
+
+    const BLOCKS = [
+      { key: 'says',   icon: '言', name: 'Says',         ja: '言うこと',
+        hint: '直接の発言・口にする言葉。インタビューや SNS で言いそうな台詞。' },
+      { key: 'thinks', icon: '思', name: 'Thinks',       ja: '考えていること',
+        hint: '本人が口に出さず思っていること。価値観・信念・偏見・期待。' },
+      { key: 'does',   icon: '行', name: 'Does',         ja: 'すること',
+        hint: '実際にとっている行動・習慣。観察できる客観的事実。' },
+      { key: 'feels',  icon: '感', name: 'Feels',        ja: '感じていること',
+        hint: '感情・気分。期待や不安、焦りや喜び。' },
+      { key: 'pains',  icon: '痛', name: 'Pains',        ja: '痛み・障害',
+        hint: 'うまくいかないこと、リスク、フラストレーション、避けたい状況。' },
+      { key: 'gains',  icon: '得', name: 'Gains',        ja: '得たいこと',
+        hint: '目標、成功体験、利得、嬉しい結果。' },
+    ];
+
+    let state = { persona: '', context: '', items: {} };
+    BLOCKS.forEach((b) => { state.items[b.key] = []; });
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (!obj || typeof obj !== 'object') return;
+        state.persona = typeof obj.persona === 'string' ? obj.persona : '';
+        state.context = typeof obj.context === 'string' ? obj.context : '';
+        BLOCKS.forEach((b) => {
+          state.items[b.key] = (obj.items && Array.isArray(obj.items[b.key]) ? obj.items[b.key] : [])
+            .map(String).slice(0, 200);
+        });
+      } catch (e) {}
+    }
+    function save() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        flashSave();
+      } catch (e) {}
+    }
+    let flashTimer;
+    function flashSave() {
+      const el = $('saveStat');
+      el.textContent = '保存しました';
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { el.textContent = ''; }, 1100);
+    }
+
+    function buildCells() {
+      const root = $('em');
+      root.innerHTML = '';
+      BLOCKS.forEach((b) => {
+        const cell = document.createElement('section');
+        cell.className = 'em-cell ' + b.key;
+        cell.dataset.key = b.key;
+        const head = document.createElement('div');
+        head.className = 'head';
+        const ic = document.createElement('span');
+        ic.className = 'icon';
+        ic.textContent = b.icon;
+        const h = document.createElement('h3');
+        h.textContent = b.ja + ' (' + b.name + ')';
+        head.append(ic, h);
+        const hint = document.createElement('p');
+        hint.className = 'hint';
+        hint.textContent = b.hint;
+        const ul = document.createElement('ul');
+        const addRow = document.createElement('div');
+        addRow.className = 'add-row';
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.placeholder = '項目を追加（Enter で確定）';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'primary';
+        btn.textContent = '追加';
+        function add() {
+          const v = inp.value.replace(/\s+/g, ' ').trim();
+          if (!v) return;
+          state.items[b.key].push(v);
+          inp.value = '';
+          save();
+          renderCell(b);
+          renderMd();
+        }
+        btn.addEventListener('click', add);
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+        addRow.append(inp, btn);
+        cell.append(head, hint, ul, addRow);
+        root.appendChild(cell);
+      });
+    }
+
+    function renderCell(b) {
+      const cell = document.querySelector('.em-cell[data-key="' + b.key + '"]');
+      const ul = cell.querySelector('ul');
+      ul.innerHTML = '';
+      const items = state.items[b.key];
+      if (items.length === 0) {
+        const hint = document.createElement('div');
+        hint.className = 'empty-hint';
+        hint.textContent = '（未入力）';
+        ul.appendChild(hint);
+        return;
+      }
+      items.forEach((text, idx) => {
+        const li = document.createElement('li');
+        const bullet = document.createElement('span');
+        bullet.className = 'bullet';
+        bullet.textContent = '•';
+        const span = document.createElement('span');
+        span.className = 'text';
+        span.textContent = text;
+        span.contentEditable = 'true';
+        span.spellcheck = false;
+        span.addEventListener('blur', () => {
+          state.items[b.key][idx] = span.textContent.replace(/\s+/g, ' ').trim();
+          save();
+          renderMd();
+        });
+        span.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); span.blur(); }
+        });
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = '×';
+        del.title = '削除';
+        del.addEventListener('click', () => {
+          state.items[b.key].splice(idx, 1);
+          save();
+          renderCell(b);
+          renderMd();
+        });
+        li.append(bullet, span, del);
+        ul.appendChild(li);
+      });
+    }
+
+    function renderMd() {
+      const lines = [];
+      let header = '# 共感マップ';
+      if (state.persona) header += ': ' + state.persona;
+      lines.push(header);
+      if (state.context) lines.push('場面: ' + state.context);
+      lines.push('');
+      BLOCKS.forEach((b) => {
+        lines.push('## ' + b.ja + ' (' + b.name + ')');
+        const items = state.items[b.key];
+        if (items.length === 0) lines.push('- （未入力）');
+        else items.forEach((t) => lines.push('- ' + t));
+        lines.push('');
+      });
+      $('mdOut').textContent = lines.join('\n').trim() + '\n';
+    }
+
+    function renderAll() {
+      $('persona').value = state.persona;
+      $('context').value = state.context;
+      BLOCKS.forEach(renderCell);
+      renderMd();
+    }
+
+    $('persona').addEventListener('input', () => {
+      state.persona = $('persona').value;
+      save();
+      renderMd();
+    });
+    $('context').addEventListener('input', () => {
+      state.context = $('context').value;
+      save();
+      renderMd();
+    });
+
+    $('copyMd').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('mdOut').textContent);
+        flash('copyMd', 'Markdown をコピー');
+      } catch (e) {}
+    });
+    $('copyJson').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(state, null, 2));
+        flash('copyJson', 'JSON をコピー');
+      } catch (e) {}
+    });
+    function flash(id, label) {
+      const el = $(id);
+      el.textContent = 'コピーしました';
+      setTimeout(() => { el.textContent = label; }, 1100);
+    }
+    $('downloadJson').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = 'empathy-map-' + stamp + '.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    });
+    $('loadJson').addEventListener('click', () => $('fileInput').click());
+    $('fileInput').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const obj = JSON.parse(String(reader.result));
+          if (obj && typeof obj === 'object') {
+            state.persona = typeof obj.persona === 'string' ? obj.persona : '';
+            state.context = typeof obj.context === 'string' ? obj.context : '';
+            BLOCKS.forEach((b) => {
+              state.items[b.key] = (obj.items && Array.isArray(obj.items[b.key]) ? obj.items[b.key] : []).map(String);
+            });
+            save();
+            renderAll();
+          }
+        } catch (err) {
+          alert('JSON の読み込みに失敗しました: ' + err.message);
+        }
+        $('fileInput').value = '';
+      };
+      reader.readAsText(f);
+    });
+    $('clearAll').addEventListener('click', () => {
+      if (!confirm('入力内容をすべて消去しますか？（取り消せません）')) return;
+      state.persona = '';
+      state.context = '';
+      BLOCKS.forEach((b) => { state.items[b.key] = []; });
+      save();
+      renderAll();
+    });
+
+    load();
+    buildCells();
+    renderAll();
+  })();
+</script>
+</body>
+</html>
