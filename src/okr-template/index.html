@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OKR テンプレート - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: OKR エディタ */
+  .meta-row {
+    display: grid;
+    grid-template-columns: 110px 1fr 110px 1fr;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .meta-row label { color: var(--muted); font-size: 0.9rem; }
+  .meta-row input,
+  .meta-row select { padding: 6px 10px; }
+
+  .obj-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+  .obj-head {
+    display: grid;
+    grid-template-columns: 30px 1fr 220px auto;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 12px;
+    background: linear-gradient(0deg, var(--bg), transparent);
+    border-bottom: 1px solid var(--border);
+  }
+  .obj-head .idx {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.85rem;
+  }
+  .obj-head input.obj-title {
+    padding: 7px 10px;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+  .obj-progress {
+    display: grid;
+    grid-template-columns: 1fr 50px;
+    gap: 8px;
+    align-items: center;
+  }
+  .meter {
+    position: relative;
+    height: 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .meter > .bar {
+    position: absolute;
+    inset: 0 100% 0 0;
+    background: var(--accent);
+    transition: right 0.18s ease, background 0.18s ease;
+  }
+  .meter > .bar.warn   { background: #d97706; }
+  .meter > .bar.danger { background: #dc2626; }
+  .meter > .bar.good   { background: #16a34a; }
+  .obj-progress .pct { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; }
+
+  .obj-actions { display: flex; gap: 4px; }
+  .obj-actions button { padding: 4px 9px; font-size: 0.78rem; }
+
+  .kr-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+  }
+  .kr-table th {
+    text-align: left;
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 0.78rem;
+    background: var(--bg);
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .kr-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  .kr-table tr:last-child td { border-bottom: none; }
+  .kr-table input[type="text"],
+  .kr-table input[type="number"] {
+    padding: 5px 8px;
+    font-size: 0.9rem;
+  }
+  .kr-table .col-num { width: 100px; }
+  .kr-table .col-pct { width: 80px; }
+  .kr-table .col-status { width: 110px; }
+  .kr-table .col-tools { width: 150px; }
+  .kr-table .col-tools button { padding: 3px 8px; font-size: 0.75rem; color: var(--muted); }
+  .kr-table .pct-cell {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .status-dot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: -1px;
+  }
+
+  .obj-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px;
+    border-top: 1px solid var(--border);
+  }
+
+  .summary-box {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 0.92rem;
+    line-height: 1.7;
+  }
+  .summary-box b { font-variant-numeric: tabular-nums; }
+
+  .save-stat { color: var(--muted); font-size: 0.85rem; margin-left: 8px; }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>OKR テンプレート</h1>
+    <p class="lead">Objective（目指す状態）と複数の Key Result（達成指標）でゴールを定義。進捗を入力するとバーと達成率が更新されます。</p>
+  </header>
+
+  <div class="meta-row">
+    <label for="title">テーマ</label>
+    <input type="text" id="title" placeholder="例: 2026 上期チーム OKR">
+    <label for="period">期間</label>
+    <input type="text" id="period" placeholder="例: 2026 Q1 / 2026-01〜03">
+  </div>
+
+  <div id="objs"></div>
+
+  <div class="actions" style="margin-top:6px;">
+    <button type="button" id="addObj" class="primary">+ Objective を追加</button>
+    <button type="button" id="presetTeam">プリセット: チーム例</button>
+    <button type="button" id="presetPersonal">プリセット: 個人例</button>
+    <button type="button" id="clearAll">すべて消去</button>
+  </div>
+
+  <div class="summary-box" id="summary"></div>
+
+  <div class="actions" style="margin-top:14px;">
+    <button type="button" id="copyMd" class="primary">Markdown コピー</button>
+    <button type="button" id="copyJson">JSON コピー</button>
+    <button type="button" id="downloadJson">JSON 保存</button>
+    <button type="button" id="loadJson">JSON 読込</button>
+    <input type="file" id="fileInput" accept="application/json,.json" style="display:none;">
+    <span class="save-stat" id="saveStat"></span>
+  </div>
+
+  <h2>Markdown プレビュー</h2>
+  <pre class="code" id="mdOut"></pre>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    KR の進捗 % は、現在値・目標値の両方を入れた場合は自動計算され、片方だけのときは手入力した % が使われます。Objective の達成率は配下 KR の平均です。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const STORAGE_KEY = 'public-tools.okr.v1';
+
+    // state.objectives: [{ title, owner, krs: [{ title, current, target, unit, progress, owner }] }]
+    let state = { title: '', period: '', objectives: [] };
+
+    function newKr(partial) {
+      return { title: '', current: '', target: '', unit: '', progress: 0, owner: '', ...partial };
+    }
+    function newObj(partial) {
+      return { title: '', owner: '', krs: [newKr(), newKr(), newKr()], ...partial };
+    }
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (!obj || typeof obj !== 'object') return;
+        state.title = typeof obj.title === 'string' ? obj.title : '';
+        state.period = typeof obj.period === 'string' ? obj.period : '';
+        state.objectives = (Array.isArray(obj.objectives) ? obj.objectives : []).map((o) => ({
+          title: typeof o.title === 'string' ? o.title : '',
+          owner: typeof o.owner === 'string' ? o.owner : '',
+          krs: (Array.isArray(o.krs) ? o.krs : []).map((k) => ({
+            title: typeof k.title === 'string' ? k.title : '',
+            current: k.current == null ? '' : String(k.current),
+            target:  k.target  == null ? '' : String(k.target),
+            unit: typeof k.unit === 'string' ? k.unit : '',
+            progress: clampPct(Number(k.progress)),
+            owner: typeof k.owner === 'string' ? k.owner : '',
+          })),
+        }));
+      } catch (e) {}
+    }
+    function save() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        flashSave();
+      } catch (e) {}
+    }
+    let flashTimer;
+    function flashSave() {
+      const el = $('saveStat');
+      el.textContent = '保存しました';
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { el.textContent = ''; }, 1100);
+    }
+
+    function clampPct(n) {
+      if (!Number.isFinite(n)) return 0;
+      return Math.max(0, Math.min(100, n));
+    }
+
+    function krProgress(kr) {
+      const cur = parseFloat(kr.current);
+      const tgt = parseFloat(kr.target);
+      if (Number.isFinite(cur) && Number.isFinite(tgt) && tgt !== 0) {
+        const pct = (cur / tgt) * 100;
+        return clampPct(pct);
+      }
+      return clampPct(Number(kr.progress));
+    }
+    function objProgress(o) {
+      if (!o.krs || o.krs.length === 0) return 0;
+      const sum = o.krs.reduce((s, k) => s + krProgress(k), 0);
+      return Math.round(sum / o.krs.length);
+    }
+    function statusOf(p) {
+      if (p >= 70) return { id: 'good',   label: '順調 (On Track)',  color: '#16a34a' };
+      if (p >= 30) return { id: 'warn',   label: '注意 (At Risk)',   color: '#d97706' };
+      return         { id: 'danger', label: '遅れ (Off Track)', color: '#dc2626' };
+    }
+
+    function buildObj(o, oi) {
+      const card = document.createElement('div');
+      card.className = 'obj-card';
+
+      const head = document.createElement('div');
+      head.className = 'obj-head';
+      const idx = document.createElement('div');
+      idx.className = 'idx';
+      idx.textContent = 'O' + (oi + 1);
+      const title = document.createElement('input');
+      title.type = 'text';
+      title.className = 'obj-title';
+      title.placeholder = 'Objective: 達成したい状態を 1 行で（例: 顧客満足度を業界トップにする）';
+      title.value = o.title;
+      title.addEventListener('input', () => { o.title = title.value; save(); renderMd(); renderSummary(); });
+      const progress = document.createElement('div');
+      progress.className = 'obj-progress';
+      const meter = document.createElement('div');
+      meter.className = 'meter';
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      meter.appendChild(bar);
+      const pct = document.createElement('span');
+      pct.className = 'pct';
+      progress.append(meter, pct);
+      const acts = document.createElement('div');
+      acts.className = 'obj-actions';
+      const up = document.createElement('button');
+      up.type = 'button'; up.textContent = '↑';
+      up.title = '上へ';
+      up.addEventListener('click', () => { if (oi > 0) { [state.objectives[oi - 1], state.objectives[oi]] = [state.objectives[oi], state.objectives[oi - 1]]; save(); renderAll(); } });
+      const dn = document.createElement('button');
+      dn.type = 'button'; dn.textContent = '↓';
+      dn.title = '下へ';
+      dn.addEventListener('click', () => { if (oi < state.objectives.length - 1) { [state.objectives[oi], state.objectives[oi + 1]] = [state.objectives[oi + 1], state.objectives[oi]]; save(); renderAll(); } });
+      const del = document.createElement('button');
+      del.type = 'button'; del.textContent = '×';
+      del.title = '削除';
+      del.addEventListener('click', () => {
+        if (!confirm('Objective「' + (o.title || ('O' + (oi + 1))) + '」を削除しますか？')) return;
+        state.objectives.splice(oi, 1);
+        save(); renderAll();
+      });
+      acts.append(up, dn, del);
+      head.append(idx, title, progress, acts);
+      card.appendChild(head);
+
+      // KR table
+      const table = document.createElement('table');
+      table.className = 'kr-table';
+      const thead = document.createElement('thead');
+      thead.innerHTML =
+        '<tr>' +
+        '<th>Key Result</th>' +
+        '<th class="col-num">現在値</th>' +
+        '<th class="col-num">目標値</th>' +
+        '<th>単位</th>' +
+        '<th class="col-pct">達成率</th>' +
+        '<th class="col-status">ステータス</th>' +
+        '<th class="col-tools"></th>' +
+        '</tr>';
+      table.appendChild(thead);
+      const tbody = document.createElement('tbody');
+
+      o.krs.forEach((k, ki) => {
+        const tr = document.createElement('tr');
+
+        const tdT = document.createElement('td');
+        const titleInp = document.createElement('input');
+        titleInp.type = 'text';
+        titleInp.value = k.title;
+        titleInp.placeholder = 'KR ' + (ki + 1) + ': 例 NPS を 30 → 50 に上げる';
+        titleInp.style.width = '100%';
+        titleInp.addEventListener('input', () => { k.title = titleInp.value; save(); renderMd(); });
+        tdT.appendChild(titleInp);
+
+        const tdCur = document.createElement('td');
+        const curInp = document.createElement('input');
+        curInp.type = 'number';
+        curInp.value = k.current;
+        curInp.style.width = '100%';
+        curInp.placeholder = '0';
+        curInp.addEventListener('input', () => {
+          k.current = curInp.value;
+          save();
+          updateRow(o, oi, k, ki, tr, bar, pct);
+          renderMd();
+          renderSummary();
+        });
+        tdCur.appendChild(curInp);
+
+        const tdTgt = document.createElement('td');
+        const tgtInp = document.createElement('input');
+        tgtInp.type = 'number';
+        tgtInp.value = k.target;
+        tgtInp.style.width = '100%';
+        tgtInp.placeholder = '100';
+        tgtInp.addEventListener('input', () => {
+          k.target = tgtInp.value;
+          save();
+          updateRow(o, oi, k, ki, tr, bar, pct);
+          renderMd();
+          renderSummary();
+        });
+        tdTgt.appendChild(tgtInp);
+
+        const tdU = document.createElement('td');
+        const uInp = document.createElement('input');
+        uInp.type = 'text';
+        uInp.value = k.unit;
+        uInp.style.width = '70px';
+        uInp.placeholder = '%';
+        uInp.addEventListener('input', () => { k.unit = uInp.value; save(); renderMd(); });
+        tdU.appendChild(uInp);
+
+        const tdPct = document.createElement('td');
+        tdPct.className = 'pct-cell';
+        const tdStatus = document.createElement('td');
+
+        const tdActs = document.createElement('td');
+        tdActs.className = 'col-tools';
+        const acts2 = document.createElement('div');
+        acts2.style.display = 'flex';
+        acts2.style.gap = '4px';
+        const krUp = document.createElement('button');
+        krUp.type = 'button'; krUp.textContent = '↑';
+        krUp.addEventListener('click', () => { if (ki > 0) { [o.krs[ki - 1], o.krs[ki]] = [o.krs[ki], o.krs[ki - 1]]; save(); renderAll(); } });
+        const krDn = document.createElement('button');
+        krDn.type = 'button'; krDn.textContent = '↓';
+        krDn.addEventListener('click', () => { if (ki < o.krs.length - 1) { [o.krs[ki], o.krs[ki + 1]] = [o.krs[ki + 1], o.krs[ki]]; save(); renderAll(); } });
+        const krDel = document.createElement('button');
+        krDel.type = 'button'; krDel.textContent = '×';
+        krDel.title = '削除';
+        krDel.addEventListener('click', () => {
+          if (o.krs.length <= 1) { alert('1 つは KR を残してください'); return; }
+          o.krs.splice(ki, 1);
+          save(); renderAll();
+        });
+        const krProg = document.createElement('button');
+        krProg.type = 'button'; krProg.textContent = '％';
+        krProg.title = '進捗 % を直接入力';
+        krProg.addEventListener('click', () => {
+          const v = prompt('進捗 % を 0–100 で入力（現在値/目標値が入っていれば自動計算が優先されます）', String(k.progress || 0));
+          if (v == null) return;
+          const n = clampPct(parseFloat(v));
+          k.progress = n;
+          save();
+          updateRow(o, oi, k, ki, tr, bar, pct);
+          renderMd();
+          renderSummary();
+        });
+        acts2.append(krUp, krDn, krProg, krDel);
+        tdActs.appendChild(acts2);
+
+        tr.append(tdT, tdCur, tdTgt, tdU, tdPct, tdStatus, tdActs);
+        tbody.appendChild(tr);
+
+        // initial fill
+        renderRow(k, tdPct, tdStatus);
+      });
+      table.appendChild(tbody);
+      card.appendChild(table);
+
+      const foot = document.createElement('div');
+      foot.className = 'obj-foot';
+      const addKr = document.createElement('button');
+      addKr.type = 'button';
+      addKr.textContent = '+ KR を追加';
+      addKr.addEventListener('click', () => { o.krs.push(newKr()); save(); renderAll(); });
+      foot.appendChild(addKr);
+      card.appendChild(foot);
+
+      // initial obj progress
+      const op = objProgress(o);
+      bar.style.right = (100 - op) + '%';
+      const s = statusOf(op);
+      bar.classList.toggle('warn', s.id === 'warn');
+      bar.classList.toggle('danger', s.id === 'danger');
+      bar.classList.toggle('good', s.id === 'good');
+      pct.textContent = op + '%';
+
+      return card;
+    }
+
+    function renderRow(k, pctTd, statusTd) {
+      const p = krProgress(k);
+      pctTd.textContent = p + '%';
+      const s = statusOf(p);
+      statusTd.innerHTML = '<span class="status-dot" style="background:' + s.color + ';"></span>' + s.label;
+    }
+    function updateRow(o, oi, k, ki, tr, bar, pct) {
+      // Re-render this KR row's pct/status cells
+      const pctTd = tr.children[4];
+      const statusTd = tr.children[5];
+      renderRow(k, pctTd, statusTd);
+      // Re-render obj header progress
+      const op = objProgress(o);
+      bar.style.right = (100 - op) + '%';
+      const s = statusOf(op);
+      bar.classList.remove('warn', 'danger', 'good');
+      bar.classList.add(s.id);
+      pct.textContent = op + '%';
+    }
+
+    function renderObjectives() {
+      const root = $('objs');
+      root.innerHTML = '';
+      state.objectives.forEach((o, i) => root.appendChild(buildObj(o, i)));
+      if (state.objectives.length === 0) {
+        const empty = document.createElement('div');
+        empty.style.color = 'var(--muted)';
+        empty.style.padding = '12px 14px';
+        empty.style.background = 'var(--card)';
+        empty.style.border = '1px dashed var(--border)';
+        empty.style.borderRadius = 'var(--radius)';
+        empty.textContent = 'まだ Objective がありません。「+ Objective を追加」してください。';
+        root.appendChild(empty);
+      }
+    }
+
+    function renderSummary() {
+      const objs = state.objectives;
+      const overall = objs.length === 0 ? 0 : Math.round(objs.reduce((s, o) => s + objProgress(o), 0) / objs.length);
+      const krCount = objs.reduce((s, o) => s + (o.krs ? o.krs.length : 0), 0);
+      const onTrack  = objs.flatMap((o) => o.krs).filter((k) => krProgress(k) >= 70).length;
+      const atRisk   = objs.flatMap((o) => o.krs).filter((k) => { const p = krProgress(k); return p >= 30 && p < 70; }).length;
+      const offTrack = objs.flatMap((o) => o.krs).filter((k) => krProgress(k) < 30).length;
+      const lines = [
+        '全体達成率: <b>' + overall + '%</b>　／　Objective: <b>' + objs.length + '</b>　KR: <b>' + krCount + '</b>',
+        'KR の状態: <span class="status-dot" style="background:#16a34a;"></span>順調 <b>' + onTrack + '</b> ／ <span class="status-dot" style="background:#d97706;"></span>注意 <b>' + atRisk + '</b> ／ <span class="status-dot" style="background:#dc2626;"></span>遅れ <b>' + offTrack + '</b>',
+      ];
+      $('summary').innerHTML = lines.join('<br>');
+    }
+
+    function renderMd() {
+      const lines = [];
+      let header = '# OKR';
+      if (state.title) header += ': ' + state.title;
+      lines.push(header);
+      if (state.period) lines.push('期間: ' + state.period);
+      lines.push('');
+      state.objectives.forEach((o, i) => {
+        const op = objProgress(o);
+        lines.push('## O' + (i + 1) + ': ' + (o.title || '(無題)') + '  — ' + op + '%' + (o.owner ? ' (' + o.owner + ')' : ''));
+        o.krs.forEach((k, j) => {
+          const p = krProgress(k);
+          let detail = '';
+          if (k.current !== '' || k.target !== '') {
+            detail = '  [' + (k.current || '?') + ' / ' + (k.target || '?') + (k.unit ? ' ' + k.unit : '') + ']';
+          }
+          lines.push('- KR' + (j + 1) + ' ' + p + '%: ' + (k.title || '(無題)') + detail);
+        });
+        lines.push('');
+      });
+      $('mdOut').textContent = lines.join('\n').trim() + '\n';
+    }
+
+    function renderAll() {
+      $('title').value = state.title;
+      $('period').value = state.period;
+      renderObjectives();
+      renderSummary();
+      renderMd();
+    }
+
+    // bindings
+    $('title').addEventListener('input', () => { state.title = $('title').value; save(); renderMd(); });
+    $('period').addEventListener('input', () => { state.period = $('period').value; save(); renderMd(); });
+    $('addObj').addEventListener('click', () => {
+      state.objectives.push(newObj());
+      save(); renderAll();
+    });
+    $('presetTeam').addEventListener('click', () => {
+      state.objectives = [
+        newObj({
+          title: 'プロダクト体験を業界トップクラスにする',
+          krs: [
+            newKr({ title: 'NPS', current: '20', target: '50', unit: '' }),
+            newKr({ title: 'CSAT', current: '4.0', target: '4.6', unit: '' }),
+            newKr({ title: '主要画面の SLI 達成率', current: '88', target: '99', unit: '%' }),
+          ],
+        }),
+        newObj({
+          title: '新規顧客の獲得を加速する',
+          krs: [
+            newKr({ title: '月次新規 MRR', current: '120', target: '300', unit: '万円' }),
+            newKr({ title: '無料体験 → 有料転換率', current: '6', target: '12', unit: '%' }),
+            newKr({ title: 'リードソースの多様化', current: '2', target: '5', unit: 'チャネル' }),
+          ],
+        }),
+      ];
+      save(); renderAll();
+    });
+    $('presetPersonal').addEventListener('click', () => {
+      state.objectives = [
+        newObj({
+          title: '健康習慣を定着させる',
+          krs: [
+            newKr({ title: '週の運動回数', current: '1', target: '4', unit: '回' }),
+            newKr({ title: '体重', current: '72', target: '67', unit: 'kg', progress: 0 }),
+            newKr({ title: '平均睡眠時間', current: '6.0', target: '7.5', unit: 'h' }),
+          ],
+        }),
+      ];
+      save(); renderAll();
+    });
+    $('clearAll').addEventListener('click', () => {
+      if (!confirm('すべての Objective / KR を削除しますか？（取り消せません）')) return;
+      state.objectives = [];
+      save(); renderAll();
+    });
+
+    $('copyMd').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText($('mdOut').textContent); flash('copyMd','Markdown コピー'); } catch (e) {}
+    });
+    $('copyJson').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(JSON.stringify(state, null, 2)); flash('copyJson','JSON コピー'); } catch (e) {}
+    });
+    function flash(id, label) {
+      const el = $(id);
+      el.textContent = 'コピーしました';
+      setTimeout(() => { el.textContent = label; }, 1100);
+    }
+    $('downloadJson').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = 'okr-' + stamp + '.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    });
+    $('loadJson').addEventListener('click', () => $('fileInput').click());
+    $('fileInput').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const obj = JSON.parse(String(reader.result));
+          if (obj && typeof obj === 'object') {
+            state.title = typeof obj.title === 'string' ? obj.title : '';
+            state.period = typeof obj.period === 'string' ? obj.period : '';
+            state.objectives = (Array.isArray(obj.objectives) ? obj.objectives : []).map((o) => ({
+              title: typeof o.title === 'string' ? o.title : '',
+              owner: typeof o.owner === 'string' ? o.owner : '',
+              krs: (Array.isArray(o.krs) ? o.krs : []).map((k) => ({
+                title: typeof k.title === 'string' ? k.title : '',
+                current: k.current == null ? '' : String(k.current),
+                target: k.target == null ? '' : String(k.target),
+                unit: typeof k.unit === 'string' ? k.unit : '',
+                progress: clampPct(Number(k.progress)),
+                owner: typeof k.owner === 'string' ? k.owner : '',
+              })),
+            }));
+            save(); renderAll();
+          }
+        } catch (err) {
+          alert('JSON の読み込みに失敗: ' + err.message);
+        }
+        $('fileInput').value = '';
+      };
+      reader.readAsText(f);
+    });
+
+    load();
+    if (state.objectives.length === 0) {
+      state.objectives = [newObj({ title: '' })];
+    }
+    renderAll();
+  })();
+</script>
+</body>
+</html>
