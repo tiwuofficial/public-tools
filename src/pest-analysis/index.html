@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PEST 分析 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local */
+  .meta-row {
+    display: grid;
+    grid-template-columns: 110px 1fr 110px 1fr;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .meta-row label { color: var(--muted); font-size: 0.9rem; }
+
+  .pest-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .pe-cell {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    min-height: 280px;
+  }
+  .pe-cell h3 {
+    margin: 0 0 4px;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .pe-cell h3 .tag {
+    width: 30px; height: 30px;
+    border-radius: 6px;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.95rem;
+  }
+  .pe-cell .axis {
+    color: var(--muted);
+    font-size: 0.8rem;
+    margin: 0 0 10px;
+    line-height: 1.5;
+  }
+  .pe-cell.politics    h3 .tag { background: #1d4ed8; }
+  .pe-cell.economy     h3 .tag { background: #d97706; }
+  .pe-cell.society     h3 .tag { background: #16a34a; }
+  .pe-cell.technology  h3 .tag { background: #7c3aed; }
+
+  .pe-cell ul {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    max-height: 360px;
+  }
+  .pe-cell ul li {
+    display: grid;
+    grid-template-columns: 16px 1fr auto;
+    align-items: start;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 0.92rem;
+  }
+  .pe-cell ul li:hover { background: var(--bg); }
+  .pe-cell ul li .bullet { color: var(--muted); }
+  .pe-cell ul li .text {
+    word-break: break-word;
+    white-space: pre-wrap;
+    cursor: text;
+    line-height: 1.55;
+  }
+  .pe-cell ul li button {
+    padding: 1px 8px;
+    font-size: 0.74rem;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    visibility: hidden;
+  }
+  .pe-cell ul li:hover button { visibility: visible; }
+  .pe-cell .add-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px;
+  }
+  .pe-cell .add-row input { padding: 6px 10px; font-size: 0.9rem; }
+  .pe-cell .add-row button { padding: 6px 12px; font-size: 0.85rem; }
+  .empty-hint {
+    color: var(--muted);
+    font-size: 0.85rem;
+    padding: 4px 8px;
+  }
+
+  .impact-tags {
+    display: flex;
+    gap: 4px;
+    margin-left: 4px;
+  }
+  .impact-tags button {
+    padding: 1px 6px;
+    font-size: 0.7rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .impact-tags button.active.pos { background: #16a34a; color: #fff; border-color: #16a34a; }
+  .impact-tags button.active.neg { background: #dc2626; color: #fff; border-color: #dc2626; }
+  .impact-tags button.active.neu { background: #6b7280; color: #fff; border-color: #6b7280; }
+  .pe-cell ul li .text-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .out-actions {
+    margin-top: 18px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .save-stat { color: var(--muted); font-size: 0.85rem; margin-left: 6px; }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>PEST 分析</h1>
+    <p class="lead">マクロ環境分析の定番。Politics / Economy / Society / Technology の 4 観点で外部要因を整理し、各要因に + / − / 中 の影響評価を付けられます。</p>
+  </header>
+
+  <div class="meta-row">
+    <label for="title">対象</label>
+    <input type="text" id="title" placeholder="例: 国内 SaaS 市場 / 海外進出">
+    <label for="dateInp">日付</label>
+    <input type="date" id="dateInp">
+  </div>
+
+  <div class="pest-grid">
+    <section class="pe-cell politics" data-key="politics">
+      <h3><span class="tag">P</span>Politics（政治・法規制）</h3>
+      <p class="axis">政策 / 規制緩和・強化 / 税制 / 補助金 / 国際関係 / 政情</p>
+      <ul></ul>
+      <div class="add-row">
+        <input type="text" placeholder="政治・法規制の事実を追加（Enter で確定）">
+        <button type="button" class="primary">追加</button>
+      </div>
+    </section>
+
+    <section class="pe-cell economy" data-key="economy">
+      <h3><span class="tag">E</span>Economy（経済）</h3>
+      <p class="axis">景気 / 為替 / 金利 / 物価 / 賃金 / 雇用 / 消費動向</p>
+      <ul></ul>
+      <div class="add-row">
+        <input type="text" placeholder="経済の事実を追加（Enter で確定）">
+        <button type="button" class="primary">追加</button>
+      </div>
+    </section>
+
+    <section class="pe-cell society" data-key="society">
+      <h3><span class="tag">S</span>Society（社会・文化）</h3>
+      <p class="axis">人口動態 / 価値観 / ライフスタイル / 教育 / 健康 / 環境意識</p>
+      <ul></ul>
+      <div class="add-row">
+        <input type="text" placeholder="社会・文化の事実を追加（Enter で確定）">
+        <button type="button" class="primary">追加</button>
+      </div>
+    </section>
+
+    <section class="pe-cell technology" data-key="technology">
+      <h3><span class="tag">T</span>Technology（技術）</h3>
+      <p class="axis">新技術 / 普及度 / インフラ / 特許 / 研究開発 / 標準化</p>
+      <ul></ul>
+      <div class="add-row">
+        <input type="text" placeholder="技術の事実を追加（Enter で確定）">
+        <button type="button" class="primary">追加</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="out-actions">
+    <button type="button" id="copyMd" class="primary">Markdown コピー</button>
+    <button type="button" id="copyJson">JSON コピー</button>
+    <button type="button" id="downloadJson">JSON 保存</button>
+    <button type="button" id="loadJson">JSON 読込</button>
+    <input type="file" id="fileInput" accept="application/json,.json" style="display:none;">
+    <button type="button" id="clearAll">すべて消去</button>
+    <span class="save-stat" id="saveStat"></span>
+  </div>
+
+  <h2>Markdown プレビュー</h2>
+  <pre class="code" id="mdOut"></pre>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    各項目の「+」「−」「中」は自社事業へのインパクトの方向です。タグをもう一度クリックすると解除できます。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const STORAGE_KEY = 'public-tools.pest.v1';
+    const KEYS = ['politics', 'economy', 'society', 'technology'];
+    const LABELS = {
+      politics:   { en: 'Politics',   ja: '政治・法規制' },
+      economy:    { en: 'Economy',    ja: '経済' },
+      society:    { en: 'Society',    ja: '社会・文化' },
+      technology: { en: 'Technology', ja: '技術' },
+    };
+    const IMPACT_LABEL = { pos: 'プラス', neg: 'マイナス', neu: '中立' };
+
+    let state = { title: '', date: '', items: { politics: [], economy: [], society: [], technology: [] } };
+    // each item: { text: '...', impact: '' | 'pos' | 'neg' | 'neu' }
+
+    function todayStr() {
+      const d = new Date();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return d.getFullYear() + '-' + m + '-' + dd;
+    }
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (!obj || typeof obj !== 'object') return;
+        state.title = typeof obj.title === 'string' ? obj.title : '';
+        state.date = typeof obj.date === 'string' ? obj.date : '';
+        KEYS.forEach((k) => {
+          state.items[k] = (obj.items && Array.isArray(obj.items[k]) ? obj.items[k] : []).map((it) => {
+            if (typeof it === 'string') return { text: it, impact: '' };
+            return {
+              text: typeof it.text === 'string' ? it.text : '',
+              impact: ['pos', 'neg', 'neu'].includes(it.impact) ? it.impact : '',
+            };
+          }).slice(0, 200);
+        });
+      } catch (e) {}
+    }
+    function save() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        flashSave();
+      } catch (e) {}
+    }
+    let flashTimer;
+    function flashSave() {
+      const el = $('saveStat');
+      el.textContent = '保存しました';
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { el.textContent = ''; }, 1100);
+    }
+
+    function renderCell(key) {
+      const cell = document.querySelector('.pe-cell[data-key="' + key + '"]');
+      const ul = cell.querySelector('ul');
+      const items = state.items[key];
+      ul.innerHTML = '';
+      if (items.length === 0) {
+        const hint = document.createElement('div');
+        hint.className = 'empty-hint';
+        hint.textContent = '（まだ項目はありません）';
+        ul.appendChild(hint);
+        return;
+      }
+      items.forEach((it, idx) => {
+        const li = document.createElement('li');
+        const bullet = document.createElement('span');
+        bullet.className = 'bullet';
+        bullet.textContent = '•';
+        const wrap = document.createElement('span');
+        wrap.className = 'text-wrap';
+        const span = document.createElement('span');
+        span.className = 'text';
+        span.textContent = it.text;
+        span.contentEditable = 'true';
+        span.spellcheck = false;
+        span.addEventListener('blur', () => {
+          it.text = span.textContent.replace(/\s+/g, ' ').trim();
+          save();
+          renderMd();
+        });
+        span.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); span.blur(); }
+        });
+        const tagRow = document.createElement('div');
+        tagRow.className = 'impact-tags';
+        ['pos', 'neg', 'neu'].forEach((imp) => {
+          const t = document.createElement('button');
+          t.type = 'button';
+          t.classList.add(imp);
+          t.textContent = imp === 'pos' ? '+' : imp === 'neg' ? '−' : '中';
+          if (it.impact === imp) t.classList.add('active');
+          t.addEventListener('click', () => {
+            it.impact = (it.impact === imp ? '' : imp);
+            save();
+            renderCell(key);
+            renderMd();
+          });
+          tagRow.appendChild(t);
+        });
+        wrap.append(span, tagRow);
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = '削除';
+        del.addEventListener('click', () => {
+          state.items[key].splice(idx, 1);
+          save();
+          renderCell(key);
+          renderMd();
+        });
+        li.append(bullet, wrap, del);
+        ul.appendChild(li);
+      });
+    }
+
+    function renderAll() {
+      $('title').value = state.title;
+      $('dateInp').value = state.date || '';
+      KEYS.forEach(renderCell);
+      renderMd();
+    }
+
+    function renderMd() {
+      const lines = [];
+      let header = '# PEST 分析';
+      if (state.title) header += ': ' + state.title;
+      lines.push(header);
+      if (state.date) lines.push('日付: ' + state.date);
+      lines.push('');
+      KEYS.forEach((k) => {
+        lines.push('## ' + LABELS[k].en + '（' + LABELS[k].ja + '）');
+        if (state.items[k].length === 0) lines.push('- （項目なし）');
+        else state.items[k].forEach((it) => {
+          const tag = it.impact === 'pos' ? ' [+]' : it.impact === 'neg' ? ' [−]' : it.impact === 'neu' ? ' [中]' : '';
+          lines.push('- ' + it.text + tag);
+        });
+        lines.push('');
+      });
+      $('mdOut').textContent = lines.join('\n').trim() + '\n';
+    }
+
+    document.querySelectorAll('.pe-cell').forEach((cell) => {
+      const key = cell.dataset.key;
+      const input = cell.querySelector('.add-row input');
+      const btn = cell.querySelector('.add-row button');
+      function addItem() {
+        const v = input.value.replace(/\s+/g, ' ').trim();
+        if (!v) return;
+        state.items[key].push({ text: v, impact: '' });
+        input.value = '';
+        save();
+        renderCell(key);
+        renderMd();
+      }
+      btn.addEventListener('click', addItem);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); addItem(); }
+      });
+    });
+
+    $('title').addEventListener('input', () => { state.title = $('title').value; save(); renderMd(); });
+    $('dateInp').addEventListener('input', () => { state.date = $('dateInp').value; save(); renderMd(); });
+
+    $('copyMd').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText($('mdOut').textContent); flash('copyMd','Markdown コピー'); } catch (e) {}
+    });
+    $('copyJson').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(JSON.stringify(state, null, 2)); flash('copyJson','JSON コピー'); } catch (e) {}
+    });
+    function flash(id, label) {
+      const el = $(id);
+      el.textContent = 'コピーしました';
+      setTimeout(() => { el.textContent = label; }, 1100);
+    }
+    $('downloadJson').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = 'pest-' + stamp + '.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    });
+    $('loadJson').addEventListener('click', () => $('fileInput').click());
+    $('fileInput').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const obj = JSON.parse(String(reader.result));
+          if (obj && typeof obj === 'object') {
+            state.title = typeof obj.title === 'string' ? obj.title : '';
+            state.date = typeof obj.date === 'string' ? obj.date : '';
+            KEYS.forEach((k) => {
+              state.items[k] = (obj.items && Array.isArray(obj.items[k]) ? obj.items[k] : []).map((it) => {
+                if (typeof it === 'string') return { text: it, impact: '' };
+                return {
+                  text: typeof it.text === 'string' ? it.text : '',
+                  impact: ['pos', 'neg', 'neu'].includes(it.impact) ? it.impact : '',
+                };
+              });
+            });
+            save(); renderAll();
+          }
+        } catch (err) {
+          alert('JSON の読み込みに失敗: ' + err.message);
+        }
+        $('fileInput').value = '';
+      };
+      reader.readAsText(f);
+    });
+    $('clearAll').addEventListener('click', () => {
+      if (!confirm('すべて消去しますか？（取り消せません）')) return;
+      state = { title: '', date: '', items: { politics: [], economy: [], society: [], technology: [] } };
+      save(); renderAll();
+    });
+
+    load();
+    if (!state.date) state.date = todayStr();
+    renderAll();
+  })();
+</script>
+</body>
+</html>
