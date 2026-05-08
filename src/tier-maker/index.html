@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tier メーカー - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: tier row layout */
+  .tm-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 12px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 10px;
+  }
+  .tm-toolbar input[type="text"] { flex: 1; min-width: 220px; padding: 6px 10px; font-size: 0.92rem; }
+  .save-stat { color: var(--muted); font-size: 0.85rem; margin-left: auto; }
+
+  .tier-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .tier-row {
+    display: grid;
+    grid-template-columns: 80px 1fr 30px;
+    align-items: stretch;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    min-height: 80px;
+  }
+  .tier-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #1f2328;
+    cursor: text;
+    padding: 8px;
+    user-select: text;
+    text-align: center;
+    word-break: break-all;
+  }
+  .tier-label[contenteditable]:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .tier-drop {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px;
+    background: var(--bg);
+    align-content: flex-start;
+  }
+  .tier-drop.drag-over { background: var(--accent-weak); }
+  .tier-side {
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid var(--border);
+  }
+  .tier-side button {
+    flex: 1;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .tier-side button:last-child { border-bottom: none; }
+  .tier-side button:hover { color: var(--fg); background: var(--bg); }
+
+  .item {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 0.9rem;
+    cursor: grab;
+    user-select: none;
+    box-shadow: 0 1px 2px rgba(15,23,42,0.06);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 200px;
+  }
+  .item .text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .item:hover { border-color: var(--accent); }
+  .item.dragging { opacity: 0.4; cursor: grabbing; }
+  .item .x {
+    color: var(--muted);
+    font-size: 0.8rem;
+    cursor: pointer;
+    visibility: hidden;
+  }
+  .item:hover .x { visibility: visible; }
+
+  .pool {
+    background: var(--card);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    min-height: 80px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-content: flex-start;
+    margin-top: 8px;
+  }
+  .pool.drag-over { background: var(--accent-weak); border-style: solid; }
+  .pool .empty {
+    color: var(--muted);
+    font-size: 0.88rem;
+  }
+
+  .add-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .add-row textarea {
+    min-height: 60px;
+    font-family: inherit;
+    font-size: 0.92rem;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>Tier メーカー</h1>
+    <p class="lead">S / A / B / C などの段位 (tier) に項目を並べてランキングします。ドラッグで配置・並び替えでき、ブラウザに自動保存されます。</p>
+  </header>
+
+  <div class="tm-toolbar">
+    <input type="text" id="title" placeholder="リストのタイトル（例: 好きなアニメ Tier）">
+    <button type="button" id="addTier">+ Tier を追加</button>
+    <button type="button" id="resetTiers">既定の S–F に戻す</button>
+    <span class="save-stat" id="saveStat"></span>
+  </div>
+
+  <h2>項目を追加</h2>
+  <div class="card" style="padding:10px 12px;">
+    <div class="add-row">
+      <textarea id="newItems" placeholder="1 行 1 項目で入力します。改行で複数まとめて追加できます。"></textarea>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <button type="button" id="addItems" class="primary">追加</button>
+        <button type="button" id="clearPool">未割当を削除</button>
+      </div>
+    </div>
+  </div>
+
+  <h2>未割当 (ドラッグして tier に配置)</h2>
+  <div class="pool" id="pool" data-tier="__pool"></div>
+
+  <h2>ランキング</h2>
+  <div class="tier-list" id="tiers"></div>
+
+  <div class="actions" style="margin-top:14px;">
+    <button type="button" id="copyMd" class="primary">Markdown コピー</button>
+    <button type="button" id="copyJson">JSON コピー</button>
+    <button type="button" id="downloadJson">JSON 保存</button>
+    <button type="button" id="loadJson">JSON 読込</button>
+    <input type="file" id="fileInput" accept="application/json,.json" style="display:none;">
+    <button type="button" id="downloadPng">PNG 保存</button>
+    <button type="button" id="clearAll">すべて消去</button>
+  </div>
+
+  <h2>Markdown プレビュー</h2>
+  <pre class="code" id="mdOut"></pre>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    tier 名・色は左端のラベルをクリック / 右端のメニューから編集できます。項目の中身はクリックでテキスト編集モードに切り替わります。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const STORAGE_KEY = 'public-tools.tier-maker.v1';
+
+    const DEFAULT_TIERS = [
+      { id: 't1', label: 'S', color: '#fb7185' },
+      { id: 't2', label: 'A', color: '#fbbf24' },
+      { id: 't3', label: 'B', color: '#facc15' },
+      { id: 't4', label: 'C', color: '#a3e635' },
+      { id: 't5', label: 'D', color: '#4ade80' },
+      { id: 't6', label: 'F', color: '#9ca3af' },
+    ];
+    const PALETTE = ['#fb7185','#fbbf24','#facc15','#a3e635','#4ade80','#9ca3af','#60a5fa','#a78bfa','#f472b6','#fca5a5'];
+
+    let state = { title: '', tiers: defaultTiers(), pool: [], assignments: {}, seq: 1 };
+    // assignments: { tierId: [itemId, itemId, ...] } and pool: [itemId, ...]
+    let items = {}; // id -> { id, text }
+
+    function defaultTiers() {
+      return DEFAULT_TIERS.map((t, i) => ({ id: 't' + (i + 1), label: t.label, color: t.color }));
+    }
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (!obj || typeof obj !== 'object') return;
+        state.title = typeof obj.title === 'string' ? obj.title : '';
+        if (Array.isArray(obj.tiers)) {
+          state.tiers = obj.tiers
+            .filter((t) => t && typeof t === 'object')
+            .map((t, i) => ({
+              id: typeof t.id === 'string' ? t.id : 't' + (i + 1),
+              label: typeof t.label === 'string' ? t.label : ('T' + (i + 1)),
+              color: typeof t.color === 'string' ? t.color : PALETTE[i % PALETTE.length],
+            }));
+        }
+        if (obj.items && typeof obj.items === 'object') {
+          for (const [id, it] of Object.entries(obj.items)) {
+            if (it && typeof it.text === 'string') {
+              items[id] = { id, text: it.text };
+              state.seq = Math.max(state.seq, parseInt(id.replace(/\D/g, ''), 10) + 1 || state.seq);
+            }
+          }
+        }
+        if (obj.assignments && typeof obj.assignments === 'object') {
+          state.assignments = {};
+          state.tiers.forEach((t) => {
+            state.assignments[t.id] = (Array.isArray(obj.assignments[t.id]) ? obj.assignments[t.id] : [])
+              .filter((id) => items[id]);
+          });
+        }
+        state.pool = (Array.isArray(obj.pool) ? obj.pool : []).filter((id) => items[id]);
+      } catch (e) {}
+    }
+    function save() {
+      try {
+        const out = {
+          title: state.title,
+          tiers: state.tiers,
+          items,
+          pool: state.pool,
+          assignments: state.assignments,
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(out));
+        flashSave();
+      } catch (e) {}
+    }
+    let flashTimer;
+    function flashSave() {
+      const el = $('saveStat');
+      el.textContent = '保存しました';
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { el.textContent = ''; }, 1100);
+    }
+
+    function ensureAssignmentsForTiers() {
+      const valid = new Set(state.tiers.map((t) => t.id));
+      const a = {};
+      state.tiers.forEach((t) => { a[t.id] = state.assignments[t.id] || []; });
+      // Move orphaned assignments to pool
+      for (const [tid, list] of Object.entries(state.assignments)) {
+        if (!valid.has(tid)) {
+          for (const id of list) state.pool.push(id);
+        }
+      }
+      state.assignments = a;
+    }
+
+    function buildItem(it) {
+      const el = document.createElement('div');
+      el.className = 'item';
+      el.draggable = true;
+      el.dataset.id = it.id;
+      const text = document.createElement('span');
+      text.className = 'text';
+      text.textContent = it.text;
+      text.title = it.text + '（クリックで編集）';
+      text.addEventListener('click', (e) => {
+        if (e.detail === 0) return;
+        const v = prompt('項目を編集', it.text);
+        if (v != null) {
+          const t = v.trim();
+          if (t === '') {
+            removeItem(it.id);
+          } else {
+            it.text = t;
+            text.textContent = t;
+            save();
+            renderMd();
+          }
+        }
+      });
+      const x = document.createElement('span');
+      x.className = 'x';
+      x.textContent = '×';
+      x.title = '削除';
+      x.addEventListener('click', (e) => {
+        e.stopPropagation();
+        removeItem(it.id);
+      });
+      el.append(text, x);
+
+      el.addEventListener('dragstart', (e) => {
+        el.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/x-tm-id', it.id);
+        e.dataTransfer.setData('text/plain', it.text);
+      });
+      el.addEventListener('dragend', () => {
+        el.classList.remove('dragging');
+      });
+      return el;
+    }
+
+    function removeItem(id) {
+      delete items[id];
+      state.pool = state.pool.filter((x) => x !== id);
+      for (const tid of Object.keys(state.assignments)) {
+        state.assignments[tid] = state.assignments[tid].filter((x) => x !== id);
+      }
+      save();
+      renderAll();
+    }
+
+    function renderTiers() {
+      const root = $('tiers');
+      root.innerHTML = '';
+      state.tiers.forEach((t, i) => {
+        const row = document.createElement('div');
+        row.className = 'tier-row';
+
+        const label = document.createElement('div');
+        label.className = 'tier-label';
+        label.style.background = t.color;
+        label.contentEditable = 'true';
+        label.spellcheck = false;
+        label.textContent = t.label;
+        label.addEventListener('blur', () => {
+          t.label = label.textContent.trim() || t.label;
+          label.textContent = t.label;
+          save();
+          renderMd();
+        });
+        label.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); label.blur(); }
+        });
+
+        const drop = document.createElement('div');
+        drop.className = 'tier-drop';
+        drop.dataset.tier = t.id;
+        // Append items
+        const ids = state.assignments[t.id] || [];
+        ids.forEach((id) => {
+          if (items[id]) drop.appendChild(buildItem(items[id]));
+        });
+        wireDropZone(drop);
+
+        const side = document.createElement('div');
+        side.className = 'tier-side';
+        const upBtn = document.createElement('button');
+        upBtn.type = 'button';
+        upBtn.textContent = '↑';
+        upBtn.title = 'tier を上へ';
+        upBtn.addEventListener('click', () => moveTier(i, -1));
+        const downBtn = document.createElement('button');
+        downBtn.type = 'button';
+        downBtn.textContent = '↓';
+        downBtn.title = 'tier を下へ';
+        downBtn.addEventListener('click', () => moveTier(i, 1));
+        const colorBtn = document.createElement('button');
+        colorBtn.type = 'button';
+        colorBtn.textContent = '色';
+        colorBtn.title = '色を変更';
+        colorBtn.addEventListener('click', () => {
+          const next = nextColor(t.color);
+          t.color = next;
+          save();
+          renderTiers();
+        });
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.textContent = '×';
+        delBtn.title = 'tier を削除';
+        delBtn.addEventListener('click', () => {
+          if (state.tiers.length <= 1) return;
+          if (!confirm('Tier「' + t.label + '」を削除します（中の項目は未割当に戻ります）')) return;
+          for (const id of (state.assignments[t.id] || [])) state.pool.push(id);
+          delete state.assignments[t.id];
+          state.tiers.splice(i, 1);
+          save();
+          renderAll();
+        });
+        side.append(upBtn, downBtn, colorBtn, delBtn);
+
+        row.append(label, drop, side);
+        root.appendChild(row);
+      });
+    }
+
+    function nextColor(current) {
+      const idx = PALETTE.indexOf(current);
+      return PALETTE[(idx + 1 + PALETTE.length) % PALETTE.length] || PALETTE[0];
+    }
+    function moveTier(idx, dir) {
+      const j = idx + dir;
+      if (j < 0 || j >= state.tiers.length) return;
+      [state.tiers[idx], state.tiers[j]] = [state.tiers[j], state.tiers[idx]];
+      save();
+      renderAll();
+    }
+
+    function renderPool() {
+      const pool = $('pool');
+      // Keep the dataset
+      const dt = pool.dataset.tier;
+      pool.innerHTML = '';
+      pool.dataset.tier = dt;
+      const ids = state.pool;
+      if (ids.length === 0) {
+        const e = document.createElement('div');
+        e.className = 'empty';
+        e.textContent = '未割当の項目はありません。「項目を追加」で追加できます。';
+        pool.appendChild(e);
+      } else {
+        ids.forEach((id) => {
+          if (items[id]) pool.appendChild(buildItem(items[id]));
+        });
+      }
+      wireDropZone(pool);
+    }
+
+    function wireDropZone(el) {
+      el.addEventListener('dragover', (e) => {
+        if (!hasOurType(e.dataTransfer)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        el.classList.add('drag-over');
+      });
+      el.addEventListener('dragleave', (e) => {
+        if (e.target === el) el.classList.remove('drag-over');
+      });
+      el.addEventListener('drop', (e) => {
+        el.classList.remove('drag-over');
+        const id = e.dataTransfer.getData('text/x-tm-id');
+        if (!id || !items[id]) return;
+        e.preventDefault();
+        // Determine target index based on closest item
+        const insertBefore = nearestSiblingId(el, e.clientX, e.clientY);
+        moveItemTo(id, el.dataset.tier, insertBefore);
+      });
+    }
+    function hasOurType(dt) {
+      try { return dt.types && Array.from(dt.types).includes('text/x-tm-id'); }
+      catch (e) { return false; }
+    }
+    function nearestSiblingId(el, x, y) {
+      const itemsEls = Array.from(el.querySelectorAll('.item'));
+      let best = null;
+      let bestDist = Infinity;
+      itemsEls.forEach((n) => {
+        const r = n.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const d = Math.hypot(x - cx, y - cy);
+        if (d < bestDist) {
+          bestDist = d;
+          if (x < cx) best = n.dataset.id;
+          else best = null;
+        }
+      });
+      return best;
+    }
+    function moveItemTo(id, dest, beforeId) {
+      // Remove from any list
+      state.pool = state.pool.filter((x) => x !== id);
+      for (const tid of Object.keys(state.assignments)) {
+        state.assignments[tid] = state.assignments[tid].filter((x) => x !== id);
+      }
+      let target = dest === '__pool' ? state.pool : (state.assignments[dest] || (state.assignments[dest] = []));
+      if (beforeId) {
+        const idx = target.indexOf(beforeId);
+        if (idx >= 0) {
+          target.splice(idx, 0, id);
+        } else {
+          target.push(id);
+        }
+      } else {
+        target.push(id);
+      }
+      save();
+      renderAll();
+    }
+
+    function renderMd() {
+      const lines = [];
+      lines.push('# Tier リスト' + (state.title ? ': ' + state.title : ''));
+      lines.push('');
+      state.tiers.forEach((t) => {
+        lines.push('## ' + t.label);
+        const ids = state.assignments[t.id] || [];
+        if (ids.length === 0) lines.push('- （項目なし）');
+        else ids.forEach((id) => { if (items[id]) lines.push('- ' + items[id].text); });
+        lines.push('');
+      });
+      if (state.pool.length > 0) {
+        lines.push('## 未割当');
+        state.pool.forEach((id) => { if (items[id]) lines.push('- ' + items[id].text); });
+        lines.push('');
+      }
+      $('mdOut').textContent = lines.join('\n').trim() + '\n';
+    }
+
+    function renderAll() {
+      ensureAssignmentsForTiers();
+      $('title').value = state.title;
+      renderTiers();
+      renderPool();
+      renderMd();
+    }
+
+    // Toolbar bindings
+    $('title').addEventListener('input', () => {
+      state.title = $('title').value;
+      save();
+      renderMd();
+    });
+    $('addTier').addEventListener('click', () => {
+      const newId = 't' + (state.seq++);
+      state.tiers.push({ id: newId, label: 'New', color: PALETTE[state.tiers.length % PALETTE.length] });
+      state.assignments[newId] = [];
+      save();
+      renderAll();
+    });
+    $('resetTiers').addEventListener('click', () => {
+      if (!confirm('既定の S–F の 6 段に戻します。現在の項目はすべて未割当に移動します。')) return;
+      // Move all into pool
+      Object.values(state.assignments).forEach((arr) => arr.forEach((id) => state.pool.push(id)));
+      state.tiers = defaultTiers();
+      state.assignments = {};
+      state.tiers.forEach((t) => { state.assignments[t.id] = []; });
+      save();
+      renderAll();
+    });
+
+    $('addItems').addEventListener('click', () => {
+      const text = $('newItems').value;
+      const lines = text.split('\n').map((s) => s.trim()).filter((s) => s.length > 0);
+      lines.forEach((t) => {
+        const id = 'i' + (state.seq++);
+        items[id] = { id, text: t };
+        state.pool.push(id);
+      });
+      $('newItems').value = '';
+      save();
+      renderAll();
+    });
+    $('clearPool').addEventListener('click', () => {
+      if (state.pool.length === 0) return;
+      if (!confirm('未割当の項目をすべて削除しますか？')) return;
+      state.pool.forEach((id) => delete items[id]);
+      state.pool = [];
+      save();
+      renderAll();
+    });
+
+    $('copyMd').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('mdOut').textContent);
+        flashBtn('copyMd', 'Markdown コピー');
+      } catch (e) {}
+    });
+    $('copyJson').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(JSON.stringify({
+          title: state.title, tiers: state.tiers, items, pool: state.pool, assignments: state.assignments,
+        }, null, 2));
+        flashBtn('copyJson', 'JSON コピー');
+      } catch (e) {}
+    });
+    function flashBtn(id, label) {
+      const el = $(id);
+      el.textContent = 'コピーしました';
+      setTimeout(() => { el.textContent = label; }, 1100);
+    }
+    $('downloadJson').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify({
+        title: state.title, tiers: state.tiers, items, pool: state.pool, assignments: state.assignments,
+      }, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = 'tier-' + stamp + '.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    });
+    $('loadJson').addEventListener('click', () => $('fileInput').click());
+    $('fileInput').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const obj = JSON.parse(String(reader.result));
+          if (obj && typeof obj === 'object') {
+            state.title = typeof obj.title === 'string' ? obj.title : '';
+            state.tiers = (Array.isArray(obj.tiers) ? obj.tiers : defaultTiers()).map((t, i) => ({
+              id: typeof t.id === 'string' ? t.id : 't' + (i + 1),
+              label: typeof t.label === 'string' ? t.label : 'T' + (i + 1),
+              color: typeof t.color === 'string' ? t.color : PALETTE[i % PALETTE.length],
+            }));
+            items = {};
+            if (obj.items && typeof obj.items === 'object') {
+              for (const [id, it] of Object.entries(obj.items)) {
+                if (it && typeof it.text === 'string') items[id] = { id, text: it.text };
+              }
+            }
+            state.assignments = {};
+            state.tiers.forEach((t) => {
+              state.assignments[t.id] = (obj.assignments && Array.isArray(obj.assignments[t.id]) ? obj.assignments[t.id] : []).filter((id) => items[id]);
+            });
+            state.pool = (Array.isArray(obj.pool) ? obj.pool : []).filter((id) => items[id]);
+            save();
+            renderAll();
+          }
+        } catch (err) {
+          alert('JSON の読み込みに失敗: ' + err.message);
+        }
+        $('fileInput').value = '';
+      };
+      reader.readAsText(f);
+    });
+    $('clearAll').addEventListener('click', () => {
+      if (!confirm('すべての項目とランキングを削除しますか？（取り消せません）')) return;
+      items = {};
+      state.pool = [];
+      state.tiers.forEach((t) => { state.assignments[t.id] = []; });
+      save();
+      renderAll();
+    });
+
+    $('downloadPng').addEventListener('click', () => exportPng());
+    function exportPng() {
+      const W = 1200;
+      const padX = 24;
+      const labelW = 110;
+      const rowH = 96;
+      const titleH = state.title ? 60 : 36;
+      const baseY = titleH + padX;
+      const H = baseY + state.tiers.length * (rowH + 8) + padX;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.fillStyle = '#1f2328';
+      ctx.font = '700 22px "Hiragino Sans","Yu Gothic",Meiryo,sans-serif';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillText(state.title ? 'Tier: ' + state.title : 'Tier リスト', padX, 14);
+
+      state.tiers.forEach((t, i) => {
+        const y = baseY + i * (rowH + 8);
+        // label
+        ctx.fillStyle = t.color;
+        roundRect(ctx, padX, y, labelW, rowH, 8, true, false);
+        ctx.fillStyle = '#1f2328';
+        ctx.font = '800 36px "Hiragino Sans","Yu Gothic",Meiryo,sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(t.label, padX + labelW / 2, y + rowH / 2);
+        // drop area
+        const dx = padX + labelW + 6;
+        const dwidth = W - dx - padX;
+        ctx.fillStyle = '#f7f8fa';
+        roundRect(ctx, dx, y, dwidth, rowH, 8, true, false);
+        ctx.strokeStyle = '#e5e7eb';
+        ctx.lineWidth = 1;
+        roundRect(ctx, dx, y, dwidth, rowH, 8, false, true);
+        // items
+        let cx = dx + 8;
+        const cy = y + 8;
+        ctx.font = '600 14px "Hiragino Sans","Yu Gothic",Meiryo,sans-serif';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+        const ids = state.assignments[t.id] || [];
+        let line = 0;
+        ids.forEach((id) => {
+          if (!items[id]) return;
+          const text = items[id].text;
+          const w = Math.min(180, Math.ceil(ctx.measureText(text).width) + 18);
+          if (cx + w > dx + dwidth - 4) {
+            line++;
+            cx = dx + 8;
+            if (line >= 2) {
+              ctx.fillStyle = '#6b7280';
+              ctx.fillText('…+' + (ids.length - ids.indexOf(id)), cx, cy + 36);
+              return;
+            }
+          }
+          if (line >= 2) return;
+          ctx.fillStyle = '#ffffff';
+          roundRect(ctx, cx, cy + line * 36, w, 28, 6, true, false);
+          ctx.strokeStyle = '#e5e7eb';
+          roundRect(ctx, cx, cy + line * 36, w, 28, 6, false, true);
+          ctx.fillStyle = '#1f2328';
+          ctx.fillText(truncate(text, 14), cx + 9, cy + line * 36 + 8);
+          cx += w + 6;
+        });
+      });
+
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = 'tier-' + stamp + '.png';
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+    function roundRect(ctx, x, y, w, h, r, fill, stroke) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      if (fill) ctx.fill();
+      if (stroke) ctx.stroke();
+    }
+    function truncate(s, n) {
+      // approximate by char count; CJK is wider but it's OK for an export
+      if (s.length <= n) return s;
+      return s.slice(0, n) + '…';
+    }
+
+    load();
+    renderAll();
+  })();
+</script>
+</body>
+</html>
