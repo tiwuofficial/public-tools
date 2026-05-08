@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文字並べ替え - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: オプション行 */
+  .opt-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 22px;
+    padding: 10px 14px;
+  }
+  .opt-row label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.92rem;
+    cursor: pointer;
+  }
+  .opt-row label input[type="checkbox"] { width: auto; margin: 0; }
+  .mode-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 6px;
+  }
+  .mode-grid button { text-align: left; padding: 9px 12px; font-size: 0.9rem; }
+  .mode-grid button.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .summary-row {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-top: 4px;
+  }
+  .summary-row b { color: var(--fg); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>文字並べ替え</h1>
+    <p class="lead">行単位でテキストを並べ替えます。昇順・降順・自然順・長さ順・シャッフル・反転に対応。</p>
+  </header>
+
+  <h2>並べ替え方法</h2>
+  <div class="mode-grid" id="modes">
+    <button type="button" data-mode="asc" class="active">昇順 (A→Z / あ→ん)</button>
+    <button type="button" data-mode="desc">降順 (Z→A / ん→あ)</button>
+    <button type="button" data-mode="natAsc">自然順 昇順 (file2 &lt; file10)</button>
+    <button type="button" data-mode="natDesc">自然順 降順</button>
+    <button type="button" data-mode="numAsc">数値順 昇順</button>
+    <button type="button" data-mode="numDesc">数値順 降順</button>
+    <button type="button" data-mode="lenAsc">文字数 昇順</button>
+    <button type="button" data-mode="lenDesc">文字数 降順</button>
+    <button type="button" data-mode="reverse">行を反転 (上下逆)</button>
+    <button type="button" data-mode="shuffle">シャッフル (ランダム)</button>
+  </div>
+
+  <h2>オプション</h2>
+  <div class="card opt-row" id="opts">
+    <label><input type="checkbox" data-op="ci">大文字小文字を無視</label>
+    <label><input type="checkbox" data-op="trim">前後の空白を無視して比較</label>
+    <label><input type="checkbox" data-op="dedupe">重複行を削除</label>
+    <label><input type="checkbox" data-op="dropBlank">空行を削除</label>
+    <label><input type="checkbox" data-op="keepBlankTop">空行を末尾にまとめる</label>
+  </div>
+
+  <div class="actions" style="margin-top:10px;">
+    <button type="button" id="reshuffle">もう一度シャッフル</button>
+  </div>
+
+  <h2 style="margin-top:18px;">入力 / 出力</h2>
+  <div class="split-2">
+    <div class="pane">
+      <div class="pane-label">入力</div>
+      <textarea id="input" rows="14" placeholder="1 行 1 項目で入力…"></textarea>
+      <div class="summary-row" id="inSummary"></div>
+    </div>
+    <div class="pane">
+      <div class="pane-label">出力</div>
+      <textarea id="output" rows="14" readonly></textarea>
+      <div class="summary-row" id="outSummary"></div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button type="button" id="copy" class="primary">出力をコピー</button>
+    <button type="button" id="swap">出力を入力に戻す</button>
+    <button type="button" id="clear">クリア</button>
+  </div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    並べ替え時のキー処理（大文字小文字や前後空白の扱い）はオプションで指定します。シャッフルは <code>crypto.getRandomValues</code> を使った Fisher–Yates です。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const modeBtns = Array.from(document.querySelectorAll('#modes button'));
+    const optEls = Array.from(document.querySelectorAll('#opts input[type="checkbox"]'));
+    let mode = 'asc';
+
+    const collator = new Intl.Collator('ja', { sensitivity: 'variant' });
+    const collatorCi = new Intl.Collator('ja', { sensitivity: 'base' });
+    const collatorNat = new Intl.Collator('ja', { numeric: true, sensitivity: 'variant' });
+    const collatorNatCi = new Intl.Collator('ja', { numeric: true, sensitivity: 'base' });
+
+    function getOpts() {
+      const m = {};
+      optEls.forEach((el) => { m[el.dataset.op] = el.checked; });
+      return m;
+    }
+
+    function keyOf(line, o) {
+      let k = line;
+      if (o.trim) k = k.replace(/^[\s　]+|[\s　]+$/g, '');
+      return k;
+    }
+
+    function parseNumber(s) {
+      const m = s.match(/-?\d+(?:\.\d+)?/);
+      if (!m) return null;
+      const n = parseFloat(m[0]);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function shuffle(arr) {
+      const a = arr.slice();
+      const rnd = new Uint32Array(1);
+      for (let i = a.length - 1; i > 0; i--) {
+        crypto.getRandomValues(rnd);
+        const j = rnd[0] % (i + 1);
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function process() {
+      let lines = $('input').value.split('\n');
+      const o = getOpts();
+
+      if (o.dropBlank) {
+        lines = lines.filter((l) => keyOf(l, o).length > 0);
+      }
+      if (o.dedupe) {
+        const seen = new Set();
+        lines = lines.filter((l) => {
+          const k = o.ci ? keyOf(l, o).toLowerCase() : keyOf(l, o);
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+      }
+
+      let blanks = [];
+      if (o.keepBlankTop && !o.dropBlank) {
+        const nonBlank = [];
+        for (const l of lines) {
+          if (keyOf(l, o).length === 0) blanks.push(l);
+          else nonBlank.push(l);
+        }
+        lines = nonBlank;
+      }
+
+      const cmpStr = o.ci ? collatorCi : collator;
+      const cmpNat = o.ci ? collatorNatCi : collatorNat;
+
+      switch (mode) {
+        case 'asc':
+          lines.sort((a, b) => cmpStr.compare(keyOf(a, o), keyOf(b, o)));
+          break;
+        case 'desc':
+          lines.sort((a, b) => cmpStr.compare(keyOf(b, o), keyOf(a, o)));
+          break;
+        case 'natAsc':
+          lines.sort((a, b) => cmpNat.compare(keyOf(a, o), keyOf(b, o)));
+          break;
+        case 'natDesc':
+          lines.sort((a, b) => cmpNat.compare(keyOf(b, o), keyOf(a, o)));
+          break;
+        case 'numAsc':
+        case 'numDesc': {
+          const dir = mode === 'numAsc' ? 1 : -1;
+          lines.sort((a, b) => {
+            const na = parseNumber(keyOf(a, o));
+            const nb = parseNumber(keyOf(b, o));
+            if (na === null && nb === null) return cmpStr.compare(keyOf(a, o), keyOf(b, o));
+            if (na === null) return 1;
+            if (nb === null) return -1;
+            return (na - nb) * dir;
+          });
+          break;
+        }
+        case 'lenAsc':
+          lines.sort((a, b) => keyOf(a, o).length - keyOf(b, o).length);
+          break;
+        case 'lenDesc':
+          lines.sort((a, b) => keyOf(b, o).length - keyOf(a, o).length);
+          break;
+        case 'reverse':
+          lines.reverse();
+          break;
+        case 'shuffle':
+          lines = shuffle(lines);
+          break;
+      }
+
+      if (blanks.length) lines = lines.concat(blanks);
+      return lines.join('\n');
+    }
+
+    function summary(t) {
+      if (t === '') return { lines: 0, chars: 0 };
+      return { lines: t.split('\n').length, chars: t.length };
+    }
+    function fmtSummary(label, s) {
+      return label + ' <b>' + s.lines.toLocaleString('ja-JP') + '</b> 行 / <b>' + s.chars.toLocaleString('ja-JP') + '</b> 文字';
+    }
+
+    function update() {
+      const src = $('input').value;
+      const out = process();
+      $('output').value = out;
+      $('inSummary').innerHTML = fmtSummary('入力', summary(src));
+      $('outSummary').innerHTML = fmtSummary('出力', summary(out));
+    }
+
+    modeBtns.forEach((b) => {
+      b.addEventListener('click', () => {
+        mode = b.dataset.mode;
+        modeBtns.forEach((x) => x.classList.toggle('active', x === b));
+        update();
+      });
+    });
+    optEls.forEach((el) => el.addEventListener('change', update));
+    $('input').addEventListener('input', update);
+
+    $('reshuffle').addEventListener('click', () => {
+      mode = 'shuffle';
+      modeBtns.forEach((x) => x.classList.toggle('active', x.dataset.mode === 'shuffle'));
+      update();
+    });
+
+    $('copy').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('output').value);
+        $('copy').textContent = 'コピーしました';
+        setTimeout(() => { $('copy').textContent = '出力をコピー'; }, 1200);
+      } catch (e) {
+        $('output').select();
+        document.execCommand('copy');
+      }
+    });
+    $('swap').addEventListener('click', () => {
+      $('input').value = $('output').value;
+      update();
+    });
+    $('clear').addEventListener('click', () => {
+      $('input').value = '';
+      update();
+    });
+
+    update();
+  })();
+</script>
+</body>
+</html>
