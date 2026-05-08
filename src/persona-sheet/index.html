@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ペルソナシート - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local */
+  .persona-grid {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 16px;
+  }
+  .persona-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-self: start;
+  }
+  .avatar {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent-weak), #ddd6fe);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+    font-size: 4rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    user-select: none;
+  }
+  .basic-list {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 6px 10px;
+    align-items: center;
+    font-size: 0.92rem;
+  }
+  .basic-list label { color: var(--muted); font-size: 0.85rem; }
+  .basic-list input { padding: 5px 8px; font-size: 0.92rem; }
+
+  .quote {
+    background: var(--bg);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--fg);
+    font-size: 0.92rem;
+    line-height: 1.55;
+  }
+  .quote textarea {
+    width: 100%;
+    min-height: 64px;
+    background: transparent;
+    border: none;
+    padding: 0;
+    font-style: italic;
+    font-family: inherit;
+    font-size: 0.92rem;
+    line-height: 1.55;
+  }
+  .quote textarea:focus { outline: none; }
+
+  .right-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+  }
+  .section h3 {
+    margin: 0 0 4px;
+    font-size: 0.98rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section .icon {
+    width: 24px; height: 24px;
+    border-radius: 6px;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+  .section .hint {
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin: 0 0 8px;
+    line-height: 1.45;
+  }
+  .section ul {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+  }
+  .section ul li {
+    display: grid;
+    grid-template-columns: 14px 1fr auto;
+    gap: 6px;
+    align-items: start;
+    padding: 4px 6px;
+    border-radius: 5px;
+    font-size: 0.92rem;
+  }
+  .section ul li:hover { background: var(--bg); }
+  .section ul li .bullet { color: var(--muted); }
+  .section ul li .text {
+    word-break: break-word;
+    white-space: pre-wrap;
+    cursor: text;
+    line-height: 1.55;
+  }
+  .section ul li button {
+    padding: 1px 7px;
+    font-size: 0.72rem;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    visibility: hidden;
+  }
+  .section ul li:hover button { visibility: visible; }
+  .section .add-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px;
+  }
+  .section .add-row input { padding: 5px 10px; font-size: 0.9rem; }
+  .section .add-row button { padding: 5px 12px; font-size: 0.85rem; }
+  .empty-hint {
+    color: var(--muted);
+    font-size: 0.85rem;
+    padding: 4px 6px;
+  }
+
+  .section.goal     .icon { background: #16a34a; }
+  .section.pain     .icon { background: #dc2626; }
+  .section.values   .icon { background: #7c3aed; }
+  .section.routine  .icon { background: #0e7490; }
+  .section.tools    .icon { background: #1d4ed8; }
+  .section.channels .icon { background: #d97706; }
+
+  .out-actions {
+    margin-top: 18px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .save-stat {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-left: 6px;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>ペルソナシート</h1>
+    <p class="lead">ターゲット顧客像を 1 枚にまとめます。基本属性、価値観、目標、悩み、利用シーン、よく使うツールなどを記述できます。</p>
+  </header>
+
+  <div class="persona-grid">
+    <aside class="persona-card">
+      <div class="avatar" id="avatar">P</div>
+
+      <div class="basic-list">
+        <label>名前</label>
+        <input type="text" id="name" placeholder="例: 田中 真理">
+
+        <label>年齢</label>
+        <input type="text" id="age" placeholder="例: 34">
+
+        <label>性別</label>
+        <input type="text" id="gender" placeholder="例: 女性">
+
+        <label>職業</label>
+        <input type="text" id="job" placeholder="例: マーケ担当">
+
+        <label>家族</label>
+        <input type="text" id="family" placeholder="例: 配偶者・子 1 人">
+
+        <label>居住地</label>
+        <input type="text" id="location" placeholder="例: 東京都内">
+
+        <label>年収</label>
+        <input type="text" id="income" placeholder="例: 600 万円">
+
+        <label>趣味</label>
+        <input type="text" id="hobby" placeholder="例: 料理 / ヨガ">
+      </div>
+
+      <div class="quote">
+        <textarea id="quote" placeholder="このペルソナが言いそうな台詞を 1 文で書く（"自分の時間がもっと欲しい" など）"></textarea>
+      </div>
+    </aside>
+
+    <div class="right-panel">
+      <section class="section goal" data-key="goals">
+        <h3><span class="icon">G</span>目標 / モチベーション</h3>
+        <p class="hint">達成したいこと、なりたい姿、選ぶ理由。</p>
+        <ul></ul>
+        <div class="add-row">
+          <input type="text" placeholder="項目を追加（Enter で確定）">
+          <button type="button" class="primary">追加</button>
+        </div>
+      </section>
+
+      <section class="section pain" data-key="pains">
+        <h3><span class="icon">P</span>悩み / ペインポイント</h3>
+        <p class="hint">不満・困りごと・避けたい事態。</p>
+        <ul></ul>
+        <div class="add-row">
+          <input type="text" placeholder="項目を追加（Enter で確定）">
+          <button type="button" class="primary">追加</button>
+        </div>
+      </section>
+
+      <section class="section values" data-key="values">
+        <h3><span class="icon">V</span>性格 / 価値観</h3>
+        <p class="hint">大事にしている価値、考え方の癖、譲れない条件。</p>
+        <ul></ul>
+        <div class="add-row">
+          <input type="text" placeholder="項目を追加（Enter で確定）">
+          <button type="button" class="primary">追加</button>
+        </div>
+      </section>
+
+      <section class="section routine" data-key="routine">
+        <h3><span class="icon">D</span>1 日の過ごし方 / 利用シーン</h3>
+        <p class="hint">朝〜夜の流れ、サービスを使いそうな場面。</p>
+        <ul></ul>
+        <div class="add-row">
+          <input type="text" placeholder="項目を追加（Enter で確定）">
+          <button type="button" class="primary">追加</button>
+        </div>
+      </section>
+
+      <section class="section tools" data-key="tools">
+        <h3><span class="icon">T</span>よく使うツール / アプリ</h3>
+        <p class="hint">PC / スマホで日常的に使うサービス。</p>
+        <ul></ul>
+        <div class="add-row">
+          <input type="text" placeholder="項目を追加（Enter で確定）">
+          <button type="button" class="primary">追加</button>
+        </div>
+      </section>
+
+      <section class="section channels" data-key="channels">
+        <h3><span class="icon">C</span>情報源 / よく見るメディア</h3>
+        <p class="hint">SNS・ニュース・コミュニティ・友人など、信頼する情報源。</p>
+        <ul></ul>
+        <div class="add-row">
+          <input type="text" placeholder="項目を追加（Enter で確定）">
+          <button type="button" class="primary">追加</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="out-actions">
+    <button type="button" id="copyMd" class="primary">Markdown コピー</button>
+    <button type="button" id="copyJson">JSON コピー</button>
+    <button type="button" id="downloadJson">JSON 保存</button>
+    <button type="button" id="loadJson">JSON 読込</button>
+    <input type="file" id="fileInput" accept="application/json,.json" style="display:none;">
+    <button type="button" id="clearAll">すべて消去</button>
+    <span class="save-stat" id="saveStat"></span>
+  </div>
+
+  <h2>Markdown プレビュー</h2>
+  <pre class="code" id="mdOut"></pre>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    入力内容はブラウザの localStorage に保存され、外部送信は行いません。アバターは名前の頭文字を表示します。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const STORAGE_KEY = 'public-tools.persona.v1';
+
+    const BASIC = ['name', 'age', 'gender', 'job', 'family', 'location', 'income', 'hobby'];
+    const SECTIONS = [
+      { key: 'goals',    label: '目標 / モチベーション' },
+      { key: 'pains',    label: '悩み / ペインポイント' },
+      { key: 'values',   label: '性格 / 価値観' },
+      { key: 'routine',  label: '1 日の過ごし方 / 利用シーン' },
+      { key: 'tools',    label: 'よく使うツール / アプリ' },
+      { key: 'channels', label: '情報源 / よく見るメディア' },
+    ];
+
+    let state = { basic: {}, quote: '', items: {} };
+    BASIC.forEach((k) => { state.basic[k] = ''; });
+    SECTIONS.forEach((s) => { state.items[s.key] = []; });
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (!obj || typeof obj !== 'object') return;
+        BASIC.forEach((k) => {
+          state.basic[k] = obj.basic && typeof obj.basic[k] === 'string' ? obj.basic[k] : '';
+        });
+        state.quote = typeof obj.quote === 'string' ? obj.quote : '';
+        SECTIONS.forEach((s) => {
+          state.items[s.key] = (obj.items && Array.isArray(obj.items[s.key]) ? obj.items[s.key] : []).map(String).slice(0, 200);
+        });
+      } catch (e) {}
+    }
+    function save() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        flashSave();
+      } catch (e) {}
+    }
+    let flashTimer;
+    function flashSave() {
+      const el = $('saveStat');
+      el.textContent = '保存しました';
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { el.textContent = ''; }, 1100);
+    }
+
+    function updateAvatar() {
+      const name = state.basic.name || '';
+      const ch = name.trim()[0] || 'P';
+      $('avatar').textContent = ch;
+    }
+
+    function renderSection(s) {
+      const sec = document.querySelector('.section[data-key="' + s.key + '"]');
+      const ul = sec.querySelector('ul');
+      ul.innerHTML = '';
+      const items = state.items[s.key];
+      if (items.length === 0) {
+        const hint = document.createElement('div');
+        hint.className = 'empty-hint';
+        hint.textContent = '（未入力）';
+        ul.appendChild(hint);
+        return;
+      }
+      items.forEach((text, idx) => {
+        const li = document.createElement('li');
+        const bullet = document.createElement('span');
+        bullet.className = 'bullet';
+        bullet.textContent = '•';
+        const span = document.createElement('span');
+        span.className = 'text';
+        span.textContent = text;
+        span.contentEditable = 'true';
+        span.spellcheck = false;
+        span.addEventListener('blur', () => {
+          state.items[s.key][idx] = span.textContent.replace(/\s+/g, ' ').trim();
+          save();
+          renderMd();
+        });
+        span.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); span.blur(); }
+        });
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = '×';
+        del.title = '削除';
+        del.addEventListener('click', () => {
+          state.items[s.key].splice(idx, 1);
+          save();
+          renderSection(s);
+          renderMd();
+        });
+        li.append(bullet, span, del);
+        ul.appendChild(li);
+      });
+    }
+
+    function renderMd() {
+      const lines = [];
+      const name = state.basic.name || '(無名)';
+      lines.push('# ペルソナ: ' + name);
+      lines.push('');
+      const basic = [];
+      const labelOf = { name: '名前', age: '年齢', gender: '性別', job: '職業', family: '家族', location: '居住地', income: '年収', hobby: '趣味' };
+      BASIC.forEach((k) => {
+        if (state.basic[k]) basic.push('- ' + labelOf[k] + ': ' + state.basic[k]);
+      });
+      if (basic.length > 0) {
+        lines.push('## 基本属性');
+        lines.push.apply(lines, basic);
+        lines.push('');
+      }
+      if (state.quote) {
+        lines.push('## ひとこと');
+        lines.push('> ' + state.quote.replace(/\n+/g, ' / '));
+        lines.push('');
+      }
+      SECTIONS.forEach((s) => {
+        lines.push('## ' + s.label);
+        const items = state.items[s.key];
+        if (items.length === 0) lines.push('- （未入力）');
+        else items.forEach((t) => lines.push('- ' + t));
+        lines.push('');
+      });
+      $('mdOut').textContent = lines.join('\n').trim() + '\n';
+    }
+
+    function renderAll() {
+      BASIC.forEach((k) => { $(k).value = state.basic[k] || ''; });
+      $('quote').value = state.quote || '';
+      updateAvatar();
+      SECTIONS.forEach(renderSection);
+      renderMd();
+    }
+
+    BASIC.forEach((k) => {
+      $(k).addEventListener('input', () => {
+        state.basic[k] = $(k).value;
+        if (k === 'name') updateAvatar();
+        save();
+        renderMd();
+      });
+    });
+    $('quote').addEventListener('input', () => {
+      state.quote = $('quote').value;
+      save();
+      renderMd();
+    });
+
+    document.querySelectorAll('.section').forEach((sec) => {
+      const key = sec.dataset.key;
+      const s = SECTIONS.find((x) => x.key === key);
+      if (!s) return;
+      const input = sec.querySelector('.add-row input');
+      const btn = sec.querySelector('.add-row button');
+      function add() {
+        const v = input.value.replace(/\s+/g, ' ').trim();
+        if (!v) return;
+        state.items[key].push(v);
+        input.value = '';
+        save();
+        renderSection(s);
+        renderMd();
+      }
+      btn.addEventListener('click', add);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+    });
+
+    $('copyMd').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText($('mdOut').textContent); flash('copyMd','Markdown コピー'); } catch (e) {}
+    });
+    $('copyJson').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(JSON.stringify(state, null, 2)); flash('copyJson','JSON コピー'); } catch (e) {}
+    });
+    function flash(id, label) {
+      const el = $(id);
+      el.textContent = 'コピーしました';
+      setTimeout(() => { el.textContent = label; }, 1100);
+    }
+    $('downloadJson').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = 'persona-' + stamp + '.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    });
+    $('loadJson').addEventListener('click', () => $('fileInput').click());
+    $('fileInput').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const obj = JSON.parse(String(reader.result));
+          if (obj && typeof obj === 'object') {
+            BASIC.forEach((k) => { state.basic[k] = obj.basic && typeof obj.basic[k] === 'string' ? obj.basic[k] : ''; });
+            state.quote = typeof obj.quote === 'string' ? obj.quote : '';
+            SECTIONS.forEach((s) => {
+              state.items[s.key] = (obj.items && Array.isArray(obj.items[s.key]) ? obj.items[s.key] : []).map(String);
+            });
+            save();
+            renderAll();
+          }
+        } catch (err) {
+          alert('JSON の読み込みに失敗: ' + err.message);
+        }
+        $('fileInput').value = '';
+      };
+      reader.readAsText(f);
+    });
+    $('clearAll').addEventListener('click', () => {
+      if (!confirm('すべて消去しますか？（取り消せません）')) return;
+      BASIC.forEach((k) => { state.basic[k] = ''; });
+      state.quote = '';
+      SECTIONS.forEach((s) => { state.items[s.key] = []; });
+      save();
+      renderAll();
+    });
+
+    load();
+    renderAll();
+  })();
+</script>
+</body>
+</html>
