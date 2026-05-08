@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>括弧・引用記号の統一 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: ルール選択 */
+  .rule-grid {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 10px 14px;
+    align-items: center;
+    padding: 12px 14px;
+  }
+  .rule-grid > label.rule-label {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .rule-grid select { max-width: 360px; }
+  .summary-row {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-top: 4px;
+  }
+  .summary-row b { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .preset-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>括弧・引用記号の統一</h1>
+    <p class="lead">引用符や括弧の種類をテキスト全体で統一します。半角／全角の変換、和文記号への変換に対応。</p>
+  </header>
+
+  <h2>変換ルール</h2>
+  <div class="card rule-grid" id="rules">
+    <label class="rule-label">ダブルクォート "…"</label>
+    <select id="rDoubleQuote">
+      <option value="keep">そのまま</option>
+      <option value="curly">スマートクォート ("…")</option>
+      <option value="straight">ストレートクォート ("…")</option>
+      <option value="kagi" selected>「…」（鉤括弧）に変換</option>
+      <option value="dkagi">『…』（二重鉤括弧）に変換</option>
+      <option value="zen">"…"（全角ダブル）に変換</option>
+    </select>
+
+    <label class="rule-label">シングルクォート '…'</label>
+    <select id="rSingleQuote">
+      <option value="keep">そのまま</option>
+      <option value="curly">スマートクォート ('…')</option>
+      <option value="straight">ストレートクォート ('…')</option>
+      <option value="kagi">「…」に変換</option>
+      <option value="dkagi" selected>『…』に変換</option>
+      <option value="zen">'…'（全角シングル）に変換</option>
+    </select>
+
+    <label class="rule-label">丸括弧 ( )</label>
+    <select id="rParen">
+      <option value="keep">そのまま</option>
+      <option value="full" selected>全角（ ）に変換</option>
+      <option value="half">半角 ( ) に変換</option>
+    </select>
+
+    <label class="rule-label">角括弧 [ ]</label>
+    <select id="rBracket">
+      <option value="keep">そのまま</option>
+      <option value="full">全角［ ］に変換</option>
+      <option value="half">半角 [ ] に変換</option>
+      <option value="lenticular">【 】（隅付き括弧）に変換</option>
+      <option value="kikko" selected>〔 〕（亀甲括弧）に変換</option>
+    </select>
+
+    <label class="rule-label">波括弧 { }</label>
+    <select id="rBrace">
+      <option value="keep">そのまま</option>
+      <option value="full" selected>全角｛ ｝に変換</option>
+      <option value="half">半角 { } に変換</option>
+    </select>
+
+    <label class="rule-label">山括弧 〈〉《》</label>
+    <select id="rAngle">
+      <option value="keep" selected>そのまま</option>
+      <option value="single">〈 〉に統一</option>
+      <option value="double">《 》に統一</option>
+    </select>
+
+    <label class="rule-label">既存の和文記号</label>
+    <select id="rJp">
+      <option value="keep" selected>そのまま</option>
+      <option value="kagi-only">「」を残し、その他のクォートのみ変換</option>
+      <option value="strip-decorative">『』【】〔〕を「」に統一</option>
+    </select>
+  </div>
+
+  <div class="preset-row">
+    <button type="button" id="presetWeb">プリセット: 日本語 Web 記事向け</button>
+    <button type="button" id="presetEn">プリセット: 英文向け（スマートクォート）</button>
+    <button type="button" id="presetReset">すべて「そのまま」</button>
+  </div>
+
+  <h2 style="margin-top:18px;">入力 / 出力</h2>
+  <div class="split-2">
+    <div class="pane">
+      <div class="pane-label">入力</div>
+      <textarea id="input" rows="14" placeholder="変換したいテキストを貼り付け…"></textarea>
+      <div class="summary-row" id="inSummary"></div>
+    </div>
+    <div class="pane">
+      <div class="pane-label">出力</div>
+      <textarea id="output" rows="14" readonly></textarea>
+      <div class="summary-row" id="outSummary"></div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button type="button" id="copy" class="primary">出力をコピー</button>
+    <button type="button" id="swap">出力を入力に戻す</button>
+    <button type="button" id="clear">クリア</button>
+    <span id="changeStat" style="color:var(--muted);font-size:0.85rem;align-self:center;"></span>
+  </div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    変換はブラウザ上で完結します（外部送信なし）。引用符の対応付けは「直前のクォートが開きで、次のクォートが閉じ」というルールで判定するため、文中で奇数個のクォートが残っていると揃わない場合があります。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    // pair definitions: [open, close]
+    const PAIR = {
+      curlyDouble: ['“', '”'],   // " "
+      curlySingle: ['‘', '’'],   // ' '
+      straightDouble: ['"', '"'],
+      straightSingle: ["'", "'"],
+      kagi: ['「', '」'],          // 「 」
+      dkagi: ['『', '』'],         // 『 』
+      zenDouble: ['＂', '＂'],     // "…" no real pair, fall back
+      zenSingle: ['＇', '＇'],
+      paren: { full: ['（', '）'], half: ['(', ')'] },
+      bracket: {
+        full: ['［', '］'],
+        half: ['[', ']'],
+        lenticular: ['【', '】'],   // 【 】
+        kikko: ['〔', '〕'],        // 〔 〕
+      },
+      brace: { full: ['｛', '｝'], half: ['{', '}'] },
+    };
+
+    function pairForDouble(rule) {
+      switch (rule) {
+        case 'curly': return PAIR.curlyDouble;
+        case 'straight': return PAIR.straightDouble;
+        case 'kagi': return PAIR.kagi;
+        case 'dkagi': return PAIR.dkagi;
+        case 'zen': return PAIR.zenDouble;
+      }
+      return null;
+    }
+    function pairForSingle(rule) {
+      switch (rule) {
+        case 'curly': return PAIR.curlySingle;
+        case 'straight': return PAIR.straightSingle;
+        case 'kagi': return PAIR.kagi;
+        case 'dkagi': return PAIR.dkagi;
+        case 'zen': return PAIR.zenSingle;
+      }
+      return null;
+    }
+
+    function transformQuotes(text, rDouble, rSingle) {
+      const targetD = pairForDouble(rDouble);
+      const targetS = pairForSingle(rSingle);
+      if (!targetD && !targetS) return text;
+
+      // Treat any of "…" "…" "…" together as double; ' '   ' ' as single.
+      const DOUBLES = ['"', '“', '”', '＂'];
+      const SINGLES = ["'", '‘', '’', '＇'];
+
+      const out = [];
+      let openD = false, openS = false;
+      for (const ch of text) {
+        if (targetD && DOUBLES.includes(ch)) {
+          out.push(openD ? targetD[1] : targetD[0]);
+          openD = !openD;
+        } else if (targetS && SINGLES.includes(ch)) {
+          out.push(openS ? targetS[1] : targetS[0]);
+          openS = !openS;
+        } else {
+          out.push(ch);
+          if (ch === '\n') { openD = false; openS = false; }
+        }
+      }
+      return out.join('');
+    }
+
+    function transformBrackets(text, kind, rule) {
+      let pair;
+      if (kind === 'paren') pair = PAIR.paren[rule];
+      else if (kind === 'brace') pair = PAIR.brace[rule];
+      else if (kind === 'bracket') pair = PAIR.bracket[rule];
+      if (!pair) return text;
+
+      const variants = {
+        paren: ['(', ')', '（', '）'],
+        bracket: ['[', ']', '［', '］', '【', '】', '〔', '〕'],
+        brace: ['{', '}', '｛', '｝'],
+      }[kind];
+      const opens = new Set(variants.filter((_, i) => i % 2 === 0));
+      const closes = new Set(variants.filter((_, i) => i % 2 === 1));
+
+      let out = '';
+      for (const ch of text) {
+        if (opens.has(ch)) out += pair[0];
+        else if (closes.has(ch)) out += pair[1];
+        else out += ch;
+      }
+      return out;
+    }
+
+    function transformAngle(text, rule) {
+      if (rule === 'keep') return text;
+      let pair;
+      if (rule === 'single') pair = ['〈', '〉'];
+      else if (rule === 'double') pair = ['《', '》'];
+      else return text;
+      const opens = new Set(['〈', '《']);
+      const closes = new Set(['〉', '》']);
+      let out = '';
+      for (const ch of text) {
+        if (opens.has(ch)) out += pair[0];
+        else if (closes.has(ch)) out += pair[1];
+        else out += ch;
+      }
+      return out;
+    }
+
+    function applyJpRule(text, rule) {
+      if (rule === 'strip-decorative') {
+        return text
+          .replace(/[『【〔]/g, '「')   // 『【〔 → 「
+          .replace(/[』】〕]/g, '」');  // 』】〕 → 」
+      }
+      return text;
+    }
+
+    function transform(text, opts) {
+      let t = text;
+      t = applyJpRule(t, opts.rJp);
+      t = transformQuotes(t, opts.rDoubleQuote, opts.rSingleQuote);
+      if (opts.rParen !== 'keep') t = transformBrackets(t, 'paren', opts.rParen);
+      if (opts.rBracket !== 'keep') t = transformBrackets(t, 'bracket', opts.rBracket);
+      if (opts.rBrace !== 'keep') t = transformBrackets(t, 'brace', opts.rBrace);
+      if (opts.rAngle !== 'keep') t = transformAngle(t, opts.rAngle);
+      return t;
+    }
+
+    function getOpts() {
+      return {
+        rDoubleQuote: $('rDoubleQuote').value,
+        rSingleQuote: $('rSingleQuote').value,
+        rParen: $('rParen').value,
+        rBracket: $('rBracket').value,
+        rBrace: $('rBrace').value,
+        rAngle: $('rAngle').value,
+        rJp: $('rJp').value,
+      };
+    }
+
+    function summary(t) {
+      if (t === '') return { chars: 0, lines: 0 };
+      return { chars: t.length, lines: t.split('\n').length };
+    }
+    function fmtSummary(label, s) {
+      return label + ' <b>' + s.chars.toLocaleString('ja-JP') + '</b> 文字 / <b>' + s.lines.toLocaleString('ja-JP') + '</b> 行';
+    }
+
+    function update() {
+      const src = $('input').value;
+      const out = transform(src, getOpts());
+      $('output').value = out;
+      $('inSummary').innerHTML = fmtSummary('入力', summary(src));
+      $('outSummary').innerHTML = fmtSummary('出力', summary(out));
+      let diff = 0;
+      const len = Math.min(src.length, out.length);
+      for (let i = 0; i < len; i++) if (src[i] !== out[i]) diff++;
+      diff += Math.abs(src.length - out.length);
+      $('changeStat').textContent = diff === 0 ? '差分なし' : '変更箇所: ' + diff + ' 文字';
+    }
+
+    document.querySelectorAll('#rules select').forEach((el) => el.addEventListener('change', update));
+    $('input').addEventListener('input', update);
+
+    function setRules(r) {
+      Object.keys(r).forEach((k) => { if ($(k)) $(k).value = r[k]; });
+      update();
+    }
+    $('presetWeb').addEventListener('click', () => setRules({
+      rDoubleQuote: 'kagi', rSingleQuote: 'dkagi', rParen: 'full',
+      rBracket: 'kikko', rBrace: 'full', rAngle: 'keep', rJp: 'keep',
+    }));
+    $('presetEn').addEventListener('click', () => setRules({
+      rDoubleQuote: 'curly', rSingleQuote: 'curly', rParen: 'half',
+      rBracket: 'half', rBrace: 'half', rAngle: 'keep', rJp: 'keep',
+    }));
+    $('presetReset').addEventListener('click', () => setRules({
+      rDoubleQuote: 'keep', rSingleQuote: 'keep', rParen: 'keep',
+      rBracket: 'keep', rBrace: 'keep', rAngle: 'keep', rJp: 'keep',
+    }));
+
+    $('copy').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('output').value);
+        $('copy').textContent = 'コピーしました';
+        setTimeout(() => { $('copy').textContent = '出力をコピー'; }, 1200);
+      } catch (e) {
+        $('output').select();
+        document.execCommand('copy');
+      }
+    });
+    $('swap').addEventListener('click', () => {
+      $('input').value = $('output').value;
+      update();
+    });
+    $('clear').addEventListener('click', () => {
+      $('input').value = '';
+      update();
+    });
+
+    update();
+  })();
+</script>
+</body>
+</html>
