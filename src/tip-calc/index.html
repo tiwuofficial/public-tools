@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>チップ計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 大きい結果表示 */
+  .big-amount {
+    font-size: 2.6rem;
+    font-weight: 700;
+    text-align: center;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    margin: 8px 0 4px;
+  }
+  .sub-amount {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .preset-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .preset-row button {
+    padding: 4px 10px;
+    font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>チップ計算</h1>
+    <p class="lead">合計金額・チップ率・人数からチップ額と 1 人あたりの支払額を計算します。</p>
+  </header>
+
+  <div class="card">
+    <div style="display:grid;grid-template-columns:140px 1fr 80px;gap:10px;align-items:center;">
+      <label for="total" style="color:var(--muted);font-size:0.95rem;">合計金額</label>
+      <input type="number" id="total" inputmode="decimal" min="0" step="0.01" placeholder="例: 5400">
+      <span style="color:var(--muted);">円</span>
+
+      <label for="rate" style="color:var(--muted);font-size:0.95rem;">チップ率</label>
+      <input type="number" id="rate" inputmode="decimal" min="0" step="0.5" value="15">
+      <span style="color:var(--muted);">%</span>
+
+      <span></span>
+      <div class="preset-row" style="grid-column:span 2;">
+        <button type="button" data-rate="10">10%</button>
+        <button type="button" data-rate="12">12%</button>
+        <button type="button" data-rate="15">15%</button>
+        <button type="button" data-rate="18">18%</button>
+        <button type="button" data-rate="20">20%</button>
+        <button type="button" data-rate="25">25%</button>
+      </div>
+
+      <label for="people" style="color:var(--muted);font-size:0.95rem;">人数</label>
+      <input type="number" id="people" inputmode="numeric" min="1" max="999" value="1">
+      <span style="color:var(--muted);">人</span>
+
+      <label for="round" style="color:var(--muted);font-size:0.95rem;">端数処理</label>
+      <select id="round" style="grid-column:span 2;">
+        <option value="0.01">そのまま (小数点まで)</option>
+        <option value="1" selected>1 円単位</option>
+        <option value="10">10 円単位</option>
+        <option value="100">100 円単位</option>
+      </select>
+      <span></span>
+
+      <label for="dir" style="color:var(--muted);font-size:0.95rem;">丸め方向</label>
+      <select id="dir" style="grid-column:span 2;">
+        <option value="up">切り上げ</option>
+        <option value="down">切り捨て</option>
+        <option value="round" selected>四捨五入</option>
+      </select>
+      <span></span>
+    </div>
+  </div>
+
+  <h2>1 人あたり</h2>
+  <div class="card">
+    <div class="big-amount" id="perPerson">0 円</div>
+    <div class="sub-amount" id="perPersonSub"></div>
+  </div>
+
+  <h2>内訳</h2>
+  <ul class="plain-list" id="detail"></ul>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    チップ率は税抜き合計に対して掛けます。1 円単位で丸めると小数の誤差が出るため、合計と一致しない場合は内訳に過不足を表示します。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    function fmtYen(n) {
+      const r = Math.round(n * 100) / 100;
+      const sign = r < 0 ? '-' : '';
+      const abs = Math.abs(r);
+      const hasFrac = Math.abs(abs - Math.round(abs)) > 1e-9;
+      const str = hasFrac
+        ? abs.toLocaleString('ja-JP', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : Math.round(abs).toLocaleString('ja-JP');
+      return sign + str + ' 円';
+    }
+
+    function roundTo(n, unit, dir) {
+      if (unit <= 0) return n;
+      switch (dir) {
+        case 'up': return Math.ceil(n / unit) * unit;
+        case 'down': return Math.floor(n / unit) * unit;
+        case 'round': return Math.round(n / unit) * unit;
+      }
+      return n;
+    }
+
+    function update() {
+      const total = parseFloat($('total').value);
+      const rate = parseFloat($('rate').value);
+      const people = parseInt($('people').value, 10);
+      const unit = parseFloat($('round').value);
+      const dir = $('dir').value;
+
+      if (!Number.isFinite(total) || total < 0 || !Number.isFinite(rate) || rate < 0 || !Number.isFinite(people) || people < 1) {
+        $('perPerson').textContent = '— 円';
+        $('perPersonSub').textContent = '';
+        $('detail').innerHTML = '';
+        return;
+      }
+
+      const rawTip = total * rate / 100;
+      const tip = roundTo(rawTip, unit, dir);
+      const grand = total + tip;
+      const rawPer = grand / people;
+      const per = roundTo(rawPer, unit, dir);
+      const collected = per * people;
+      const diff = collected - grand;
+
+      $('perPerson').textContent = fmtYen(per);
+      if (people > 1) {
+        $('perPersonSub').textContent = '合計 ' + fmtYen(grand) + ' を ' + people + ' 人で分担';
+      } else {
+        $('perPersonSub').textContent = '合計支払額';
+      }
+
+      const items = [
+        row('合計金額', fmtYen(total)),
+        row('チップ (' + rate + '%)', fmtYen(tip) + (Math.abs(rawTip - tip) > 1e-9 ? '  (丸め前 ' + fmtYen(rawTip) + ')' : '')),
+        row('合計支払額', fmtYen(grand)),
+        row('1 人あたり', fmtYen(per) + (Math.abs(rawPer - per) > 1e-9 && people > 1 ? '  (丸め前 ' + fmtYen(rawPer) + ')' : '')),
+      ];
+      if (people > 1) {
+        items.push(row('集まる金額', fmtYen(collected)));
+      }
+      if (Math.abs(diff) > 1e-9) {
+        const label = diff > 0 ? '余り' : '不足';
+        const style = diff > 0 ? 'color:var(--added-fg);' : 'color:var(--removed-fg);';
+        items.push(
+          '<li><span class="label">' + label + '</span><span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' + style + '">' + fmtYen(Math.abs(diff)) + '</span></li>'
+        );
+      }
+      $('detail').innerHTML = items.join('');
+    }
+    function row(label, val) {
+      return '<li><span class="label">' + label + '</span><span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">' + val + '</span></li>';
+    }
+
+    ['total', 'rate', 'people', 'round', 'dir'].forEach((id) => {
+      $(id).addEventListener('input', update);
+      $(id).addEventListener('change', update);
+    });
+
+    document.querySelectorAll('.preset-row button[data-rate]').forEach((b) => {
+      b.addEventListener('click', () => {
+        $('rate').value = b.dataset.rate;
+        update();
+      });
+    });
+
+    update();
+  })();
+</script>
+</body>
+</html>
