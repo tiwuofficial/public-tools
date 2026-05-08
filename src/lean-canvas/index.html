@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>リーンキャンバス - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: Lean Canvas 9 ブロック配置 */
+  .lc-title-row {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .lc-title-row label { color: var(--muted); font-size: 0.9rem; }
+
+  .lc-grid {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    grid-template-rows: minmax(220px, auto) minmax(220px, auto) minmax(160px, auto);
+    gap: 10px;
+  }
+  .lc-cell {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    min-height: 180px;
+  }
+  .lc-cell .head {
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .lc-cell h3 {
+    margin: 0;
+    font-size: 0.92rem;
+    font-weight: 600;
+  }
+  .lc-cell .icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.75rem;
+  }
+  .lc-cell .hint {
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin: 0 0 6px;
+    line-height: 1.45;
+  }
+  .lc-cell ul {
+    list-style: none;
+    margin: 0 0 6px;
+    padding: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    max-height: 240px;
+  }
+  .lc-cell ul li {
+    display: grid;
+    grid-template-columns: 14px 1fr auto;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    border-radius: 5px;
+    font-size: 0.88rem;
+  }
+  .lc-cell ul li:hover { background: var(--bg); }
+  .lc-cell ul li .bullet { color: var(--muted); }
+  .lc-cell ul li .text {
+    word-break: break-word;
+    white-space: pre-wrap;
+    cursor: text;
+  }
+  .lc-cell ul li button {
+    padding: 1px 7px;
+    font-size: 0.72rem;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    visibility: hidden;
+  }
+  .lc-cell ul li:hover button { visibility: visible; }
+  .lc-cell .add-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px;
+  }
+  .lc-cell .add-row input {
+    padding: 4px 8px;
+    font-size: 0.85rem;
+  }
+  .lc-cell .add-row button {
+    padding: 4px 10px;
+    font-size: 0.8rem;
+  }
+
+  /* placement (Ash Maurya 標準レイアウト) */
+  .lc-cell[data-key="problem"] { grid-column: 1 / span 2; grid-row: 1 / span 2; }
+  .lc-cell[data-key="solution"]{ grid-column: 3 / span 2; grid-row: 1 / span 1; }
+  .lc-cell[data-key="metrics"] { grid-column: 3 / span 2; grid-row: 2 / span 1; }
+  .lc-cell[data-key="uvp"]     { grid-column: 5 / span 2; grid-row: 1 / span 2; }
+  .lc-cell[data-key="advantage"] { grid-column: 7 / span 2; grid-row: 1 / span 1; }
+  .lc-cell[data-key="channels"] { grid-column: 7 / span 2; grid-row: 2 / span 1; }
+  .lc-cell[data-key="segments"] { grid-column: 9 / span 2; grid-row: 1 / span 2; }
+  .lc-cell[data-key="cost"]    { grid-column: 1 / span 5; grid-row: 3 / span 1; }
+  .lc-cell[data-key="revenue"] { grid-column: 6 / span 5; grid-row: 3 / span 1; }
+
+  .empty-hint {
+    color: var(--muted);
+    font-size: 0.8rem;
+    padding: 4px 6px;
+  }
+
+  .out-actions {
+    margin-top: 18px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .save-stat {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-left: 6px;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>リーンキャンバス</h1>
+    <p class="lead">スタートアップ向けの 9 ブロック構成。課題と顧客セグメントから埋めていくのが推奨です。</p>
+  </header>
+
+  <div class="lc-title-row">
+    <label for="title">対象事業</label>
+    <input type="text" id="title" placeholder="例: 新規プロダクト案 / プロトタイプ A など">
+  </div>
+
+  <div class="lc-grid" id="lc"></div>
+
+  <div class="out-actions">
+    <button type="button" id="copyMd" class="primary">Markdown をコピー</button>
+    <button type="button" id="copyJson">JSON をコピー</button>
+    <button type="button" id="downloadJson">JSON ダウンロード</button>
+    <button type="button" id="loadJson">JSON を読込</button>
+    <input type="file" id="fileInput" accept="application/json,.json" style="display:none;">
+    <button type="button" id="clearAll">すべて消去</button>
+    <span class="save-stat" id="saveStat"></span>
+  </div>
+
+  <h2>Markdown プレビュー</h2>
+  <pre class="code" id="mdOut"></pre>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    入力内容はブラウザの localStorage にのみ保存され、外部送信は行いません。記入順は <b>1)</b> 課題 → 顧客セグメント → <b>2)</b> 独自の価値提案 → <b>3)</b> 解決策 → チャネル → <b>4)</b> 収益・コスト → <b>5)</b> 主要指標・優位性 が推奨です。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const STORAGE_KEY = 'public-tools.lean-canvas.v1';
+
+    const BLOCKS = [
+      { key: 'problem',   icon: 'P',  color: '#dc2626', name: 'Problem',                  ja: '課題',
+        hint: 'ターゲット顧客が抱える上位 3 つ程度の課題、現状の代替手段。' },
+      { key: 'solution',  icon: 'S',  color: '#16a34a', name: 'Solution',                 ja: '解決策',
+        hint: '各課題に対する具体的な解決機能（最小限で）。' },
+      { key: 'metrics',   icon: 'M',  color: '#0e7490', name: 'Key Metrics',              ja: '主要指標',
+        hint: '事業の状態を最もよく表す数字（AARRR / KPI）。' },
+      { key: 'uvp',       icon: 'V',  color: '#7c3aed', name: 'Unique Value Proposition', ja: '独自の価値提案',
+        hint: '一行で「なぜ／なぜ今／なぜ自分たちか」を言い切るキャッチフレーズ。' },
+      { key: 'advantage', icon: 'A',  color: '#a16207', name: 'Unfair Advantage',         ja: '圧倒的な優位性',
+        hint: '簡単に真似されない要素（独自の知見・契約・ブランド・データなど）。' },
+      { key: 'channels',  icon: 'CH', color: '#b45309', name: 'Channels',                 ja: 'チャネル',
+        hint: '顧客に届ける／関係を築く経路（無料・有料、インバウンド・アウトバウンド）。' },
+      { key: 'segments',  icon: 'CS', color: '#1d4ed8', name: 'Customer Segments',        ja: '顧客セグメント',
+        hint: '対象とする顧客像、特に最初に獲るアーリーアダプター。' },
+      { key: 'cost',      icon: 'C$', color: '#475569', name: 'Cost Structure',           ja: 'コスト構造',
+        hint: '主要な固定費・変動費。MRC / 顧客獲得コストなど。' },
+      { key: 'revenue',   icon: 'R$', color: '#0f766e', name: 'Revenue Streams',          ja: '収益の流れ',
+        hint: '何で課金するか、ARPU、LTV、価格モデル。' },
+    ];
+
+    let state = { title: '', items: {} };
+    BLOCKS.forEach((b) => { state.items[b.key] = []; });
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === 'object') {
+          state.title = typeof obj.title === 'string' ? obj.title : '';
+          BLOCKS.forEach((b) => {
+            const arr = obj.items && Array.isArray(obj.items[b.key]) ? obj.items[b.key] : [];
+            state.items[b.key] = arr.map(String).slice(0, 200);
+          });
+        }
+      } catch (e) {}
+    }
+    function save() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        flashSave();
+      } catch (e) {}
+    }
+    let flashTimer;
+    function flashSave() {
+      const el = $('saveStat');
+      el.textContent = '保存しました';
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { el.textContent = ''; }, 1200);
+    }
+
+    function renderCell(b) {
+      const cell = document.querySelector('.lc-cell[data-key="' + b.key + '"]');
+      const ul = cell.querySelector('ul');
+      ul.innerHTML = '';
+      const items = state.items[b.key];
+      if (items.length === 0) {
+        const hint = document.createElement('div');
+        hint.className = 'empty-hint';
+        hint.textContent = '（未入力）';
+        ul.appendChild(hint);
+        return;
+      }
+      items.forEach((text, idx) => {
+        const li = document.createElement('li');
+        const bullet = document.createElement('span');
+        bullet.className = 'bullet';
+        bullet.textContent = '•';
+        const span = document.createElement('span');
+        span.className = 'text';
+        span.textContent = text;
+        span.contentEditable = 'true';
+        span.spellcheck = false;
+        span.addEventListener('blur', () => {
+          state.items[b.key][idx] = span.textContent.replace(/\s+/g, ' ').trim();
+          save();
+          renderMd();
+        });
+        span.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); span.blur(); }
+        });
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = '×';
+        del.title = '削除';
+        del.addEventListener('click', () => {
+          state.items[b.key].splice(idx, 1);
+          save();
+          renderCell(b);
+          renderMd();
+        });
+        li.append(bullet, span, del);
+        ul.appendChild(li);
+      });
+    }
+
+    function buildCells() {
+      const root = $('lc');
+      root.innerHTML = '';
+      BLOCKS.forEach((b) => {
+        const cell = document.createElement('section');
+        cell.className = 'lc-cell';
+        cell.dataset.key = b.key;
+        const head = document.createElement('div');
+        head.className = 'head';
+        const ic = document.createElement('span');
+        ic.className = 'icon';
+        ic.textContent = b.icon;
+        ic.style.background = b.color;
+        const h = document.createElement('h3');
+        h.textContent = b.ja + ' (' + b.name + ')';
+        head.append(ic, h);
+        const hint = document.createElement('p');
+        hint.className = 'hint';
+        hint.textContent = b.hint;
+        const ul = document.createElement('ul');
+        const addRow = document.createElement('div');
+        addRow.className = 'add-row';
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.placeholder = '項目を追加（Enter で確定）';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'primary';
+        btn.textContent = '追加';
+        function add() {
+          const v = inp.value.replace(/\s+/g, ' ').trim();
+          if (!v) return;
+          state.items[b.key].push(v);
+          inp.value = '';
+          save();
+          renderCell(b);
+          renderMd();
+        }
+        btn.addEventListener('click', add);
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+        addRow.append(inp, btn);
+        cell.append(head, hint, ul, addRow);
+        root.appendChild(cell);
+      });
+    }
+
+    function renderMd() {
+      const lines = [];
+      lines.push('# リーンキャンバス' + (state.title ? ': ' + state.title : ''));
+      lines.push('');
+      BLOCKS.forEach((b) => {
+        lines.push('## ' + b.ja + ' (' + b.name + ')');
+        const items = state.items[b.key];
+        if (items.length === 0) lines.push('- （未入力）');
+        else items.forEach((t) => lines.push('- ' + t));
+        lines.push('');
+      });
+      $('mdOut').textContent = lines.join('\n').trim() + '\n';
+    }
+
+    function renderAll() {
+      $('title').value = state.title;
+      BLOCKS.forEach(renderCell);
+      renderMd();
+    }
+
+    $('title').addEventListener('input', () => {
+      state.title = $('title').value;
+      save();
+      renderMd();
+    });
+
+    $('copyMd').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('mdOut').textContent);
+        $('copyMd').textContent = 'コピーしました';
+        setTimeout(() => { $('copyMd').textContent = 'Markdown をコピー'; }, 1200);
+      } catch (e) {}
+    });
+    $('copyJson').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(state, null, 2));
+        $('copyJson').textContent = 'コピーしました';
+        setTimeout(() => { $('copyJson').textContent = 'JSON をコピー'; }, 1200);
+      } catch (e) {}
+    });
+    $('downloadJson').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = 'lean-canvas-' + stamp + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    });
+    $('loadJson').addEventListener('click', () => $('fileInput').click());
+    $('fileInput').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const obj = JSON.parse(String(reader.result));
+          if (obj && typeof obj === 'object') {
+            state.title = typeof obj.title === 'string' ? obj.title : '';
+            BLOCKS.forEach((b) => {
+              state.items[b.key] = (obj.items && Array.isArray(obj.items[b.key]) ? obj.items[b.key] : []).map(String);
+            });
+            save();
+            renderAll();
+          }
+        } catch (err) {
+          alert('JSON の読み込みに失敗しました: ' + err.message);
+        }
+        $('fileInput').value = '';
+      };
+      reader.readAsText(f);
+    });
+    $('clearAll').addEventListener('click', () => {
+      if (!confirm('入力内容をすべて消去しますか？（取り消せません）')) return;
+      state.title = '';
+      BLOCKS.forEach((b) => { state.items[b.key] = []; });
+      save();
+      renderAll();
+    });
+
+    load();
+    buildCells();
+    renderAll();
+  })();
+</script>
+</body>
+</html>
