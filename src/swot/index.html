@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SWOT 分析 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: SWOT 4 マス */
+  .swot-title-row {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .swot-title-row label {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .swot-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 12px;
+  }
+  .swot-cell {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    min-height: 240px;
+  }
+  .swot-cell h3 {
+    margin: 0 0 4px;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .swot-cell h3 .tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #fff;
+  }
+  .swot-cell .axis {
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin: 0 0 8px;
+  }
+  .swot-cell.strength    h3 .tag { background: #16a34a; }
+  .swot-cell.weakness    h3 .tag { background: #dc2626; }
+  .swot-cell.opportunity h3 .tag { background: #2563eb; }
+  .swot-cell.threat      h3 .tag { background: #d97706; }
+
+  .swot-cell ul {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    max-height: 280px;
+  }
+  .swot-cell ul li {
+    display: grid;
+    grid-template-columns: 16px 1fr auto;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 0.92rem;
+  }
+  .swot-cell ul li:hover { background: var(--bg); }
+  .swot-cell ul li .bullet { color: var(--muted); }
+  .swot-cell ul li .text {
+    word-break: break-word;
+    white-space: pre-wrap;
+    cursor: text;
+  }
+  .swot-cell ul li button {
+    padding: 2px 8px;
+    font-size: 0.78rem;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    visibility: hidden;
+  }
+  .swot-cell ul li:hover button { visibility: visible; }
+  .swot-cell .add-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px;
+    align-items: stretch;
+  }
+  .swot-cell .add-row input {
+    padding: 6px 10px;
+    font-size: 0.9rem;
+  }
+  .swot-cell .add-row button {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+  }
+
+  .empty-hint {
+    color: var(--muted);
+    font-size: 0.85rem;
+    padding: 4px 8px;
+  }
+
+  .out-actions {
+    margin-top: 18px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .out-actions .save-stat {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-left: 8px;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>SWOT 分析</h1>
+    <p class="lead">強み (S) / 弱み (W) / 機会 (O) / 脅威 (T) の 4 つの観点で対象を整理します。入力はブラウザに自動保存されます。</p>
+  </header>
+
+  <div class="swot-title-row">
+    <label for="title">分析対象</label>
+    <input type="text" id="title" placeholder="例: 自社の新サービス案 / プロジェクト X など">
+  </div>
+
+  <div class="swot-grid">
+    <section class="swot-cell strength" data-key="S">
+      <h3><span class="tag">S</span>Strengths（強み）</h3>
+      <p class="axis">内部 × プラス</p>
+      <ul></ul>
+      <div class="add-row">
+        <input type="text" placeholder="強みを追加（Enter で確定）">
+        <button type="button" class="primary">追加</button>
+      </div>
+    </section>
+
+    <section class="swot-cell weakness" data-key="W">
+      <h3><span class="tag">W</span>Weaknesses（弱み）</h3>
+      <p class="axis">内部 × マイナス</p>
+      <ul></ul>
+      <div class="add-row">
+        <input type="text" placeholder="弱みを追加（Enter で確定）">
+        <button type="button" class="primary">追加</button>
+      </div>
+    </section>
+
+    <section class="swot-cell opportunity" data-key="O">
+      <h3><span class="tag">O</span>Opportunities（機会）</h3>
+      <p class="axis">外部 × プラス</p>
+      <ul></ul>
+      <div class="add-row">
+        <input type="text" placeholder="機会を追加（Enter で確定）">
+        <button type="button" class="primary">追加</button>
+      </div>
+    </section>
+
+    <section class="swot-cell threat" data-key="T">
+      <h3><span class="tag">T</span>Threats（脅威）</h3>
+      <p class="axis">外部 × マイナス</p>
+      <ul></ul>
+      <div class="add-row">
+        <input type="text" placeholder="脅威を追加（Enter で確定）">
+        <button type="button" class="primary">追加</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="out-actions">
+    <button type="button" id="copyMd" class="primary">Markdown をコピー</button>
+    <button type="button" id="copyJson">JSON をコピー</button>
+    <button type="button" id="downloadJson">JSON ダウンロード</button>
+    <button type="button" id="loadJson">JSON を読込</button>
+    <input type="file" id="fileInput" accept="application/json,.json" style="display:none;">
+    <button type="button" id="clearAll">すべて消去</button>
+    <span class="save-stat" id="saveStat"></span>
+  </div>
+
+  <h2>Markdown プレビュー</h2>
+  <pre class="code" id="mdOut"></pre>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    入力内容はブラウザの localStorage にのみ保存され、外部送信は行いません。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const STORAGE_KEY = 'public-tools.swot.v1';
+    const KEYS = ['S', 'W', 'O', 'T'];
+    const LABELS = {
+      S: { en: 'Strengths', ja: '強み' },
+      W: { en: 'Weaknesses', ja: '弱み' },
+      O: { en: 'Opportunities', ja: '機会' },
+      T: { en: 'Threats', ja: '脅威' },
+    };
+
+    let state = { title: '', items: { S: [], W: [], O: [], T: [] } };
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === 'object') {
+          state.title = typeof obj.title === 'string' ? obj.title : '';
+          for (const k of KEYS) {
+            const arr = obj.items && Array.isArray(obj.items[k]) ? obj.items[k] : [];
+            state.items[k] = arr.map(String).slice(0, 200);
+          }
+        }
+      } catch (e) {
+        // ignore corrupted state
+      }
+    }
+
+    function save() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        flashSave();
+      } catch (e) {
+        // quota errors etc.
+      }
+    }
+
+    let flashTimer;
+    function flashSave() {
+      const el = $('saveStat');
+      el.textContent = '保存しました';
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { el.textContent = ''; }, 1200);
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    }
+
+    function renderCell(key) {
+      const cell = document.querySelector('.swot-cell[data-key="' + key + '"]');
+      const ul = cell.querySelector('ul');
+      const items = state.items[key];
+      ul.innerHTML = '';
+      if (items.length === 0) {
+        const hint = document.createElement('div');
+        hint.className = 'empty-hint';
+        hint.textContent = '（まだ項目はありません）';
+        ul.appendChild(hint);
+        return;
+      }
+      items.forEach((text, idx) => {
+        const li = document.createElement('li');
+        const bullet = document.createElement('span');
+        bullet.className = 'bullet';
+        bullet.textContent = '•';
+        const span = document.createElement('span');
+        span.className = 'text';
+        span.textContent = text;
+        span.contentEditable = 'true';
+        span.spellcheck = false;
+        span.addEventListener('blur', () => {
+          state.items[key][idx] = span.textContent.replace(/\s+/g, ' ').trim();
+          save();
+          renderMarkdown();
+        });
+        span.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); span.blur(); }
+        });
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = '削除';
+        del.addEventListener('click', () => {
+          state.items[key].splice(idx, 1);
+          save();
+          renderCell(key);
+          renderMarkdown();
+        });
+        li.append(bullet, span, del);
+        ul.appendChild(li);
+      });
+    }
+
+    function renderAll() {
+      $('title').value = state.title;
+      KEYS.forEach(renderCell);
+      renderMarkdown();
+    }
+
+    function renderMarkdown() {
+      const lines = [];
+      lines.push('# SWOT 分析' + (state.title ? ': ' + state.title : ''));
+      lines.push('');
+      for (const k of KEYS) {
+        lines.push('## ' + k + ' — ' + LABELS[k].en + '（' + LABELS[k].ja + '）');
+        if (state.items[k].length === 0) {
+          lines.push('- （項目なし）');
+        } else {
+          for (const t of state.items[k]) lines.push('- ' + t);
+        }
+        lines.push('');
+      }
+      $('mdOut').textContent = lines.join('\n').trim() + '\n';
+    }
+
+    document.querySelectorAll('.swot-cell').forEach((cell) => {
+      const key = cell.dataset.key;
+      const input = cell.querySelector('.add-row input');
+      const btn = cell.querySelector('.add-row button');
+      function addItem() {
+        const v = input.value.replace(/\s+/g, ' ').trim();
+        if (!v) return;
+        state.items[key].push(v);
+        input.value = '';
+        save();
+        renderCell(key);
+        renderMarkdown();
+      }
+      btn.addEventListener('click', addItem);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); addItem(); }
+      });
+    });
+
+    $('title').addEventListener('input', () => {
+      state.title = $('title').value;
+      save();
+      renderMarkdown();
+    });
+
+    $('copyMd').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('mdOut').textContent);
+        $('copyMd').textContent = 'コピーしました';
+        setTimeout(() => { $('copyMd').textContent = 'Markdown をコピー'; }, 1200);
+      } catch (e) {
+        // ignore
+      }
+    });
+    $('copyJson').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(state, null, 2));
+        $('copyJson').textContent = 'コピーしました';
+        setTimeout(() => { $('copyJson').textContent = 'JSON をコピー'; }, 1200);
+      } catch (e) {}
+    });
+    $('downloadJson').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = 'swot-' + stamp + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    });
+    $('loadJson').addEventListener('click', () => $('fileInput').click());
+    $('fileInput').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const obj = JSON.parse(String(reader.result));
+          if (obj && typeof obj === 'object') {
+            state.title = typeof obj.title === 'string' ? obj.title : '';
+            for (const k of KEYS) {
+              state.items[k] = (obj.items && Array.isArray(obj.items[k]) ? obj.items[k] : []).map(String);
+            }
+            save();
+            renderAll();
+          }
+        } catch (err) {
+          alert('JSON の読み込みに失敗しました: ' + err.message);
+        }
+        $('fileInput').value = '';
+      };
+      reader.readAsText(f);
+    });
+    $('clearAll').addEventListener('click', () => {
+      if (!confirm('入力内容をすべて消去しますか？（取り消せません）')) return;
+      state = { title: '', items: { S: [], W: [], O: [], T: [] } };
+      save();
+      renderAll();
+    });
+
+    load();
+    renderAll();
+  })();
+</script>
+</body>
+</html>
