@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Value Proposition Canvas - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local */
+  .vpc-meta {
+    display: grid;
+    grid-template-columns: 110px 1fr 110px 1fr;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .vpc-meta label { color: var(--muted); font-size: 0.9rem; }
+
+  .vpc-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .vpc-side {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .side-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .side-head h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+  }
+  .side-head .tag {
+    width: 28px; height: 28px;
+    border-radius: 999px;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.95rem;
+    font-weight: 700;
+  }
+  .vpc-side.value .side-head .tag    { background: #2563eb; }
+  .vpc-side.customer .side-head .tag { background: #16a34a; }
+  .side-head .meta {
+    color: var(--muted);
+    font-size: 0.82rem;
+    margin-left: auto;
+  }
+
+  .vpc-cell {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    min-height: 200px;
+  }
+  .vpc-cell .head {
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .vpc-cell h4 {
+    margin: 0;
+    font-size: 0.95rem;
+  }
+  .vpc-cell .icon {
+    width: 24px; height: 24px;
+    border-radius: 6px;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+  .vpc-cell .hint {
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin: 0 0 8px;
+    line-height: 1.45;
+  }
+  .vpc-cell ul {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    max-height: 260px;
+  }
+  .vpc-cell ul li {
+    display: grid;
+    grid-template-columns: 14px 1fr auto;
+    gap: 6px;
+    align-items: start;
+    padding: 4px 6px;
+    border-radius: 5px;
+    font-size: 0.9rem;
+  }
+  .vpc-cell ul li:hover { background: var(--bg); }
+  .vpc-cell ul li .bullet { color: var(--muted); }
+  .vpc-cell ul li .text {
+    word-break: break-word;
+    white-space: pre-wrap;
+    cursor: text;
+    line-height: 1.55;
+  }
+  .vpc-cell ul li button {
+    padding: 1px 7px;
+    font-size: 0.72rem;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    visibility: hidden;
+  }
+  .vpc-cell ul li:hover button { visibility: visible; }
+  .vpc-cell .add-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px;
+  }
+  .vpc-cell .add-row input { padding: 4px 8px; font-size: 0.88rem; }
+  .vpc-cell .add-row button { padding: 4px 10px; font-size: 0.8rem; }
+
+  /* Pair colors per cell */
+  .vpc-cell.products .icon  { background: #2563eb; }
+  .vpc-cell.relievers .icon { background: #0e7490; }
+  .vpc-cell.creators  .icon { background: #7c3aed; }
+  .vpc-cell.jobs      .icon { background: #16a34a; }
+  .vpc-cell.pains     .icon { background: #dc2626; }
+  .vpc-cell.gains     .icon { background: #d97706; }
+
+  .empty-hint {
+    color: var(--muted);
+    font-size: 0.85rem;
+    padding: 4px 6px;
+  }
+  .out-actions {
+    margin-top: 18px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .save-stat {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-left: 6px;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>Value Proposition Canvas</h1>
+    <p class="lead">顧客プロフィール（仕事・痛み・利得）と価値マップ（製品・痛みの解消・利得の創出）を対にして、価値の適合 (fit) を検討します。</p>
+  </header>
+
+  <div class="vpc-meta">
+    <label for="title">対象事業</label>
+    <input type="text" id="title" placeholder="例: 新規 SaaS / プロジェクト α">
+    <label for="segment">顧客セグメント</label>
+    <input type="text" id="segment" placeholder="例: 中小企業の経理担当者">
+  </div>
+
+  <div class="vpc-pair">
+    <!-- Value Map (left) -->
+    <section class="vpc-side value">
+      <div class="side-head">
+        <span class="tag">V</span>
+        <h3>価値マップ (Value Map)</h3>
+        <span class="meta">私たちが提供する側</span>
+      </div>
+      <div class="vpc-cell products" data-key="products">
+        <div class="head"><span class="icon">P</span><h4>Products &amp; Services（製品・サービス）</h4></div>
+        <p class="hint">価値を構成する具体的な提供物。機能・モジュール・サービスメニュー。</p>
+        <ul></ul>
+        <div class="add-row">
+          <input type="text" placeholder="項目を追加（Enter で確定）">
+          <button type="button" class="primary">追加</button>
+        </div>
+      </div>
+      <div class="vpc-cell relievers" data-key="relievers">
+        <div class="head"><span class="icon">PR</span><h4>Pain Relievers（痛みの解消）</h4></div>
+        <p class="hint">顧客の Pains を、どのように軽減・解消するか。</p>
+        <ul></ul>
+        <div class="add-row">
+          <input type="text" placeholder="項目を追加（Enter で確定）">
+          <button type="button" class="primary">追加</button>
+        </div>
+      </div>
+      <div class="vpc-cell creators" data-key="creators">
+        <div class="head"><span class="icon">GC</span><h4>Gain Creators（利得の創出）</h4></div>
+        <p class="hint">顧客の Gains を、どのように生み出し / 増幅するか。</p>
+        <ul></ul>
+        <div class="add-row">
+          <input type="text" placeholder="項目を追加（Enter で確定）">
+          <button type="button" class="primary">追加</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Customer Profile (right) -->
+    <section class="vpc-side customer">
+      <div class="side-head">
+        <span class="tag">C</span>
+        <h3>顧客プロフィール (Customer Profile)</h3>
+        <span class="meta">受け取る顧客側</span>
+      </div>
+      <div class="vpc-cell jobs" data-key="jobs">
+        <div class="head"><span class="icon">CJ</span><h4>Customer Jobs（顧客の仕事）</h4></div>
+        <p class="hint">顧客が成し遂げたい機能的・社会的・感情的なジョブ。</p>
+        <ul></ul>
+        <div class="add-row">
+          <input type="text" placeholder="項目を追加（Enter で確定）">
+          <button type="button" class="primary">追加</button>
+        </div>
+      </div>
+      <div class="vpc-cell pains" data-key="pains">
+        <div class="head"><span class="icon">PA</span><h4>Pains（痛み・障害）</h4></div>
+        <p class="hint">ジョブを遂行する上での悩み・障害・リスク・避けたい結果。</p>
+        <ul></ul>
+        <div class="add-row">
+          <input type="text" placeholder="項目を追加（Enter で確定）">
+          <button type="button" class="primary">追加</button>
+        </div>
+      </div>
+      <div class="vpc-cell gains" data-key="gains">
+        <div class="head"><span class="icon">GA</span><h4>Gains（利得）</h4></div>
+        <p class="hint">期待・必要・望み・嬉しい驚きとなる成果。</p>
+        <ul></ul>
+        <div class="add-row">
+          <input type="text" placeholder="項目を追加（Enter で確定）">
+          <button type="button" class="primary">追加</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="out-actions">
+    <button type="button" id="copyMd" class="primary">Markdown コピー</button>
+    <button type="button" id="copyJson">JSON コピー</button>
+    <button type="button" id="downloadJson">JSON 保存</button>
+    <button type="button" id="loadJson">JSON 読込</button>
+    <input type="file" id="fileInput" accept="application/json,.json" style="display:none;">
+    <button type="button" id="clearAll">すべて消去</button>
+    <span class="save-stat" id="saveStat"></span>
+  </div>
+
+  <h2>Markdown プレビュー</h2>
+  <pre class="code" id="mdOut"></pre>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    左の「価値マップ」は私たちが作る側、右の「顧客プロフィール」は顧客側を表現します。Pain Relievers と Pains、Gain Creators と Gains が対応するように記述すると fit を検証しやすくなります。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const STORAGE_KEY = 'public-tools.vpc.v1';
+
+    const SIDES = {
+      value: ['products', 'relievers', 'creators'],
+      customer: ['jobs', 'pains', 'gains'],
+    };
+    const ALL_KEYS = [...SIDES.value, ...SIDES.customer];
+    const LABELS = {
+      products:  'Products & Services（製品・サービス）',
+      relievers: 'Pain Relievers（痛みの解消）',
+      creators:  'Gain Creators（利得の創出）',
+      jobs:      'Customer Jobs（顧客の仕事）',
+      pains:     'Pains（痛み）',
+      gains:     'Gains（利得）',
+    };
+
+    let state = { title: '', segment: '', items: {} };
+    ALL_KEYS.forEach((k) => { state.items[k] = []; });
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (!obj || typeof obj !== 'object') return;
+        state.title = typeof obj.title === 'string' ? obj.title : '';
+        state.segment = typeof obj.segment === 'string' ? obj.segment : '';
+        ALL_KEYS.forEach((k) => {
+          state.items[k] = (obj.items && Array.isArray(obj.items[k]) ? obj.items[k] : []).map(String).slice(0, 200);
+        });
+      } catch (e) {}
+    }
+    function save() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        flashSave();
+      } catch (e) {}
+    }
+    let flashTimer;
+    function flashSave() {
+      const el = $('saveStat');
+      el.textContent = '保存しました';
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { el.textContent = ''; }, 1100);
+    }
+
+    function renderCell(key) {
+      const cell = document.querySelector('.vpc-cell[data-key="' + key + '"]');
+      const ul = cell.querySelector('ul');
+      ul.innerHTML = '';
+      const items = state.items[key];
+      if (items.length === 0) {
+        const hint = document.createElement('div');
+        hint.className = 'empty-hint';
+        hint.textContent = '（未入力）';
+        ul.appendChild(hint);
+        return;
+      }
+      items.forEach((text, idx) => {
+        const li = document.createElement('li');
+        const bullet = document.createElement('span');
+        bullet.className = 'bullet';
+        bullet.textContent = '•';
+        const span = document.createElement('span');
+        span.className = 'text';
+        span.textContent = text;
+        span.contentEditable = 'true';
+        span.spellcheck = false;
+        span.addEventListener('blur', () => {
+          state.items[key][idx] = span.textContent.replace(/\s+/g, ' ').trim();
+          save();
+          renderMd();
+        });
+        span.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); span.blur(); }
+        });
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = '×';
+        del.title = '削除';
+        del.addEventListener('click', () => {
+          state.items[key].splice(idx, 1);
+          save();
+          renderCell(key);
+          renderMd();
+        });
+        li.append(bullet, span, del);
+        ul.appendChild(li);
+      });
+    }
+
+    function renderMd() {
+      const lines = [];
+      let header = '# Value Proposition Canvas';
+      if (state.title) header += ': ' + state.title;
+      lines.push(header);
+      if (state.segment) lines.push('顧客セグメント: ' + state.segment);
+      lines.push('');
+      lines.push('## 価値マップ');
+      SIDES.value.forEach((k) => {
+        lines.push('### ' + LABELS[k]);
+        const items = state.items[k];
+        if (items.length === 0) lines.push('- （未入力）');
+        else items.forEach((t) => lines.push('- ' + t));
+        lines.push('');
+      });
+      lines.push('## 顧客プロフィール');
+      SIDES.customer.forEach((k) => {
+        lines.push('### ' + LABELS[k]);
+        const items = state.items[k];
+        if (items.length === 0) lines.push('- （未入力）');
+        else items.forEach((t) => lines.push('- ' + t));
+        lines.push('');
+      });
+      $('mdOut').textContent = lines.join('\n').trim() + '\n';
+    }
+
+    function renderAll() {
+      $('title').value = state.title;
+      $('segment').value = state.segment;
+      ALL_KEYS.forEach(renderCell);
+      renderMd();
+    }
+
+    document.querySelectorAll('.vpc-cell').forEach((cell) => {
+      const key = cell.dataset.key;
+      const input = cell.querySelector('.add-row input');
+      const btn = cell.querySelector('.add-row button');
+      function add() {
+        const v = input.value.replace(/\s+/g, ' ').trim();
+        if (!v) return;
+        state.items[key].push(v);
+        input.value = '';
+        save();
+        renderCell(key);
+        renderMd();
+      }
+      btn.addEventListener('click', add);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+    });
+
+    $('title').addEventListener('input', () => { state.title = $('title').value; save(); renderMd(); });
+    $('segment').addEventListener('input', () => { state.segment = $('segment').value; save(); renderMd(); });
+
+    $('copyMd').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText($('mdOut').textContent); flash('copyMd','Markdown コピー'); } catch (e) {}
+    });
+    $('copyJson').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(JSON.stringify(state, null, 2)); flash('copyJson','JSON コピー'); } catch (e) {}
+    });
+    function flash(id, label) {
+      const el = $(id);
+      el.textContent = 'コピーしました';
+      setTimeout(() => { el.textContent = label; }, 1100);
+    }
+    $('downloadJson').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = 'vpc-' + stamp + '.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    });
+    $('loadJson').addEventListener('click', () => $('fileInput').click());
+    $('fileInput').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const obj = JSON.parse(String(reader.result));
+          if (obj && typeof obj === 'object') {
+            state.title = typeof obj.title === 'string' ? obj.title : '';
+            state.segment = typeof obj.segment === 'string' ? obj.segment : '';
+            ALL_KEYS.forEach((k) => {
+              state.items[k] = (obj.items && Array.isArray(obj.items[k]) ? obj.items[k] : []).map(String);
+            });
+            save(); renderAll();
+          }
+        } catch (err) {
+          alert('JSON の読み込みに失敗: ' + err.message);
+        }
+        $('fileInput').value = '';
+      };
+      reader.readAsText(f);
+    });
+    $('clearAll').addEventListener('click', () => {
+      if (!confirm('すべて消去しますか？（取り消せません）')) return;
+      state.title = '';
+      state.segment = '';
+      ALL_KEYS.forEach((k) => { state.items[k] = []; });
+      save(); renderAll();
+    });
+
+    load();
+    renderAll();
+  })();
+</script>
+</body>
+</html>
