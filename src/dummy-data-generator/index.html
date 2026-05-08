@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ダミーデータジェネレータ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 列定義 UI */
+  .field-row {
+    display: grid;
+    grid-template-columns: 30px 1fr 220px 60px;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .field-row:last-child { border-bottom: none; }
+  .field-row .handle {
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    font-size: 0.85rem;
+  }
+  .field-row input[type="text"],
+  .field-row select {
+    padding: 6px 10px;
+    font-size: 0.92rem;
+  }
+  .field-row button {
+    padding: 4px 10px;
+    font-size: 0.82rem;
+  }
+  .form-grid {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 10px 14px;
+    align-items: center;
+    padding: 12px 14px;
+  }
+  .form-grid > label { color: var(--muted); font-size: 0.9rem; }
+  .form-grid .inline { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+  .form-grid input[type="number"] { max-width: 120px; }
+  .preview-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 6px;
+    font-size: 0.88rem;
+  }
+  .preview-table th,
+  .preview-table td {
+    border: 1px solid var(--border);
+    padding: 5px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  .preview-table th {
+    background: var(--bg);
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 0.78rem;
+  }
+  .preview-table td {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>ダミーデータジェネレータ</h1>
+    <p class="lead">名前・メール・住所・電話・日付などのダミーデータを必要な行数だけ生成します。CSV / TSV / JSON / Markdown / SQL に出力可能。</p>
+  </header>
+
+  <h2>列の定義</h2>
+  <div class="card" style="padding:8px 14px;">
+    <div id="fields"></div>
+    <div class="actions" style="margin-top:8px;">
+      <button type="button" id="addField">+ 列を追加</button>
+      <button type="button" id="presetUser">プリセット: ユーザ</button>
+      <button type="button" id="presetCompany">プリセット: 会社</button>
+      <button type="button" id="presetEC">プリセット: EC 注文</button>
+      <button type="button" id="presetMin">プリセット: 最小</button>
+    </div>
+  </div>
+
+  <h2>生成オプション</h2>
+  <div class="card form-grid">
+    <label>件数</label>
+    <input type="number" id="rows" min="1" max="2000" value="20">
+
+    <label>出力形式</label>
+    <select id="format">
+      <option value="csv" selected>CSV (カンマ区切り, ヘッダ付き)</option>
+      <option value="csv-noheader">CSV (ヘッダなし)</option>
+      <option value="tsv">TSV (タブ区切り, ヘッダ付き)</option>
+      <option value="json">JSON (配列)</option>
+      <option value="json-lines">JSON Lines</option>
+      <option value="md">Markdown テーブル</option>
+      <option value="sql">SQL INSERT</option>
+    </select>
+
+    <label>テーブル名</label>
+    <input type="text" id="tableName" value="users" placeholder="SQL 出力時に使用">
+
+    <label>シード</label>
+    <div class="inline">
+      <input type="number" id="seed" min="0" max="999999" value="42">
+      <button type="button" id="reseed">シードを乱数化</button>
+      <span style="color:var(--muted);font-size:0.82rem;">同じシードなら同じデータが出力されます</span>
+    </div>
+  </div>
+
+  <div class="actions" style="margin-top:12px;">
+    <button type="button" id="generate" class="primary">生成 / 再生成</button>
+    <button type="button" id="copy">出力をコピー</button>
+    <button type="button" id="download">ダウンロード</button>
+    <span id="status" style="color:var(--muted);font-size:0.85rem;align-self:center;"></span>
+  </div>
+
+  <h2>プレビュー (先頭 10 件)</h2>
+  <div style="overflow-x:auto;">
+    <table class="preview-table" id="preview">
+      <thead><tr></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <h2>出力</h2>
+  <textarea id="output" rows="14" readonly></textarea>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    生成はすべてブラウザ上で行い、外部送信しません。日本人名・住所はサンプルセットからのランダム選択で、実在の人物・住所とは関係ありません。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    // ----- Sample data -----
+    const SURNAMES = ['佐藤','鈴木','高橋','田中','伊藤','渡辺','山本','中村','小林','加藤','吉田','山田','佐々木','山口','松本','井上','木村','林','清水','山崎','森','池田','橋本','石川','石井','長谷川','藤田','後藤','岡田','近藤','坂本','遠藤','青木','藤井','西村','福田','太田','三浦','岡本','松田','中島','原田','小野','田村','竹内','藤原','金子','中野','宮崎','村上'];
+    const FIRST_M = ['翔','大輝','蓮','陸','悠真','颯太','陽翔','悠人','大和','駿','光','拓海','直樹','健太','和也','翔太','遼','一輝','慎太郎','航','龍','慧','悠斗','涼太','洋','正樹','智也','涼','大樹','健'];
+    const FIRST_F = ['さくら','陽菜','凛','葵','美咲','結菜','心春','花','愛','美月','ひかり','由衣','彩','綾','千尋','沙織','里奈','奈々','里美','美穂','千夏','瑞穂','麻衣','理沙','友美','由佳','春菜','涼子','彩花','志保'];
+    const FIRST_KANA = {
+      '翔':'しょう','大輝':'だいき','蓮':'れん','陸':'りく','悠真':'ゆうま','颯太':'そうた','陽翔':'はると','悠人':'ゆうと','大和':'やまと','駿':'しゅん','光':'ひかる','拓海':'たくみ','直樹':'なおき','健太':'けんた','和也':'かずや','翔太':'しょうた','遼':'りょう','一輝':'かずき','慎太郎':'しんたろう','航':'わたる','龍':'りゅう','慧':'けい','悠斗':'ゆうと','涼太':'りょうた','洋':'ひろし','正樹':'まさき','智也':'ともや','涼':'りょう','大樹':'だいき','健':'けん',
+      'さくら':'さくら','陽菜':'ひな','凛':'りん','葵':'あおい','美咲':'みさき','結菜':'ゆいな','心春':'こはる','花':'はな','愛':'あい','美月':'みつき','ひかり':'ひかり','由衣':'ゆい','彩':'あや','綾':'あや','千尋':'ちひろ','沙織':'さおり','里奈':'りな','奈々':'なな','里美':'さとみ','美穂':'みほ','千夏':'ちなつ','瑞穂':'みずほ','麻衣':'まい','理沙':'りさ','友美':'ともみ','由佳':'ゆか','春菜':'はるな','涼子':'りょうこ','彩花':'あやか','志保':'しほ',
+    };
+    const SURNAME_KANA = {
+      '佐藤':'さとう','鈴木':'すずき','高橋':'たかはし','田中':'たなか','伊藤':'いとう','渡辺':'わたなべ','山本':'やまもと','中村':'なかむら','小林':'こばやし','加藤':'かとう','吉田':'よしだ','山田':'やまだ','佐々木':'ささき','山口':'やまぐち','松本':'まつもと','井上':'いのうえ','木村':'きむら','林':'はやし','清水':'しみず','山崎':'やまざき','森':'もり','池田':'いけだ','橋本':'はしもと','石川':'いしかわ','石井':'いしい','長谷川':'はせがわ','藤田':'ふじた','後藤':'ごとう','岡田':'おかだ','近藤':'こんどう','坂本':'さかもと','遠藤':'えんどう','青木':'あおき','藤井':'ふじい','西村':'にしむら','福田':'ふくだ','太田':'おおた','三浦':'みうら','岡本':'おかもと','松田':'まつだ','中島':'なかじま','原田':'はらだ','小野':'おの','田村':'たむら','竹内':'たけうち','藤原':'ふじわら','金子':'かねこ','中野':'なかの','宮崎':'みやざき','村上':'むらかみ',
+    };
+    const PREFS = [
+      ['北海道','札幌市','000-0001'],['青森県','青森市','030-0801'],['宮城県','仙台市','980-0011'],
+      ['東京都','千代田区','100-0001'],['東京都','新宿区','160-0022'],['東京都','渋谷区','150-0001'],
+      ['東京都','世田谷区','154-0001'],['神奈川県','横浜市','220-0011'],['神奈川県','川崎市','210-0001'],
+      ['埼玉県','さいたま市','330-0001'],['千葉県','千葉市','260-0001'],['愛知県','名古屋市','450-0001'],
+      ['京都府','京都市','600-8001'],['大阪府','大阪市','530-0001'],['大阪府','堺市','590-0001'],
+      ['兵庫県','神戸市','650-0001'],['広島県','広島市','730-0011'],['福岡県','福岡市','810-0001'],
+      ['福岡県','北九州市','802-0001'],['沖縄県','那覇市','900-0001'],
+    ];
+    const STREETS = ['桜が丘','緑町','本町','中央','栄','旭','若葉','梅園','松原','花園'];
+    const COMPANIES_PREFIX = ['株式会社','有限会社','合同会社'];
+    const COMPANIES_BASE  = ['アクト','ライト','ノーブル','クレスト','ヒカリ','コア','ブレイブ','スカイ','ソラ','プラム','テック','ピース','ヤマト','ミライ','ナチュラル','クリエイト','プログレス','インフィニティ','フロンティア','イノベート'];
+    const COMPANIES_SUFFIX = ['工業','商事','技研','システムズ','ホールディングス','製作所','コミュニケーションズ','ソリューションズ','エンジニアリング','インダストリーズ',''];
+    const JOBS = ['営業','エンジニア','デザイナー','編集者','広報','人事','経理','コンサルタント','プロデューサー','マネージャー','研究員','薬剤師','看護師','教員','記者','ライター','プランナー','アナリスト','カスタマーサポート','物流'];
+    const DOMAINS = ['example.com','example.net','example.org','sample.co.jp','test.jp','demo.dev'];
+    const COLORS = ['赤','青','緑','黄','白','黒','灰','紫','橙','桃'];
+    const PRODUCTS = ['Tシャツ','マグカップ','ノート','タオル','ボールペン','イヤホン','スマートウォッチ','クッション','フライパン','保温ボトル','スリッパ','傘','バックパック','バスタオル','キャンドル','ハンドクリーム','チョコレート','ワイヤレス充電器','メガネケース','本立て'];
+
+    // ----- PRNG (Mulberry32) -----
+    function makeRng(seed) {
+      let s = seed >>> 0;
+      return function () {
+        s |= 0; s = s + 0x6D2B79F5 | 0;
+        let t = Math.imul(s ^ s >>> 15, 1 | s);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+    function pick(rng, arr) { return arr[Math.floor(rng() * arr.length)]; }
+    function pickN(rng, n, min, max) {
+      return Math.floor(rng() * (max - min + 1)) + min;
+    }
+    function pad(n, w) { return String(n).padStart(w, '0'); }
+
+    // ----- Field types -----
+    const FIELD_TYPES = [
+      { id: 'fullname',     name: '氏名 (漢字)' },
+      { id: 'fullnameKana', name: '氏名 (カナ)' },
+      { id: 'lastname',     name: '姓 (漢字)' },
+      { id: 'firstname',    name: '名 (漢字)' },
+      { id: 'email',        name: 'メールアドレス' },
+      { id: 'phone',        name: '電話番号' },
+      { id: 'mobile',       name: '携帯番号' },
+      { id: 'postal',       name: '郵便番号' },
+      { id: 'address',      name: '住所' },
+      { id: 'pref',         name: '都道府県' },
+      { id: 'city',         name: '市区町村' },
+      { id: 'birthdate',    name: '生年月日 (YYYY-MM-DD)' },
+      { id: 'age',          name: '年齢 (18〜70)' },
+      { id: 'gender',       name: '性別 (男/女)' },
+      { id: 'company',      name: '会社名' },
+      { id: 'job',          name: '職業' },
+      { id: 'product',      name: '商品名' },
+      { id: 'color',        name: '色' },
+      { id: 'price',        name: '価格 (100〜50000 円)' },
+      { id: 'quantity',     name: '数量 (1〜20)' },
+      { id: 'date',         name: '日付 (直近 1 年)' },
+      { id: 'datetime',     name: '日時 (直近 1 年)' },
+      { id: 'bool',         name: '真偽値' },
+      { id: 'uuid',         name: 'UUID v4' },
+      { id: 'autoid',       name: '連番 (1, 2, 3, …)' },
+      { id: 'integer',      name: '整数 (任意範囲)' },
+      { id: 'sentence',     name: '文 (1 文)' },
+    ];
+
+    // ----- Field instance state -----
+    let fields = [];
+    let rowIdCounter = 1;
+
+    function defaultFields() {
+      return [
+        { id: rowIdCounter++, name: 'id',     type: 'autoid',       extra: '' },
+        { id: rowIdCounter++, name: '氏名',   type: 'fullname',     extra: '' },
+        { id: rowIdCounter++, name: 'kana',   type: 'fullnameKana', extra: '' },
+        { id: rowIdCounter++, name: 'email',  type: 'email',        extra: '' },
+        { id: rowIdCounter++, name: 'phone',  type: 'phone',        extra: '' },
+        { id: rowIdCounter++, name: 'pref',   type: 'pref',         extra: '' },
+        { id: rowIdCounter++, name: 'birthday', type: 'birthdate',  extra: '' },
+      ];
+    }
+    function presetCompany() {
+      return [
+        { id: rowIdCounter++, name: 'id',          type: 'autoid',  extra: '' },
+        { id: rowIdCounter++, name: 'company',     type: 'company', extra: '' },
+        { id: rowIdCounter++, name: 'representative', type: 'fullname', extra: '' },
+        { id: rowIdCounter++, name: 'phone',       type: 'phone',   extra: '' },
+        { id: rowIdCounter++, name: 'address',     type: 'address', extra: '' },
+        { id: rowIdCounter++, name: 'employees',   type: 'integer', extra: '5,500' },
+      ];
+    }
+    function presetEC() {
+      return [
+        { id: rowIdCounter++, name: 'order_id', type: 'uuid',     extra: '' },
+        { id: rowIdCounter++, name: 'date',     type: 'datetime', extra: '' },
+        { id: rowIdCounter++, name: 'customer', type: 'fullname', extra: '' },
+        { id: rowIdCounter++, name: 'product',  type: 'product',  extra: '' },
+        { id: rowIdCounter++, name: 'color',    type: 'color',    extra: '' },
+        { id: rowIdCounter++, name: 'qty',      type: 'quantity', extra: '' },
+        { id: rowIdCounter++, name: 'price',    type: 'price',    extra: '' },
+        { id: rowIdCounter++, name: 'shipped',  type: 'bool',     extra: '' },
+      ];
+    }
+    function presetMin() {
+      return [
+        { id: rowIdCounter++, name: 'name',  type: 'fullname', extra: '' },
+        { id: rowIdCounter++, name: 'email', type: 'email',    extra: '' },
+      ];
+    }
+
+    function renderFields() {
+      const root = $('fields');
+      root.innerHTML = '';
+      fields.forEach((f, i) => {
+        const row = document.createElement('div');
+        row.className = 'field-row';
+
+        const handle = document.createElement('div');
+        handle.className = 'handle';
+        handle.textContent = (i + 1).toString();
+
+        const nameInp = document.createElement('input');
+        nameInp.type = 'text';
+        nameInp.value = f.name;
+        nameInp.placeholder = '列名';
+        nameInp.addEventListener('input', () => { f.name = nameInp.value; });
+
+        const sel = document.createElement('select');
+        FIELD_TYPES.forEach((t) => {
+          const opt = document.createElement('option');
+          opt.value = t.id;
+          opt.textContent = t.name;
+          if (t.id === f.type) opt.selected = true;
+          sel.appendChild(opt);
+        });
+        sel.addEventListener('change', () => { f.type = sel.value; });
+
+        const acts = document.createElement('div');
+        acts.style.display = 'flex';
+        acts.style.gap = '4px';
+        const up = document.createElement('button');
+        up.type = 'button';
+        up.textContent = '↑';
+        up.addEventListener('click', () => {
+          if (i === 0) return;
+          [fields[i - 1], fields[i]] = [fields[i], fields[i - 1]];
+          renderFields();
+        });
+        const down = document.createElement('button');
+        down.type = 'button';
+        down.textContent = '↓';
+        down.addEventListener('click', () => {
+          if (i === fields.length - 1) return;
+          [fields[i], fields[i + 1]] = [fields[i + 1], fields[i]];
+          renderFields();
+        });
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = '×';
+        del.title = '削除';
+        del.addEventListener('click', () => {
+          fields.splice(i, 1);
+          renderFields();
+        });
+        acts.append(up, down, del);
+
+        row.append(handle, nameInp, sel, acts);
+        root.appendChild(row);
+      });
+    }
+
+    // ----- Generators -----
+    function genName(rng, kana) {
+      const sn = pick(rng, SURNAMES);
+      const isMale = rng() < 0.5;
+      const fn = pick(rng, isMale ? FIRST_M : FIRST_F);
+      if (kana) {
+        const snk = SURNAME_KANA[sn] || sn;
+        const fnk = FIRST_KANA[fn] || fn;
+        return snk + ' ' + fnk;
+      }
+      return sn + ' ' + fn;
+    }
+    function genFirstname(rng) {
+      const isMale = rng() < 0.5;
+      return pick(rng, isMale ? FIRST_M : FIRST_F);
+    }
+    function genLastname(rng) {
+      return pick(rng, SURNAMES);
+    }
+    function genEmail(rng, name) {
+      const u = name ? name.replace(/\s+/g, '.').toLowerCase() : 'user' + pickN(rng, 100, 999);
+      const transliter = (s) => s.replace(/[^A-Za-z0-9.\-_]/g, '') || ('user' + pickN(rng, 100, 999));
+      const local = transliter(u) || ('user' + pickN(rng, 100, 999));
+      return local + pickN(rng, 1, 99) + '@' + pick(rng, DOMAINS);
+    }
+    function genEmailRandom(rng) {
+      const len = pickN(rng, 5, 10);
+      let s = '';
+      for (let i = 0; i < len; i++) s += String.fromCharCode(97 + Math.floor(rng() * 26));
+      return s + pickN(rng, 1, 999) + '@' + pick(rng, DOMAINS);
+    }
+    function genPhone(rng) {
+      return '0' + pickN(rng, 3, 6) + '-' + pad(pickN(rng, 0, 9999), 4) + '-' + pad(pickN(rng, 0, 9999), 4);
+    }
+    function genMobile(rng) {
+      return '090-' + pad(pickN(rng, 0, 9999), 4) + '-' + pad(pickN(rng, 0, 9999), 4);
+    }
+    function genPrefAddress(rng) {
+      return PREFS[Math.floor(rng() * PREFS.length)];
+    }
+    function genAddress(rng) {
+      const p = genPrefAddress(rng);
+      const street = pick(rng, STREETS);
+      const numA = pickN(rng, 1, 9);
+      const numB = pickN(rng, 1, 30);
+      const numC = pickN(rng, 1, 30);
+      return p[0] + p[1] + street + numA + '-' + numB + '-' + numC;
+    }
+    function genBirthdate(rng) {
+      const yr = pickN(rng, 1955, 2007);
+      const mo = pickN(rng, 1, 12);
+      const dayMax = new Date(yr, mo, 0).getDate();
+      const dy = pickN(rng, 1, dayMax);
+      return yr + '-' + pad(mo, 2) + '-' + pad(dy, 2);
+    }
+    function genAge(rng) {
+      return pickN(rng, 18, 70);
+    }
+    function genCompany(rng) {
+      const pre = pick(rng, COMPANIES_PREFIX);
+      const base = pick(rng, COMPANIES_BASE);
+      const suf = pick(rng, COMPANIES_SUFFIX);
+      return pre + base + suf;
+    }
+    function genUUID(rng) {
+      const hex = '0123456789abcdef';
+      let s = '';
+      for (let i = 0; i < 32; i++) {
+        let n;
+        if (i === 12) n = 4;
+        else if (i === 16) n = 8 + Math.floor(rng() * 4);
+        else n = Math.floor(rng() * 16);
+        s += hex[n];
+        if (i === 7 || i === 11 || i === 15 || i === 19) s += '-';
+      }
+      return s;
+    }
+    function genDate(rng) {
+      const now = Date.now();
+      const past = pickN(rng, 0, 365);
+      const d = new Date(now - past * 86400000);
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1, 2) + '-' + pad(d.getDate(), 2);
+    }
+    function genDateTime(rng) {
+      const now = Date.now();
+      const past = pickN(rng, 0, 365 * 86400);
+      const d = new Date(now - past * 1000);
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1, 2) + '-' + pad(d.getDate(), 2) + ' ' +
+        pad(d.getHours(), 2) + ':' + pad(d.getMinutes(), 2) + ':' + pad(d.getSeconds(), 2);
+    }
+    function genSentence(rng) {
+      const beings = ['彼','彼女','私','チーム','顧客','犬','猫','学生','社員'];
+      const verbs = ['を確認した','を見送った','と話し合った','を更新した','を完了した','と協議した','を依頼した'];
+      const objs = ['新しい提案','次回の予定','予算案','報告書','契約内容','プロトタイプ','タスク','スケジュール'];
+      return pick(rng, beings) + 'は' + pick(rng, objs) + pick(rng, verbs) + '。';
+    }
+    function parseRange(extra, def) {
+      const m = String(extra || '').match(/(-?\d+)\s*[,、\-〜]\s*(-?\d+)/);
+      if (m) return [parseInt(m[1], 10), parseInt(m[2], 10)];
+      return def;
+    }
+
+    function generateRow(rng, idx) {
+      const row = {};
+      // Pre-generate name and use it for email if requested
+      let cachedName = null;
+      for (const f of fields) {
+        const name = f.name && f.name.trim() ? f.name : f.type;
+        switch (f.type) {
+          case 'fullname':
+            cachedName = genName(rng, false);
+            row[name] = cachedName;
+            break;
+          case 'fullnameKana':
+            row[name] = genName(rng, true);
+            break;
+          case 'lastname':
+            row[name] = genLastname(rng);
+            break;
+          case 'firstname':
+            row[name] = genFirstname(rng);
+            break;
+          case 'email':
+            if (cachedName) row[name] = genEmail(rng, '');
+            else row[name] = genEmailRandom(rng);
+            break;
+          case 'phone':
+            row[name] = genPhone(rng);
+            break;
+          case 'mobile':
+            row[name] = genMobile(rng);
+            break;
+          case 'postal': {
+            const p = genPrefAddress(rng);
+            row[name] = p[2];
+            break;
+          }
+          case 'address':
+            row[name] = genAddress(rng);
+            break;
+          case 'pref':
+            row[name] = genPrefAddress(rng)[0];
+            break;
+          case 'city':
+            row[name] = genPrefAddress(rng)[1];
+            break;
+          case 'birthdate':
+            row[name] = genBirthdate(rng);
+            break;
+          case 'age':
+            row[name] = genAge(rng);
+            break;
+          case 'gender':
+            row[name] = pick(rng, ['男','女']);
+            break;
+          case 'company':
+            row[name] = genCompany(rng);
+            break;
+          case 'job':
+            row[name] = pick(rng, JOBS);
+            break;
+          case 'product':
+            row[name] = pick(rng, PRODUCTS);
+            break;
+          case 'color':
+            row[name] = pick(rng, COLORS);
+            break;
+          case 'price':
+            row[name] = pickN(rng, 100, 50000);
+            break;
+          case 'quantity':
+            row[name] = pickN(rng, 1, 20);
+            break;
+          case 'date':
+            row[name] = genDate(rng);
+            break;
+          case 'datetime':
+            row[name] = genDateTime(rng);
+            break;
+          case 'bool':
+            row[name] = rng() < 0.5;
+            break;
+          case 'uuid':
+            row[name] = genUUID(rng);
+            break;
+          case 'autoid':
+            row[name] = idx + 1;
+            break;
+          case 'integer': {
+            const [lo, hi] = parseRange(f.extra, [1, 100]);
+            row[name] = pickN(rng, Math.min(lo, hi), Math.max(lo, hi));
+            break;
+          }
+          case 'sentence':
+            row[name] = genSentence(rng);
+            break;
+          default:
+            row[name] = '';
+        }
+      }
+      return row;
+    }
+
+    function generate() {
+      const seed = Math.max(0, parseInt($('seed').value, 10) || 0);
+      const n = Math.max(1, Math.min(2000, parseInt($('rows').value, 10) || 20));
+      const rng = makeRng(seed);
+      const rows = [];
+      for (let i = 0; i < n; i++) rows.push(generateRow(rng, i));
+      return rows;
+    }
+
+    function csvEscape(v) {
+      const s = String(v == null ? '' : v);
+      if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    }
+    function tsvEscape(v) {
+      return String(v == null ? '' : v).replace(/\t/g, ' ').replace(/\r?\n/g, ' ');
+    }
+    function sqlEscape(v) {
+      if (typeof v === 'number') return String(v);
+      if (typeof v === 'boolean') return v ? '1' : '0';
+      return "'" + String(v == null ? '' : v).replace(/'/g, "''") + "'";
+    }
+
+    function format(rows, fmt) {
+      const headers = fields.map((f) => f.name && f.name.trim() ? f.name : f.type);
+      switch (fmt) {
+        case 'csv':
+          return [headers.map(csvEscape).join(',')]
+            .concat(rows.map((r) => headers.map((h) => csvEscape(r[h])).join(','))).join('\n');
+        case 'csv-noheader':
+          return rows.map((r) => headers.map((h) => csvEscape(r[h])).join(',')).join('\n');
+        case 'tsv':
+          return [headers.map(tsvEscape).join('\t')]
+            .concat(rows.map((r) => headers.map((h) => tsvEscape(r[h])).join('\t'))).join('\n');
+        case 'json':
+          return JSON.stringify(rows, null, 2);
+        case 'json-lines':
+          return rows.map((r) => JSON.stringify(r)).join('\n');
+        case 'md':
+          return [
+            '| ' + headers.join(' | ') + ' |',
+            '|' + headers.map(() => '---').join('|') + '|',
+          ].concat(rows.map((r) => '| ' + headers.map((h) => String(r[h] == null ? '' : r[h]).replace(/\|/g, '\\|')).join(' | ') + ' |')).join('\n');
+        case 'sql': {
+          const tn = ($('tableName').value.trim() || 'data').replace(/[^A-Za-z0-9_]/g, '_');
+          const cols = headers.map((h) => '`' + String(h).replace(/`/g, '') + '`').join(', ');
+          return rows.map((r) => 'INSERT INTO `' + tn + '` (' + cols + ') VALUES (' + headers.map((h) => sqlEscape(r[h])).join(', ') + ');').join('\n');
+        }
+      }
+      return '';
+    }
+
+    function renderPreview(rows) {
+      const headers = fields.map((f) => f.name && f.name.trim() ? f.name : f.type);
+      const head = $('preview').querySelector('thead tr');
+      head.innerHTML = '';
+      headers.forEach((h) => {
+        const th = document.createElement('th');
+        th.textContent = h;
+        head.appendChild(th);
+      });
+      const body = $('preview').querySelector('tbody');
+      body.innerHTML = '';
+      rows.slice(0, 10).forEach((r) => {
+        const tr = document.createElement('tr');
+        headers.forEach((h) => {
+          const td = document.createElement('td');
+          td.textContent = String(r[h] == null ? '' : r[h]);
+          tr.appendChild(td);
+        });
+        body.appendChild(tr);
+      });
+    }
+
+    function run() {
+      if (fields.length === 0) {
+        $('output').value = '（列がありません）';
+        renderPreview([]);
+        return;
+      }
+      const rows = generate();
+      renderPreview(rows);
+      $('output').value = format(rows, $('format').value);
+      flashStatus(rows.length + ' 件生成');
+    }
+
+    function flashStatus(msg) {
+      const el = $('status');
+      el.textContent = msg;
+      setTimeout(() => { if (el.textContent === msg) el.textContent = ''; }, 1300);
+    }
+
+    $('addField').addEventListener('click', () => {
+      fields.push({ id: rowIdCounter++, name: 'col_' + (fields.length + 1), type: 'fullname', extra: '' });
+      renderFields();
+    });
+    $('presetUser').addEventListener('click', () => { fields = defaultFields(); renderFields(); });
+    $('presetCompany').addEventListener('click', () => { fields = presetCompany(); renderFields(); });
+    $('presetEC').addEventListener('click', () => { fields = presetEC(); renderFields(); });
+    $('presetMin').addEventListener('click', () => { fields = presetMin(); renderFields(); });
+    $('reseed').addEventListener('click', () => {
+      $('seed').value = Math.floor(Math.random() * 1000000);
+      run();
+    });
+    $('generate').addEventListener('click', run);
+    ['rows', 'format', 'tableName', 'seed'].forEach((id) => {
+      $(id).addEventListener('change', run);
+    });
+    $('copy').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('output').value);
+        flashStatus('コピーしました');
+      } catch (e) {
+        $('output').select();
+        document.execCommand('copy');
+      }
+    });
+    $('download').addEventListener('click', () => {
+      const fmt = $('format').value;
+      const ext = fmt.startsWith('csv') ? 'csv' : (fmt === 'tsv' ? 'tsv' : (fmt === 'json' || fmt === 'json-lines' ? 'json' : (fmt === 'sql' ? 'sql' : (fmt === 'md' ? 'md' : 'txt'))));
+      const blob = new Blob([$('output').value], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'dummy-data.' + ext;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    });
+
+    fields = defaultFields();
+    renderFields();
+    run();
+  })();
+</script>
+</body>
+</html>
