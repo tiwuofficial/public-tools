@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>記事構成テンプレ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: テンプレ選択タブ */
+  .tpl-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 8px 0 16px;
+  }
+  .tpl-tabs button {
+    padding: 6px 12px;
+    font-size: 0.9rem;
+  }
+  .tpl-tabs button.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .tpl-info {
+    color: var(--muted);
+    font-size: 0.88rem;
+    margin: 0 0 14px;
+    padding: 10px 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius);
+  }
+  .section-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+  .section-card .head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 6px;
+  }
+  .section-card .head .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--accent-weak);
+    color: var(--accent);
+    font-size: 0.78rem;
+    font-weight: 600;
+    flex: 0 0 auto;
+  }
+  .section-card .head h3 {
+    margin: 0;
+    font-size: 0.98rem;
+  }
+  .section-card .hint {
+    color: var(--muted);
+    font-size: 0.84rem;
+    margin: 0 0 8px;
+  }
+  .section-card textarea {
+    min-height: 110px;
+  }
+  .section-card .ex {
+    margin-top: 6px;
+    background: var(--bg);
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 0.84rem;
+    color: var(--muted);
+    line-height: 1.55;
+  }
+  .section-card .ex b { color: var(--fg); font-weight: 600; }
+  .heading-input {
+    margin-bottom: 12px;
+  }
+  .out-actions {
+    margin-top: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .save-stat {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-left: 6px;
+  }
+  .stats-mini {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 6px 0 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .stats-mini b { color: var(--fg); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>記事構成テンプレ</h1>
+    <p class="lead">PREP / SDS / 起承転結 / AIDA / PASONA / 5W1H のテンプレートに沿って各セクションを埋め、Markdown として書き出します。</p>
+  </header>
+
+  <h2>テンプレート</h2>
+  <div class="tpl-tabs" id="tplTabs"></div>
+  <p class="tpl-info" id="tplInfo"></p>
+
+  <div class="heading-input">
+    <input type="text" id="title" placeholder="記事タイトル（任意）">
+  </div>
+
+  <div id="sections"></div>
+
+  <div class="out-actions">
+    <button type="button" id="copyMd" class="primary">Markdown をコピー</button>
+    <button type="button" id="downloadMd">Markdown ダウンロード</button>
+    <button type="button" id="clearAll">このテンプレを消去</button>
+    <span class="save-stat" id="saveStat"></span>
+  </div>
+
+  <h2 style="margin-top:24px;">プレビュー</h2>
+  <pre class="code" id="mdOut"></pre>
+  <div class="stats-mini" id="stats"></div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    入力内容はテンプレートごとに localStorage に保存され、外部送信は行いません。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const STORAGE_PREFIX = 'public-tools.article-template.v1.';
+
+    const TEMPLATES = {
+      prep: {
+        name: 'PREP',
+        info: '要点 → 理由 → 具体例 → 要点 の順で結論先出しに書く構成。短いコラム / 提案文に向く。',
+        sections: [
+          { key: 'P1', label: 'Point（要点）', hint: '結論を 1〜2 文で。',
+            ex: '<b>例:</b> 公開ツールサイトは静的HTMLで運用するのがベストだ。' },
+          { key: 'R',  label: 'Reason（理由）', hint: 'なぜそう言えるのか、根拠や前提を述べる。',
+            ex: '<b>例:</b> サーバ運用コストがかからず、CDN 配信で高速だから。' },
+          { key: 'E',  label: 'Example（具体例）', hint: '実際の事例・データ・体験で裏付ける。',
+            ex: '<b>例:</b> GitHub Pages で公開している X というツールでは…' },
+          { key: 'P2', label: 'Point（要点・再掲）', hint: '結論を別の言い回しで再度示す。',
+            ex: '<b>例:</b> したがって、まずは静的サイト構成で始めるのがおすすめだ。' },
+        ],
+      },
+      sds: {
+        name: 'SDS',
+        info: '概要 → 詳細 → まとめ のシンプル 3 段構成。報告書 / アナウンス向け。',
+        sections: [
+          { key: 'S1', label: 'Summary（概要）', hint: 'これから話すことを一言で。',
+            ex: '<b>例:</b> 本日リリースした v2.0 の主な変更点を共有します。' },
+          { key: 'D',  label: 'Details（詳細）', hint: '本論。箇条書きや数字で補足。' },
+          { key: 'S2', label: 'Summary（まとめ）', hint: '読者にとって何を意味するか締める。' },
+        ],
+      },
+      kishotenketsu: {
+        name: '起承転結',
+        info: '物語性のある構成。エッセイ / 体験談 / 4 コマ構成に向く。',
+        sections: [
+          { key: 'KI',   label: '起（導入）',     hint: '舞台と前提を提示する。', ex: '<b>例:</b> ある日、ふと自分のメモが散らかっていることに気づいた。' },
+          { key: 'SHO',  label: '承（展開）',     hint: '状況を発展させる。' },
+          { key: 'TEN',  label: '転（転換）',     hint: '視点や状況の変化を入れる。' },
+          { key: 'KETSU',label: '結（結末）',     hint: 'まとめ・教訓・次の行動を示す。' },
+        ],
+      },
+      aida: {
+        name: 'AIDA',
+        info: '注意 → 関心 → 欲求 → 行動 のセールスライティング。LP / 広告コピー向け。',
+        sections: [
+          { key: 'A1', label: 'Attention（注意）', hint: '読者の手を止めるフックを書く。' },
+          { key: 'I',  label: 'Interest（関心）',  hint: '「自分ごと」と思ってもらう情報を提示。' },
+          { key: 'D',  label: 'Desire（欲求）',    hint: '解決後の理想状態を見せ、欲しいと思わせる。' },
+          { key: 'A2', label: 'Action（行動）',    hint: '具体的な次のアクションを促す。' },
+        ],
+      },
+      pasona: {
+        name: 'PASONA',
+        info: '問題提起 → 共感 → 解決策 → 提案 → 絞り込み → 行動 の改良型セールスライティング。',
+        sections: [
+          { key: 'P', label: 'Problem（問題）',     hint: '読者が抱える具体的な悩みを言語化する。' },
+          { key: 'A', label: 'Affinity（共感）',   hint: '「あるある」と感じてもらう体験談。' },
+          { key: 'S', label: 'Solution（解決策）', hint: '解決法と理由・仕組みを説明する。' },
+          { key: 'O', label: 'Offer（提案）',       hint: '具体的な商品・サービスを提示。' },
+          { key: 'N', label: 'Narrowing（絞り込み）', hint: '対象や期限を絞ってお得感を出す。' },
+          { key: 'A2',label: 'Action（行動）',     hint: 'CTA を明確に。' },
+        ],
+      },
+      gowonehow: {
+        name: '5W1H',
+        info: 'いつ／どこで／誰が／何を／なぜ／どのように、で出来事を整理する。報告書・FAQ・経緯まとめ向け。',
+        sections: [
+          { key: 'When',  label: 'When（いつ）' },
+          { key: 'Where', label: 'Where（どこで）' },
+          { key: 'Who',   label: 'Who（誰が）' },
+          { key: 'What',  label: 'What（何を）' },
+          { key: 'Why',   label: 'Why（なぜ）' },
+          { key: 'How',   label: 'How（どのように）' },
+        ],
+      },
+    };
+    const ORDER = ['prep', 'sds', 'kishotenketsu', 'aida', 'pasona', 'gowonehow'];
+
+    let currentTpl = 'prep';
+    let state = {}; // per template: { title: '', sections: { key: text } }
+
+    function storageKey(tpl) { return STORAGE_PREFIX + tpl; }
+
+    function loadState(tpl) {
+      try {
+        const raw = localStorage.getItem(storageKey(tpl));
+        if (!raw) return { title: '', sections: {} };
+        const obj = JSON.parse(raw);
+        return {
+          title: typeof obj.title === 'string' ? obj.title : '',
+          sections: obj.sections && typeof obj.sections === 'object' ? obj.sections : {},
+        };
+      } catch (e) {
+        return { title: '', sections: {} };
+      }
+    }
+    function saveState() {
+      try {
+        localStorage.setItem(storageKey(currentTpl), JSON.stringify(state[currentTpl]));
+        flashSave();
+      } catch (e) {}
+    }
+
+    let flashTimer;
+    function flashSave() {
+      const el = $('saveStat');
+      el.textContent = '保存しました';
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { el.textContent = ''; }, 1200);
+    }
+
+    function renderTabs() {
+      const root = $('tplTabs');
+      root.innerHTML = '';
+      ORDER.forEach((id) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = TEMPLATES[id].name;
+        if (id === currentTpl) btn.classList.add('active');
+        btn.addEventListener('click', () => {
+          currentTpl = id;
+          renderTabs();
+          renderForm();
+          renderMd();
+        });
+        root.appendChild(btn);
+      });
+    }
+
+    function renderForm() {
+      const tpl = TEMPLATES[currentTpl];
+      $('tplInfo').textContent = tpl.info;
+      const root = $('sections');
+      root.innerHTML = '';
+      const cur = state[currentTpl];
+      $('title').value = cur.title;
+
+      tpl.sections.forEach((sec) => {
+        const card = document.createElement('div');
+        card.className = 'section-card';
+        const head = document.createElement('div');
+        head.className = 'head';
+        const badge = document.createElement('span');
+        badge.className = 'badge';
+        badge.textContent = sec.key;
+        const h = document.createElement('h3');
+        h.textContent = sec.label;
+        head.append(badge, h);
+        card.appendChild(head);
+        if (sec.hint) {
+          const hint = document.createElement('p');
+          hint.className = 'hint';
+          hint.textContent = sec.hint;
+          card.appendChild(hint);
+        }
+        const ta = document.createElement('textarea');
+        ta.placeholder = sec.label + ' の内容を入力…';
+        ta.value = cur.sections[sec.key] || '';
+        ta.addEventListener('input', () => {
+          cur.sections[sec.key] = ta.value;
+          saveState();
+          renderMd();
+        });
+        card.appendChild(ta);
+        if (sec.ex) {
+          const ex = document.createElement('div');
+          ex.className = 'ex';
+          ex.innerHTML = sec.ex;
+          card.appendChild(ex);
+        }
+        root.appendChild(card);
+      });
+    }
+
+    function renderMd() {
+      const tpl = TEMPLATES[currentTpl];
+      const cur = state[currentTpl];
+      const lines = [];
+      const title = cur.title.trim();
+      if (title) lines.push('# ' + title, '');
+      else lines.push('# (タイトル未入力) — ' + tpl.name + ' 構成', '');
+
+      tpl.sections.forEach((sec) => {
+        lines.push('## ' + sec.label);
+        const text = (cur.sections[sec.key] || '').trim();
+        if (text === '') {
+          lines.push('（未入力）');
+        } else {
+          lines.push(text);
+        }
+        lines.push('');
+      });
+      const out = lines.join('\n').trimEnd() + '\n';
+      $('mdOut').textContent = out;
+
+      // stats
+      const all = tpl.sections.map((s) => cur.sections[s.key] || '').join('\n');
+      const chars = all.replace(/\s/g, '').length;
+      const charsAll = all.length;
+      const filled = tpl.sections.filter((s) => (cur.sections[s.key] || '').trim().length > 0).length;
+      $('stats').innerHTML =
+        '記入セクション: <b>' + filled + ' / ' + tpl.sections.length + '</b>' +
+        ' ・ 本文文字数: <b>' + charsAll.toLocaleString('ja-JP') + '</b> 文字' +
+        ' (空白除く: <b>' + chars.toLocaleString('ja-JP') + '</b>)';
+    }
+
+    $('title').addEventListener('input', () => {
+      state[currentTpl].title = $('title').value;
+      saveState();
+      renderMd();
+    });
+
+    $('copyMd').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('mdOut').textContent);
+        $('copyMd').textContent = 'コピーしました';
+        setTimeout(() => { $('copyMd').textContent = 'Markdown をコピー'; }, 1200);
+      } catch (e) {}
+    });
+    $('downloadMd').addEventListener('click', () => {
+      const blob = new Blob([$('mdOut').textContent], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const name = (state[currentTpl].title.trim() || TEMPLATES[currentTpl].name).replace(/[\\/:*?"<>|\s]+/g, '_');
+      a.download = name + '.md';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    });
+    $('clearAll').addEventListener('click', () => {
+      if (!confirm('現在のテンプレ「' + TEMPLATES[currentTpl].name + '」の入力をすべて消去しますか？')) return;
+      state[currentTpl] = { title: '', sections: {} };
+      saveState();
+      renderForm();
+      renderMd();
+    });
+
+    // init: load all
+    ORDER.forEach((id) => { state[id] = loadState(id); });
+    renderTabs();
+    renderForm();
+    renderMd();
+  })();
+</script>
+</body>
+</html>
