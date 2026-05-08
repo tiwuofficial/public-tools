@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ビジネスモデルキャンバス - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: BMC 9 ブロック配置 */
+  .bmc-title-row {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .bmc-title-row label { color: var(--muted); font-size: 0.9rem; }
+
+  .bmc-grid {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    grid-template-rows: minmax(220px, auto) minmax(220px, auto) minmax(160px, auto);
+    gap: 10px;
+  }
+  .bmc-cell {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    min-height: 180px;
+  }
+  .bmc-cell .head {
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .bmc-cell h3 {
+    margin: 0;
+    font-size: 0.92rem;
+    font-weight: 600;
+  }
+  .bmc-cell .icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.8rem;
+  }
+  .bmc-cell .hint {
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin: 0 0 6px;
+    line-height: 1.45;
+  }
+  .bmc-cell ul {
+    list-style: none;
+    margin: 0 0 6px;
+    padding: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    max-height: 240px;
+  }
+  .bmc-cell ul li {
+    display: grid;
+    grid-template-columns: 14px 1fr auto;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    border-radius: 5px;
+    font-size: 0.88rem;
+  }
+  .bmc-cell ul li:hover { background: var(--bg); }
+  .bmc-cell ul li .bullet { color: var(--muted); }
+  .bmc-cell ul li .text {
+    word-break: break-word;
+    white-space: pre-wrap;
+    cursor: text;
+  }
+  .bmc-cell ul li button {
+    padding: 1px 7px;
+    font-size: 0.72rem;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    visibility: hidden;
+  }
+  .bmc-cell ul li:hover button { visibility: visible; }
+  .bmc-cell .add-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px;
+  }
+  .bmc-cell .add-row input {
+    padding: 4px 8px;
+    font-size: 0.85rem;
+  }
+  .bmc-cell .add-row button {
+    padding: 4px 10px;
+    font-size: 0.8rem;
+  }
+  .bmc-cell.empty { color: var(--muted); }
+
+  /* placement (CSS Grid template areas would fit, but spelled out for clarity) */
+  .bmc-cell[data-key="kp"]  { grid-column: 1 / span 2; grid-row: 1 / span 2; }
+  .bmc-cell[data-key="ka"]  { grid-column: 3 / span 2; grid-row: 1 / span 1; }
+  .bmc-cell[data-key="kr"]  { grid-column: 3 / span 2; grid-row: 2 / span 1; }
+  .bmc-cell[data-key="vp"]  { grid-column: 5 / span 2; grid-row: 1 / span 2; }
+  .bmc-cell[data-key="cr"]  { grid-column: 7 / span 2; grid-row: 1 / span 1; }
+  .bmc-cell[data-key="ch"]  { grid-column: 7 / span 2; grid-row: 2 / span 1; }
+  .bmc-cell[data-key="cs"]  { grid-column: 9 / span 2; grid-row: 1 / span 2; }
+  .bmc-cell[data-key="cost"]{ grid-column: 1 / span 5; grid-row: 3 / span 1; }
+  .bmc-cell[data-key="rev"] { grid-column: 6 / span 5; grid-row: 3 / span 1; }
+
+  .empty-hint {
+    color: var(--muted);
+    font-size: 0.8rem;
+    padding: 4px 6px;
+  }
+
+  .out-actions {
+    margin-top: 18px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .save-stat {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-left: 6px;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>ビジネスモデルキャンバス</h1>
+    <p class="lead">9 ブロックでビジネスモデルを俯瞰します。入力はブラウザに自動保存され、Markdown / JSON 出力に対応。</p>
+  </header>
+
+  <div class="bmc-title-row">
+    <label for="title">対象事業</label>
+    <input type="text" id="title" placeholder="例: 新規 SaaS / 既存サービス X など">
+  </div>
+
+  <div class="bmc-grid" id="bmc"></div>
+
+  <div class="out-actions">
+    <button type="button" id="copyMd" class="primary">Markdown をコピー</button>
+    <button type="button" id="copyJson">JSON をコピー</button>
+    <button type="button" id="downloadJson">JSON ダウンロード</button>
+    <button type="button" id="loadJson">JSON を読込</button>
+    <input type="file" id="fileInput" accept="application/json,.json" style="display:none;">
+    <button type="button" id="clearAll">すべて消去</button>
+    <span class="save-stat" id="saveStat"></span>
+  </div>
+
+  <h2>Markdown プレビュー</h2>
+  <pre class="code" id="mdOut"></pre>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    入力内容はブラウザの localStorage にのみ保存され、外部送信は行いません。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const STORAGE_KEY = 'public-tools.bmc.v1';
+
+    const BLOCKS = [
+      { key: 'kp',   icon: 'KP', color: '#0f766e', name: 'Key Partners',          ja: 'パートナー',
+        hint: '誰と組むか。仕入先、業務提携、サプライヤー、外部リソース。' },
+      { key: 'ka',   icon: 'KA', color: '#0e7490', name: 'Key Activities',        ja: '主要活動',
+        hint: '価値提案を成立させる中核業務。生産・問題解決・プラットフォーム運営など。' },
+      { key: 'kr',   icon: 'KR', color: '#1d4ed8', name: 'Key Resources',         ja: '主要リソース',
+        hint: '物的・知的・人的・財務的な必須資源。' },
+      { key: 'vp',   icon: 'VP', color: '#dc2626', name: 'Value Propositions',    ja: '価値提案',
+        hint: '顧客のどんな課題を解決するか／何を提供するか。' },
+      { key: 'cr',   icon: 'CR', color: '#a16207', name: 'Customer Relationships',ja: '顧客との関係',
+        hint: '顧客との関係の取り方。セルフサービス / 専任担当 / コミュニティ など。' },
+      { key: 'ch',   icon: 'CH', color: '#b45309', name: 'Channels',              ja: 'チャネル',
+        hint: '顧客に届く経路。販売・サポート・配送・コミュニケーション手段。' },
+      { key: 'cs',   icon: 'CS', color: '#7c3aed', name: 'Customer Segments',     ja: '顧客セグメント',
+        hint: '誰のためのサービスか。マスマーケット / ニッチ / セグメント別 / マルチサイド。' },
+      { key: 'cost', icon: 'C$', color: '#475569', name: 'Cost Structure',        ja: 'コスト構造',
+        hint: '主要なコスト。固定費 / 変動費 / 規模の経済 / 範囲の経済。' },
+      { key: 'rev',  icon: 'R$', color: '#16a34a', name: 'Revenue Streams',       ja: '収益の流れ',
+        hint: '何で課金するか。販売 / 利用料 / サブスク / ライセンス / 広告 / 仲介手数料。' },
+    ];
+
+    let state = { title: '', items: {} };
+    BLOCKS.forEach((b) => { state.items[b.key] = []; });
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === 'object') {
+          state.title = typeof obj.title === 'string' ? obj.title : '';
+          BLOCKS.forEach((b) => {
+            const arr = obj.items && Array.isArray(obj.items[b.key]) ? obj.items[b.key] : [];
+            state.items[b.key] = arr.map(String).slice(0, 200);
+          });
+        }
+      } catch (e) {}
+    }
+    function save() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        flashSave();
+      } catch (e) {}
+    }
+    let flashTimer;
+    function flashSave() {
+      const el = $('saveStat');
+      el.textContent = '保存しました';
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { el.textContent = ''; }, 1200);
+    }
+
+    function renderCell(b) {
+      const cell = document.querySelector('.bmc-cell[data-key="' + b.key + '"]');
+      const ul = cell.querySelector('ul');
+      ul.innerHTML = '';
+      const items = state.items[b.key];
+      if (items.length === 0) {
+        const hint = document.createElement('div');
+        hint.className = 'empty-hint';
+        hint.textContent = '（未入力）';
+        ul.appendChild(hint);
+        return;
+      }
+      items.forEach((text, idx) => {
+        const li = document.createElement('li');
+        const bullet = document.createElement('span');
+        bullet.className = 'bullet';
+        bullet.textContent = '•';
+        const span = document.createElement('span');
+        span.className = 'text';
+        span.textContent = text;
+        span.contentEditable = 'true';
+        span.spellcheck = false;
+        span.addEventListener('blur', () => {
+          state.items[b.key][idx] = span.textContent.replace(/\s+/g, ' ').trim();
+          save();
+          renderMd();
+        });
+        span.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); span.blur(); }
+        });
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = '×';
+        del.title = '削除';
+        del.addEventListener('click', () => {
+          state.items[b.key].splice(idx, 1);
+          save();
+          renderCell(b);
+          renderMd();
+        });
+        li.append(bullet, span, del);
+        ul.appendChild(li);
+      });
+    }
+
+    function buildCells() {
+      const root = $('bmc');
+      root.innerHTML = '';
+      BLOCKS.forEach((b) => {
+        const cell = document.createElement('section');
+        cell.className = 'bmc-cell';
+        cell.dataset.key = b.key;
+        const head = document.createElement('div');
+        head.className = 'head';
+        const ic = document.createElement('span');
+        ic.className = 'icon';
+        ic.textContent = b.icon;
+        ic.style.background = b.color;
+        const h = document.createElement('h3');
+        h.textContent = b.ja + ' (' + b.name + ')';
+        head.append(ic, h);
+        const hint = document.createElement('p');
+        hint.className = 'hint';
+        hint.textContent = b.hint;
+        const ul = document.createElement('ul');
+        const addRow = document.createElement('div');
+        addRow.className = 'add-row';
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.placeholder = '項目を追加（Enter で確定）';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'primary';
+        btn.textContent = '追加';
+        function add() {
+          const v = inp.value.replace(/\s+/g, ' ').trim();
+          if (!v) return;
+          state.items[b.key].push(v);
+          inp.value = '';
+          save();
+          renderCell(b);
+          renderMd();
+        }
+        btn.addEventListener('click', add);
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+        addRow.append(inp, btn);
+        cell.append(head, hint, ul, addRow);
+        root.appendChild(cell);
+      });
+    }
+
+    function renderMd() {
+      const lines = [];
+      lines.push('# ビジネスモデルキャンバス' + (state.title ? ': ' + state.title : ''));
+      lines.push('');
+      BLOCKS.forEach((b) => {
+        lines.push('## ' + b.ja + ' (' + b.name + ')');
+        const items = state.items[b.key];
+        if (items.length === 0) lines.push('- （未入力）');
+        else items.forEach((t) => lines.push('- ' + t));
+        lines.push('');
+      });
+      $('mdOut').textContent = lines.join('\n').trim() + '\n';
+    }
+
+    function renderAll() {
+      $('title').value = state.title;
+      BLOCKS.forEach(renderCell);
+      renderMd();
+    }
+
+    $('title').addEventListener('input', () => {
+      state.title = $('title').value;
+      save();
+      renderMd();
+    });
+
+    $('copyMd').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('mdOut').textContent);
+        $('copyMd').textContent = 'コピーしました';
+        setTimeout(() => { $('copyMd').textContent = 'Markdown をコピー'; }, 1200);
+      } catch (e) {}
+    });
+    $('copyJson').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(state, null, 2));
+        $('copyJson').textContent = 'コピーしました';
+        setTimeout(() => { $('copyJson').textContent = 'JSON をコピー'; }, 1200);
+      } catch (e) {}
+    });
+    $('downloadJson').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = 'bmc-' + stamp + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    });
+    $('loadJson').addEventListener('click', () => $('fileInput').click());
+    $('fileInput').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const obj = JSON.parse(String(reader.result));
+          if (obj && typeof obj === 'object') {
+            state.title = typeof obj.title === 'string' ? obj.title : '';
+            BLOCKS.forEach((b) => {
+              state.items[b.key] = (obj.items && Array.isArray(obj.items[b.key]) ? obj.items[b.key] : []).map(String);
+            });
+            save();
+            renderAll();
+          }
+        } catch (err) {
+          alert('JSON の読み込みに失敗しました: ' + err.message);
+        }
+        $('fileInput').value = '';
+      };
+      reader.readAsText(f);
+    });
+    $('clearAll').addEventListener('click', () => {
+      if (!confirm('入力内容をすべて消去しますか？（取り消せません）')) return;
+      state.title = '';
+      BLOCKS.forEach((b) => { state.items[b.key] = []; });
+      save();
+      renderAll();
+    });
+
+    load();
+    buildCells();
+    renderAll();
+  })();
+</script>
+</body>
+</html>
