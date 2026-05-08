@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YWT 振り返り - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: 3 列 YWT */
+  .meta-row {
+    display: grid;
+    grid-template-columns: 110px 1fr 110px 1fr;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .meta-row label { color: var(--muted); font-size: 0.9rem; }
+
+  .ywt-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+  }
+  .ywt-cell {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    min-height: 360px;
+  }
+  .ywt-cell h3 {
+    margin: 0 0 4px;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ywt-cell h3 .tag {
+    width: 30px; height: 30px;
+    border-radius: 6px;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.95rem;
+  }
+  .ywt-cell .axis {
+    color: var(--muted);
+    font-size: 0.8rem;
+    margin: 0 0 10px;
+    line-height: 1.5;
+  }
+  .ywt-cell.y h3 .tag { background: #1d4ed8; }
+  .ywt-cell.w h3 .tag { background: #d97706; }
+  .ywt-cell.t h3 .tag { background: #16a34a; }
+
+  .ywt-cell ul {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    max-height: 460px;
+  }
+  .ywt-cell ul li {
+    display: grid;
+    grid-template-columns: 16px 1fr auto;
+    align-items: start;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 0.92rem;
+  }
+  .ywt-cell ul li:hover { background: var(--bg); }
+  .ywt-cell ul li .bullet { color: var(--muted); }
+  .ywt-cell ul li .text {
+    word-break: break-word;
+    white-space: pre-wrap;
+    cursor: text;
+    line-height: 1.55;
+  }
+  .ywt-cell ul li button {
+    padding: 1px 8px;
+    font-size: 0.75rem;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    visibility: hidden;
+  }
+  .ywt-cell ul li:hover button { visibility: visible; }
+  .ywt-cell .add-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px;
+  }
+  .ywt-cell .add-row input { padding: 6px 10px; font-size: 0.9rem; }
+  .ywt-cell .add-row button { padding: 6px 12px; font-size: 0.85rem; }
+  .empty-hint {
+    color: var(--muted);
+    font-size: 0.85rem;
+    padding: 4px 8px;
+  }
+
+  .out-actions {
+    margin-top: 18px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .save-stat { color: var(--muted); font-size: 0.85rem; margin-left: 6px; }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>YWT 振り返り</h1>
+    <p class="lead">日本発の振り返りフレーム。やったこと (Y) / わかったこと (W) / 次にやること (T) の 3 列で行動と学びを整理します。</p>
+  </header>
+
+  <div class="meta-row">
+    <label for="title">テーマ</label>
+    <input type="text" id="title" placeholder="例: スプリント 24 / プロジェクト α">
+    <label for="dateInp">日付</label>
+    <input type="date" id="dateInp">
+  </div>
+
+  <div class="ywt-grid">
+    <section class="ywt-cell y" data-key="Y">
+      <h3><span class="tag">Y</span>やったこと</h3>
+      <p class="axis">期間中に実際に行ったアクション・取り組み（事実ベース）</p>
+      <ul></ul>
+      <div class="add-row">
+        <input type="text" placeholder="やったことを追加（Enter で確定）">
+        <button type="button" class="primary">追加</button>
+      </div>
+    </section>
+
+    <section class="ywt-cell w" data-key="W">
+      <h3><span class="tag">W</span>わかったこと</h3>
+      <p class="axis">やってみて気づいたこと・学び・うまくいった/いかなかった理由</p>
+      <ul></ul>
+      <div class="add-row">
+        <input type="text" placeholder="わかったことを追加（Enter で確定）">
+        <button type="button" class="primary">追加</button>
+      </div>
+    </section>
+
+    <section class="ywt-cell t" data-key="T">
+      <h3><span class="tag">T</span>次にやること</h3>
+      <p class="axis">学びを踏まえた次のアクション・改善点・新しく試したいこと</p>
+      <ul></ul>
+      <div class="add-row">
+        <input type="text" placeholder="次にやることを追加（Enter で確定）">
+        <button type="button" class="primary">追加</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="out-actions">
+    <button type="button" id="copyMd" class="primary">Markdown コピー</button>
+    <button type="button" id="copyJson">JSON コピー</button>
+    <button type="button" id="downloadJson">JSON 保存</button>
+    <button type="button" id="loadJson">JSON 読込</button>
+    <input type="file" id="fileInput" accept="application/json,.json" style="display:none;">
+    <button type="button" id="clearAll">すべて消去</button>
+    <span class="save-stat" id="saveStat"></span>
+  </div>
+
+  <h2>Markdown プレビュー</h2>
+  <pre class="code" id="mdOut"></pre>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    Y → W → T の流れで埋めるのが基本です。Y の「事実」と W の「解釈・学び」を切り分けると T の質が上がります。各項目はクリックで編集モードに切り替わります。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+    const STORAGE_KEY = 'public-tools.ywt.v1';
+    const KEYS = ['Y', 'W', 'T'];
+    const LABELS = {
+      Y: { en: 'Yatta',     ja: 'やったこと' },
+      W: { en: 'Wakatta',   ja: 'わかったこと' },
+      T: { en: 'Tsugi',     ja: '次にやること' },
+    };
+
+    let state = { title: '', date: '', items: { Y: [], W: [], T: [] } };
+
+    function todayStr() {
+      const d = new Date();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return d.getFullYear() + '-' + m + '-' + dd;
+    }
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (!obj || typeof obj !== 'object') return;
+        state.title = typeof obj.title === 'string' ? obj.title : '';
+        state.date = typeof obj.date === 'string' ? obj.date : '';
+        KEYS.forEach((k) => {
+          state.items[k] = (obj.items && Array.isArray(obj.items[k]) ? obj.items[k] : []).map(String).slice(0, 200);
+        });
+      } catch (e) {}
+    }
+    function save() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        flashSave();
+      } catch (e) {}
+    }
+    let flashTimer;
+    function flashSave() {
+      const el = $('saveStat');
+      el.textContent = '保存しました';
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { el.textContent = ''; }, 1100);
+    }
+
+    function renderCell(key) {
+      const cell = document.querySelector('.ywt-cell[data-key="' + key + '"]');
+      const ul = cell.querySelector('ul');
+      const items = state.items[key];
+      ul.innerHTML = '';
+      if (items.length === 0) {
+        const hint = document.createElement('div');
+        hint.className = 'empty-hint';
+        hint.textContent = '（まだ項目はありません）';
+        ul.appendChild(hint);
+        return;
+      }
+      items.forEach((text, idx) => {
+        const li = document.createElement('li');
+        const bullet = document.createElement('span');
+        bullet.className = 'bullet';
+        bullet.textContent = '•';
+        const span = document.createElement('span');
+        span.className = 'text';
+        span.textContent = text;
+        span.contentEditable = 'true';
+        span.spellcheck = false;
+        span.addEventListener('blur', () => {
+          state.items[key][idx] = span.textContent.replace(/\s+/g, ' ').trim();
+          save();
+          renderMd();
+        });
+        span.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); span.blur(); }
+        });
+        const acts = document.createElement('span');
+        acts.style.display = 'flex';
+        acts.style.gap = '4px';
+        KEYS.filter((k) => k !== key).forEach((k2) => {
+          const mv = document.createElement('button');
+          mv.type = 'button';
+          mv.textContent = '→' + k2;
+          mv.title = LABELS[k2].ja + ' へ移動';
+          mv.addEventListener('click', () => {
+            state.items[key].splice(idx, 1);
+            state.items[k2].push(text);
+            save();
+            renderAll();
+          });
+          acts.appendChild(mv);
+        });
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = '削除';
+        del.addEventListener('click', () => {
+          state.items[key].splice(idx, 1);
+          save();
+          renderCell(key);
+          renderMd();
+        });
+        acts.appendChild(del);
+        li.append(bullet, span, acts);
+        ul.appendChild(li);
+      });
+    }
+
+    function renderAll() {
+      $('title').value = state.title;
+      $('dateInp').value = state.date || '';
+      KEYS.forEach(renderCell);
+      renderMd();
+    }
+
+    function renderMd() {
+      const lines = [];
+      let header = '# YWT 振り返り';
+      if (state.title) header += ': ' + state.title;
+      lines.push(header);
+      if (state.date) lines.push('日付: ' + state.date);
+      lines.push('');
+      KEYS.forEach((k) => {
+        lines.push('## ' + k + ' — ' + LABELS[k].ja);
+        if (state.items[k].length === 0) lines.push('- （項目なし）');
+        else state.items[k].forEach((t) => lines.push('- ' + t));
+        lines.push('');
+      });
+      $('mdOut').textContent = lines.join('\n').trim() + '\n';
+    }
+
+    document.querySelectorAll('.ywt-cell').forEach((cell) => {
+      const key = cell.dataset.key;
+      const input = cell.querySelector('.add-row input');
+      const btn = cell.querySelector('.add-row button');
+      function addItem() {
+        const v = input.value.replace(/\s+/g, ' ').trim();
+        if (!v) return;
+        state.items[key].push(v);
+        input.value = '';
+        save();
+        renderCell(key);
+        renderMd();
+      }
+      btn.addEventListener('click', addItem);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); addItem(); }
+      });
+    });
+
+    $('title').addEventListener('input', () => { state.title = $('title').value; save(); renderMd(); });
+    $('dateInp').addEventListener('input', () => { state.date = $('dateInp').value; save(); renderMd(); });
+
+    $('copyMd').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText($('mdOut').textContent); flash('copyMd','Markdown コピー'); } catch (e) {}
+    });
+    $('copyJson').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(JSON.stringify(state, null, 2)); flash('copyJson','JSON コピー'); } catch (e) {}
+    });
+    function flash(id, label) {
+      const el = $(id);
+      el.textContent = 'コピーしました';
+      setTimeout(() => { el.textContent = label; }, 1100);
+    }
+    $('downloadJson').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = 'ywt-' + stamp + '.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    });
+    $('loadJson').addEventListener('click', () => $('fileInput').click());
+    $('fileInput').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const obj = JSON.parse(String(reader.result));
+          if (obj && typeof obj === 'object') {
+            state.title = typeof obj.title === 'string' ? obj.title : '';
+            state.date = typeof obj.date === 'string' ? obj.date : '';
+            KEYS.forEach((k) => {
+              state.items[k] = (obj.items && Array.isArray(obj.items[k]) ? obj.items[k] : []).map(String);
+            });
+            save(); renderAll();
+          }
+        } catch (err) {
+          alert('JSON の読み込みに失敗: ' + err.message);
+        }
+        $('fileInput').value = '';
+      };
+      reader.readAsText(f);
+    });
+    $('clearAll').addEventListener('click', () => {
+      if (!confirm('すべて消去しますか？（取り消せません）')) return;
+      state = { title: '', date: '', items: { Y: [], W: [], T: [] } };
+      save(); renderAll();
+    });
+
+    load();
+    if (!state.date) state.date = todayStr();
+    renderAll();
+  })();
+</script>
+</body>
+</html>
