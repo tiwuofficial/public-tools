@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CSS Flex / Grid ジェネレータ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local */
+  .form-grid {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 8px 14px;
+    align-items: center;
+    padding: 12px 14px;
+  }
+  .form-grid > label { color: var(--muted); font-size: 0.9rem; }
+  .form-grid .inline { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+  .form-grid select { max-width: 280px; }
+  .form-grid input[type="text"],
+  .form-grid input[type="number"] { max-width: 240px; }
+
+  .preview-area {
+    background: var(--bg);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin-top: 8px;
+    min-height: 240px;
+    overflow: auto;
+  }
+  .preview-area .container-box {
+    /* outer container we apply styles to */
+    background: rgba(37, 99, 235, 0.06);
+    border: 2px dashed rgba(37, 99, 235, 0.5);
+    padding: 8px;
+    min-height: 180px;
+  }
+  .preview-area .item {
+    background: var(--accent);
+    color: #fff;
+    border-radius: 4px;
+    padding: 14px 10px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-align: center;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.2);
+  }
+  .preview-area .item.alt { background: #16a34a; }
+  .preview-area .item.alt2 { background: #d97706; }
+  .preview-area .item.alt3 { background: #7c3aed; }
+  .preview-area .item.alt4 { background: #dc2626; }
+  .preview-area .item.alt5 { background: #0e7490; }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>CSS Flex / Grid ジェネレータ</h1>
+    <p class="lead">Flexbox / CSS Grid の主要プロパティをセレクトとスライダで指定し、生成された CSS をコピーします。</p>
+  </header>
+
+  <div class="tabs" id="tabs">
+    <button type="button" class="active" data-tab="flex">Flex</button>
+    <button type="button" data-tab="grid">Grid</button>
+  </div>
+
+  <!-- Flex 設定 -->
+  <div id="paneFlex">
+    <div class="card form-grid">
+      <label>flex-direction</label>
+      <select id="fxDir">
+        <option value="row" selected>row</option>
+        <option value="row-reverse">row-reverse</option>
+        <option value="column">column</option>
+        <option value="column-reverse">column-reverse</option>
+      </select>
+
+      <label>flex-wrap</label>
+      <select id="fxWrap">
+        <option value="nowrap" selected>nowrap</option>
+        <option value="wrap">wrap</option>
+        <option value="wrap-reverse">wrap-reverse</option>
+      </select>
+
+      <label>justify-content</label>
+      <select id="fxJust">
+        <option value="flex-start" selected>flex-start</option>
+        <option value="flex-end">flex-end</option>
+        <option value="center">center</option>
+        <option value="space-between">space-between</option>
+        <option value="space-around">space-around</option>
+        <option value="space-evenly">space-evenly</option>
+      </select>
+
+      <label>align-items</label>
+      <select id="fxAlignI">
+        <option value="stretch" selected>stretch</option>
+        <option value="flex-start">flex-start</option>
+        <option value="flex-end">flex-end</option>
+        <option value="center">center</option>
+        <option value="baseline">baseline</option>
+      </select>
+
+      <label>align-content (wrap 時)</label>
+      <select id="fxAlignC">
+        <option value="normal" selected>normal</option>
+        <option value="flex-start">flex-start</option>
+        <option value="flex-end">flex-end</option>
+        <option value="center">center</option>
+        <option value="space-between">space-between</option>
+        <option value="space-around">space-around</option>
+        <option value="stretch">stretch</option>
+      </select>
+
+      <label>gap</label>
+      <div class="inline">
+        <input type="number" id="fxGap" min="0" max="80" value="8"> <span style="color:var(--muted);">px</span>
+      </div>
+
+      <label>幅</label>
+      <div class="inline">
+        <input type="number" id="fxW" min="200" max="1100" value="600"> <span style="color:var(--muted);">px</span>
+      </div>
+
+      <label>高さ</label>
+      <div class="inline">
+        <input type="number" id="fxH" min="120" max="600" value="220"> <span style="color:var(--muted);">px</span>
+      </div>
+
+      <label>子要素の数</label>
+      <div class="inline">
+        <input type="number" id="fxCount" min="1" max="20" value="5">
+      </div>
+
+      <label>各子要素のサイズ</label>
+      <div class="inline">
+        <span style="color:var(--muted);font-size:0.82rem;">幅</span>
+        <input type="number" id="fxItemW" min="0" max="500" value="80">
+        <span style="color:var(--muted);font-size:0.82rem;">高さ</span>
+        <input type="number" id="fxItemH" min="0" max="400" value="60">
+        <label style="display:inline-flex;gap:4px;align-items:center;">
+          <input type="checkbox" id="fxItemFlexible"> flex: 1（伸縮）
+        </label>
+      </div>
+    </div>
+    <h2>プレビュー</h2>
+    <div class="preview-area">
+      <div class="container-box" id="fxBox"></div>
+    </div>
+    <h2>CSS</h2>
+    <pre class="code" id="fxCss"></pre>
+    <div class="actions">
+      <button type="button" id="fxCopy" class="primary">CSS をコピー</button>
+    </div>
+  </div>
+
+  <!-- Grid 設定 -->
+  <div id="paneGrid" style="display:none;">
+    <div class="card form-grid">
+      <label>grid-template-columns</label>
+      <input type="text" id="gdCols" value="repeat(3, 1fr)" placeholder="例: 1fr 2fr / repeat(3, 1fr)">
+
+      <label>grid-template-rows</label>
+      <input type="text" id="gdRows" value="auto auto" placeholder="例: 100px auto / repeat(2, auto)">
+
+      <label>列の gap</label>
+      <div class="inline">
+        <input type="number" id="gdColGap" min="0" max="80" value="8"> <span style="color:var(--muted);">px</span>
+      </div>
+
+      <label>行の gap</label>
+      <div class="inline">
+        <input type="number" id="gdRowGap" min="0" max="80" value="8"> <span style="color:var(--muted);">px</span>
+      </div>
+
+      <label>justify-items</label>
+      <select id="gdJustI">
+        <option value="stretch" selected>stretch</option>
+        <option value="start">start</option>
+        <option value="end">end</option>
+        <option value="center">center</option>
+      </select>
+
+      <label>align-items</label>
+      <select id="gdAlignI">
+        <option value="stretch" selected>stretch</option>
+        <option value="start">start</option>
+        <option value="end">end</option>
+        <option value="center">center</option>
+      </select>
+
+      <label>justify-content</label>
+      <select id="gdJustC">
+        <option value="start" selected>start</option>
+        <option value="end">end</option>
+        <option value="center">center</option>
+        <option value="space-between">space-between</option>
+        <option value="space-around">space-around</option>
+        <option value="space-evenly">space-evenly</option>
+      </select>
+
+      <label>align-content</label>
+      <select id="gdAlignC">
+        <option value="start" selected>start</option>
+        <option value="end">end</option>
+        <option value="center">center</option>
+        <option value="space-between">space-between</option>
+        <option value="space-around">space-around</option>
+        <option value="space-evenly">space-evenly</option>
+      </select>
+
+      <label>幅</label>
+      <div class="inline">
+        <input type="number" id="gdW" min="200" max="1100" value="600"> <span style="color:var(--muted);">px</span>
+      </div>
+
+      <label>高さ</label>
+      <div class="inline">
+        <input type="number" id="gdH" min="120" max="600" value="240"> <span style="color:var(--muted);">px</span>
+      </div>
+
+      <label>子要素の数</label>
+      <div class="inline">
+        <input type="number" id="gdCount" min="1" max="30" value="6">
+      </div>
+    </div>
+    <h2>プレビュー</h2>
+    <div class="preview-area">
+      <div class="container-box" id="gdBox"></div>
+    </div>
+    <h2>CSS</h2>
+    <pre class="code" id="gdCss"></pre>
+    <div class="actions">
+      <button type="button" id="gdCopy" class="primary">CSS をコピー</button>
+    </div>
+  </div>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    プレビューは「Flex / Grid を適用したコンテナ」と「子要素」をそのまま表示します。CSS は生成された `.container { ... }` を貼り付けて利用できます。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    // Tabs
+    document.querySelectorAll('#tabs button').forEach((b) => {
+      b.addEventListener('click', () => {
+        document.querySelectorAll('#tabs button').forEach((x) => x.classList.toggle('active', x === b));
+        $('paneFlex').style.display = b.dataset.tab === 'flex' ? '' : 'none';
+        $('paneGrid').style.display = b.dataset.tab === 'grid' ? '' : 'none';
+      });
+    });
+
+    function renderItems(box, n, opts) {
+      box.innerHTML = '';
+      const altClasses = ['', 'alt', 'alt2', 'alt3', 'alt4', 'alt5'];
+      for (let i = 0; i < n; i++) {
+        const d = document.createElement('div');
+        d.className = 'item ' + altClasses[i % altClasses.length];
+        d.textContent = (i + 1).toString();
+        if (opts && opts.itemStyle) {
+          Object.entries(opts.itemStyle).forEach(([k, v]) => d.style.setProperty(k, v));
+        }
+        box.appendChild(d);
+      }
+    }
+
+    function fxApply() {
+      const dir = $('fxDir').value;
+      const wrap = $('fxWrap').value;
+      const just = $('fxJust').value;
+      const ai = $('fxAlignI').value;
+      const ac = $('fxAlignC').value;
+      const gap = parseInt($('fxGap').value, 10) || 0;
+      const w = parseInt($('fxW').value, 10) || 600;
+      const h = parseInt($('fxH').value, 10) || 220;
+      const n = Math.max(1, Math.min(20, parseInt($('fxCount').value, 10) || 1));
+      const itemW = parseInt($('fxItemW').value, 10) || 0;
+      const itemH = parseInt($('fxItemH').value, 10) || 0;
+      const flexible = $('fxItemFlexible').checked;
+
+      const box = $('fxBox');
+      box.style.cssText = '';
+      box.style.display = 'flex';
+      box.style.flexDirection = dir;
+      box.style.flexWrap = wrap;
+      box.style.justifyContent = just;
+      box.style.alignItems = ai;
+      box.style.alignContent = ac;
+      box.style.gap = gap + 'px';
+      box.style.width = w + 'px';
+      box.style.height = h + 'px';
+
+      const itemStyle = {};
+      if (itemW) itemStyle['width'] = itemW + 'px';
+      if (itemH) itemStyle['height'] = itemH + 'px';
+      if (flexible) itemStyle['flex'] = '1';
+      renderItems(box, n, { itemStyle });
+
+      const itemLines = [];
+      itemLines.push('.container > * {');
+      if (itemW) itemLines.push('  width: ' + itemW + 'px;');
+      if (itemH) itemLines.push('  height: ' + itemH + 'px;');
+      if (flexible) itemLines.push('  flex: 1;');
+      itemLines.push('}');
+
+      const css = [
+        '.container {',
+        '  display: flex;',
+        '  flex-direction: ' + dir + ';',
+        '  flex-wrap: ' + wrap + ';',
+        '  justify-content: ' + just + ';',
+        '  align-items: ' + ai + ';',
+        ac !== 'normal' ? '  align-content: ' + ac + ';' : null,
+        '  gap: ' + gap + 'px;',
+        '  width: ' + w + 'px;',
+        '  height: ' + h + 'px;',
+        '}',
+        itemLines.length > 2 ? itemLines.join('\n') : null,
+      ].filter(Boolean).join('\n');
+      $('fxCss').textContent = css;
+    }
+
+    function gdApply() {
+      const cols = $('gdCols').value.trim() || '1fr';
+      const rows = $('gdRows').value.trim();
+      const cg = parseInt($('gdColGap').value, 10) || 0;
+      const rg = parseInt($('gdRowGap').value, 10) || 0;
+      const ji = $('gdJustI').value;
+      const ai = $('gdAlignI').value;
+      const jc = $('gdJustC').value;
+      const ac = $('gdAlignC').value;
+      const w = parseInt($('gdW').value, 10) || 600;
+      const h = parseInt($('gdH').value, 10) || 240;
+      const n = Math.max(1, Math.min(30, parseInt($('gdCount').value, 10) || 1));
+
+      const box = $('gdBox');
+      box.style.cssText = '';
+      box.style.display = 'grid';
+      box.style.gridTemplateColumns = cols;
+      if (rows) box.style.gridTemplateRows = rows;
+      box.style.columnGap = cg + 'px';
+      box.style.rowGap = rg + 'px';
+      box.style.justifyItems = ji;
+      box.style.alignItems = ai;
+      box.style.justifyContent = jc;
+      box.style.alignContent = ac;
+      box.style.width = w + 'px';
+      box.style.height = h + 'px';
+
+      renderItems(box, n);
+
+      const lines = [
+        '.container {',
+        '  display: grid;',
+        '  grid-template-columns: ' + cols + ';',
+        rows ? '  grid-template-rows: ' + rows + ';' : null,
+        '  column-gap: ' + cg + 'px;',
+        '  row-gap: ' + rg + 'px;',
+        ji !== 'stretch' ? '  justify-items: ' + ji + ';' : null,
+        ai !== 'stretch' ? '  align-items: ' + ai + ';' : null,
+        jc !== 'start' ? '  justify-content: ' + jc + ';' : null,
+        ac !== 'start' ? '  align-content: ' + ac + ';' : null,
+        '  width: ' + w + 'px;',
+        '  height: ' + h + 'px;',
+        '}',
+      ].filter(Boolean).join('\n');
+      $('gdCss').textContent = lines;
+    }
+
+    [
+      'fxDir','fxWrap','fxJust','fxAlignI','fxAlignC','fxGap','fxW','fxH','fxCount','fxItemW','fxItemH','fxItemFlexible',
+    ].forEach((id) => {
+      $(id).addEventListener('input', fxApply);
+      $(id).addEventListener('change', fxApply);
+    });
+    [
+      'gdCols','gdRows','gdColGap','gdRowGap','gdJustI','gdAlignI','gdJustC','gdAlignC','gdW','gdH','gdCount',
+    ].forEach((id) => {
+      $(id).addEventListener('input', gdApply);
+      $(id).addEventListener('change', gdApply);
+    });
+
+    async function copy(text, btnId) {
+      try {
+        await navigator.clipboard.writeText(text);
+        const el = $(btnId);
+        const old = el.textContent;
+        el.textContent = 'コピーしました';
+        setTimeout(() => { el.textContent = old; }, 1100);
+      } catch (e) {}
+    }
+    $('fxCopy').addEventListener('click', () => copy($('fxCss').textContent, 'fxCopy'));
+    $('gdCopy').addEventListener('click', () => copy($('gdCss').textContent, 'gdCopy'));
+
+    fxApply();
+    gdApply();
+  })();
+</script>
+</body>
+</html>
