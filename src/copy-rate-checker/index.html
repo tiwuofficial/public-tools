@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>コピペ率チェック - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  /* tool-local: メータ表示 */
+  .ratio-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+  }
+  .ratio {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+  }
+  .ratio .name { color: var(--muted); font-size: 0.85rem; }
+  .ratio .num {
+    font-size: 1.8rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    margin: 4px 0 6px;
+  }
+  .ratio.good   .num { color: #16a34a; }
+  .ratio.warn   .num { color: #d97706; }
+  .ratio.danger .num { color: var(--removed-fg); }
+  .meter {
+    position: relative;
+    height: 8px;
+    background: var(--bg);
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .meter > .bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    background: var(--accent);
+    transition: width 0.18s ease;
+  }
+  .ratio.good   .meter > .bar { background: #16a34a; }
+  .ratio.warn   .meter > .bar { background: #d97706; }
+  .ratio.danger .meter > .bar { background: var(--removed-fg); }
+  .ratio .hint {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+  .opt-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 22px;
+    padding: 10px 14px;
+    align-items: center;
+  }
+  .opt-row label {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-size: 0.92rem;
+    cursor: pointer;
+  }
+  .opt-row input[type="checkbox"] { width: auto; margin: 0; }
+  .opt-row input[type="number"] { max-width: 90px; }
+  .preview {
+    margin-top: 10px;
+    padding: 12px 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 0.95rem;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 50vh;
+    overflow: auto;
+  }
+  .preview mark.match {
+    background: #fde68a;
+    color: inherit;
+    padding: 0 1px;
+    border-radius: 2px;
+  }
+  .common-list {
+    margin-top: 6px;
+    list-style: none;
+    padding: 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    max-height: 280px;
+    overflow-y: auto;
+    font-size: 0.92rem;
+  }
+  .common-list li {
+    display: grid;
+    grid-template-columns: 1fr 60px 60px;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--border);
+    gap: 10px;
+    align-items: center;
+  }
+  .common-list li:last-child { border-bottom: none; }
+  .common-list li .frag {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9rem;
+    word-break: break-all;
+  }
+  .common-list li .num {
+    text-align: right;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .common-list .header {
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: none;
+  }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>コピペ率チェック</h1>
+    <p class="lead">2 つの文章の重複率と共通 N-gram を計算し、コピペ・類似の度合いを把握します。同義への書き換えチェックの参考に。</p>
+  </header>
+
+  <h2>オプション</h2>
+  <div class="card opt-row">
+    <label>N-gram の長さ
+      <input type="number" id="n" min="2" max="20" value="5">
+    </label>
+    <label><input type="checkbox" id="ci" checked>大文字小文字を区別しない</label>
+    <label><input type="checkbox" id="trimSpace" checked>空白・改行を無視</label>
+    <label><input type="checkbox" id="ignorePunct">句読点・記号を無視</label>
+    <label><input type="checkbox" id="onlyKana">英数のみは無視</label>
+  </div>
+
+  <div class="split-2" style="margin-top:14px;">
+    <div class="pane">
+      <div class="pane-label">テキスト A</div>
+      <textarea id="a" rows="14" placeholder="比較したい文章 A を貼り付け…"></textarea>
+    </div>
+    <div class="pane">
+      <div class="pane-label">テキスト B</div>
+      <textarea id="b" rows="14" placeholder="比較したい文章 B を貼り付け…"></textarea>
+    </div>
+  </div>
+
+  <h2>類似度</h2>
+  <div class="ratio-grid">
+    <div class="ratio" id="rJaccard">
+      <div class="name">Jaccard 類似度</div>
+      <div class="num">0%</div>
+      <div class="meter"><div class="bar" style="width:0;"></div></div>
+      <div class="hint">A と B の N-gram 集合の共通／和集合</div>
+    </div>
+    <div class="ratio" id="rContainA">
+      <div class="name">A の重複率</div>
+      <div class="num">0%</div>
+      <div class="meter"><div class="bar" style="width:0;"></div></div>
+      <div class="hint">A の N-gram のうち B にも出るもの</div>
+    </div>
+    <div class="ratio" id="rContainB">
+      <div class="name">B の重複率</div>
+      <div class="num">0%</div>
+      <div class="meter"><div class="bar" style="width:0;"></div></div>
+      <div class="hint">B の N-gram のうち A にも出るもの</div>
+    </div>
+    <div class="ratio" id="rChar">
+      <div class="name">A の文字単位カバー率</div>
+      <div class="num">0%</div>
+      <div class="meter"><div class="bar" style="width:0;"></div></div>
+      <div class="hint">A の本文のうち B と一致した範囲</div>
+    </div>
+  </div>
+
+  <h2>ハイライト</h2>
+  <div class="split-2">
+    <div class="pane">
+      <div class="pane-label">A の重複箇所</div>
+      <div class="preview" id="hlA"></div>
+    </div>
+    <div class="pane">
+      <div class="pane-label">B の重複箇所</div>
+      <div class="preview" id="hlB"></div>
+    </div>
+  </div>
+
+  <h2>共通 N-gram (上位 30 件)</h2>
+  <ul class="common-list">
+    <li class="header">
+      <span>フラグメント</span><span class="num" style="text-align:right;">A 回数</span><span class="num" style="text-align:right;">B 回数</span>
+    </li>
+    <li id="commonEmpty" style="display:none;color:var(--muted);grid-template-columns:1fr;justify-items:center;">共通する N-gram はありません。</li>
+  </ul>
+  <ul class="common-list" id="commonList"></ul>
+
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:24px;">
+    すべての処理はブラウザ上で完結します（外部送信なし）。N=5 程度が日本語の重複検出に向きます。N を大きくするほど誤検出は減りますが、検出感度も下がります。
+  </p>
+</div>
+
+<script>
+  (function () {
+    const $ = (id) => document.getElementById(id);
+
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    }
+
+    function preprocess(text, opts) {
+      let t = text;
+      if (opts.ci) t = t.toLowerCase();
+      // We work on a "normalized" string and a parallel index map back to original positions.
+      const out = [];
+      const map = []; // out[i] came from text[map[i]]
+      for (let i = 0; i < t.length; i++) {
+        const ch = t[i];
+        if (opts.trimSpace && /\s/.test(ch)) continue;
+        if (opts.ignorePunct && isPunct(ch)) continue;
+        out.push(ch);
+        map.push(i);
+      }
+      return { norm: out.join(''), map };
+    }
+
+    function isPunct(ch) {
+      return /[　-〿＀-／：-＠［-｀｛-･ -⁯!-/:-@\[-`{-~。、・「」『』【】〔〕（）()［］\[\]｛｝]/.test(ch);
+    }
+
+    function isAsciiOnly(s) {
+      return /^[\x20-\x7E]+$/.test(s);
+    }
+
+    function ngrams(s, n) {
+      const out = [];
+      for (let i = 0; i + n <= s.length; i++) out.push(s.slice(i, i + n));
+      return out;
+    }
+
+    function buildFreq(arr) {
+      const m = new Map();
+      for (const k of arr) m.set(k, (m.get(k) || 0) + 1);
+      return m;
+    }
+
+    function jaccard(setA, setB) {
+      let inter = 0;
+      for (const k of setA) if (setB.has(k)) inter++;
+      const union = setA.size + setB.size - inter;
+      return union === 0 ? 0 : inter / union;
+    }
+
+    function containment(setA, setB) {
+      // |A ∩ B| / |A|
+      if (setA.size === 0) return 0;
+      let inter = 0;
+      for (const k of setA) if (setB.has(k)) inter++;
+      return inter / setA.size;
+    }
+
+    function classify(rate) {
+      if (rate < 0.20) return 'good';
+      if (rate < 0.40) return 'warn';
+      return 'danger';
+    }
+
+    function setRatioBox(id, rate) {
+      const el = $(id);
+      el.classList.remove('good', 'warn', 'danger');
+      el.classList.add(classify(rate));
+      el.querySelector('.num').textContent = (rate * 100).toFixed(1) + '%';
+      el.querySelector('.meter > .bar').style.width = (rate * 100).toFixed(1) + '%';
+    }
+
+    function update() {
+      const opts = {
+        n: Math.max(2, Math.min(20, parseInt($('n').value, 10) || 5)),
+        ci: $('ci').checked,
+        trimSpace: $('trimSpace').checked,
+        ignorePunct: $('ignorePunct').checked,
+        onlyKana: $('onlyKana').checked,
+      };
+
+      const aSrc = $('a').value;
+      const bSrc = $('b').value;
+      const A = preprocess(aSrc, opts);
+      const B = preprocess(bSrc, opts);
+
+      let aGrams = ngrams(A.norm, opts.n);
+      let bGrams = ngrams(B.norm, opts.n);
+      if (opts.onlyKana) {
+        aGrams = aGrams.filter((g) => !isAsciiOnly(g));
+        bGrams = bGrams.filter((g) => !isAsciiOnly(g));
+      }
+
+      const aFreq = buildFreq(aGrams);
+      const bFreq = buildFreq(bGrams);
+      const aSet = new Set(aFreq.keys());
+      const bSet = new Set(bFreq.keys());
+
+      const j = jaccard(aSet, bSet);
+      const cA = containment(aSet, bSet);
+      const cB = containment(bSet, aSet);
+
+      setRatioBox('rJaccard', j);
+      setRatioBox('rContainA', cA);
+      setRatioBox('rContainB', cB);
+
+      // Highlight: cover bytes in A and B that appear in a common ngram.
+      const common = new Set();
+      for (const k of aSet) if (bSet.has(k)) common.add(k);
+
+      function buildHighlight(srcText, normInfo, frags) {
+        const len = srcText.length;
+        const cov = new Uint8Array(len);
+        const norm = normInfo.norm;
+        const map = normInfo.map;
+        const n = opts.n;
+        for (let i = 0; i + n <= norm.length; i++) {
+          const g = norm.slice(i, i + n);
+          if (!frags.has(g)) continue;
+          // mark range in original [map[i] .. map[i+n-1]]
+          const start = map[i];
+          const end = map[i + n - 1];
+          for (let p = start; p <= end; p++) cov[p] = 1;
+        }
+        let covered = 0;
+        for (let i = 0; i < len; i++) if (cov[i]) covered++;
+
+        let html = '';
+        let i = 0;
+        while (i < len) {
+          if (cov[i]) {
+            let j = i;
+            while (j < len && cov[j]) j++;
+            html += '<mark class="match">' + escapeHtml(srcText.slice(i, j)) + '</mark>';
+            i = j;
+          } else {
+            let j = i;
+            while (j < len && !cov[j]) j++;
+            html += escapeHtml(srcText.slice(i, j));
+            i = j;
+          }
+        }
+        return { html, covered };
+      }
+
+      const hlA = buildHighlight(aSrc, A, common);
+      const hlB = buildHighlight(bSrc, B, common);
+      $('hlA').innerHTML = hlA.html || '<span style="color:var(--muted);">（テキスト A は空）</span>';
+      $('hlB').innerHTML = hlB.html || '<span style="color:var(--muted);">（テキスト B は空）</span>';
+
+      const charRate = aSrc.length === 0 ? 0 : hlA.covered / aSrc.length;
+      setRatioBox('rChar', charRate);
+
+      // Common ngram list
+      const commonArr = [];
+      for (const k of common) {
+        commonArr.push({ k, a: aFreq.get(k) || 0, b: bFreq.get(k) || 0 });
+      }
+      commonArr.sort((a, b) => (b.a + b.b) - (a.a + a.b) || a.k.localeCompare(b.k));
+      const list = $('commonList');
+      list.innerHTML = '';
+      const empty = $('commonEmpty');
+      if (commonArr.length === 0) {
+        empty.style.display = 'block';
+      } else {
+        empty.style.display = 'none';
+        for (const it of commonArr.slice(0, 30)) {
+          const li = document.createElement('li');
+          li.innerHTML =
+            '<span class="frag"></span>' +
+            '<span class="num">' + it.a + '</span>' +
+            '<span class="num">' + it.b + '</span>';
+          li.firstChild.textContent = it.k;
+          list.appendChild(li);
+        }
+        if (commonArr.length > 30) {
+          const li = document.createElement('li');
+          li.style.gridTemplateColumns = '1fr';
+          li.style.justifyItems = 'center';
+          li.style.color = 'var(--muted)';
+          li.textContent = '…他 ' + (commonArr.length - 30) + ' 件';
+          list.appendChild(li);
+        }
+      }
+    }
+
+    ['n', 'ci', 'trimSpace', 'ignorePunct', 'onlyKana', 'a', 'b'].forEach((id) => {
+      $(id).addEventListener('input', update);
+      $(id).addEventListener('change', update);
+    });
+
+    update();
+  })();
+</script>
+</body>
+</html>
