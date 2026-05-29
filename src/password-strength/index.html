@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>パスワード強度チェッカー - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>パスワード強度チェッカー</h1>
+    <p class="lead">パスワードの推定エントロピー・解読時間・要件を判定します。入力はブラウザ内のみで処理されます。</p>
+  </header>
+
+  <div class="form-row">
+    <input type="password" id="pw" placeholder="パスワードを入力" autocomplete="off" style="max-width:380px">
+    <label><input type="checkbox" id="show"> 表示する</label>
+  </div>
+
+  <div id="meter-wrap" style="margin-top:16px">
+    <div style="height:12px;background:var(--border);border-radius:6px;overflow:hidden">
+      <div id="meter" style="height:100%;width:0;background:var(--danger);transition:width .2s,background .2s"></div>
+    </div>
+    <div id="rating" class="lead" style="margin-top:8px;font-weight:600">—</div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="label">文字数</div><div class="value" id="len">0</div></div>
+    <div class="stat"><div class="label">推定エントロピー</div><div class="value" id="entropy">0 bit</div></div>
+    <div class="stat"><div class="label">推定解読時間</div><div class="value" id="crack" style="font-size:1.1rem">-</div></div>
+  </div>
+
+  <h2>チェック項目</h2>
+  <ul id="checks" class="plain-list"></ul>
+
+  <footer class="page-footer">
+    解読時間は「毎秒100億回（10<sup>10</sup>）の総当たり攻撃」を仮定した目安です。入力は保存・送信しません。
+  </footer>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const GUESSES_PER_SEC = 1e10;
+
+  // よくある弱いパスワード（一部）
+  const COMMON = ["password","123456","123456789","qwerty","abc123","111111","12345678",
+    "iloveyou","admin","welcome","monkey","dragon","letmein","football","000000","password1"];
+
+  function poolSize(pw) {
+    let pool = 0;
+    if (/[a-z]/.test(pw)) pool += 26;
+    if (/[A-Z]/.test(pw)) pool += 26;
+    if (/[0-9]/.test(pw)) pool += 10;
+    if (/[^a-zA-Z0-9]/.test(pw)) pool += 33;
+    return pool;
+  }
+
+  function fmtTime(seconds) {
+    if (seconds < 1) return "一瞬";
+    const units = [
+      ["年", 60 * 60 * 24 * 365],
+      ["日", 60 * 60 * 24],
+      ["時間", 60 * 60],
+      ["分", 60],
+      ["秒", 1]
+    ];
+    for (const [name, sec] of units) {
+      if (seconds >= sec) {
+        const v = seconds / sec;
+        if (name === "年" && v >= 1e6) {
+          if (v >= 1e15) return "事実上解読不能";
+          return Math.round(v).toLocaleString("ja-JP") + " 年";
+        }
+        return Math.round(v).toLocaleString("ja-JP") + " " + name;
+      }
+    }
+    return "一瞬";
+  }
+
+  function update() {
+    const pw = $("pw").value;
+    const len = pw.length;
+    const pool = poolSize(pw);
+    const entropy = len === 0 ? 0 : len * Math.log2(pool || 1);
+
+    $("len").textContent = len;
+    $("entropy").textContent = entropy.toFixed(1) + " bit";
+
+    // 解読時間 = 2^entropy / 2 / guesses（平均）
+    if (len === 0) {
+      $("crack").textContent = "-";
+    } else {
+      const seconds = Math.pow(2, entropy) / 2 / GUESSES_PER_SEC;
+      $("crack").textContent = isFinite(seconds) ? fmtTime(seconds) : "事実上解読不能";
+    }
+
+    // 強度判定
+    let pct, color, label;
+    const isCommon = COMMON.includes(pw.toLowerCase());
+    if (len === 0) { pct = 0; color = "var(--border)"; label = "—"; }
+    else if (isCommon || entropy < 28) { pct = 15; color = "var(--danger)"; label = "とても弱い"; }
+    else if (entropy < 40) { pct = 35; color = "#ea580c"; label = "弱い"; }
+    else if (entropy < 60) { pct = 60; color = "#d97706"; label = "普通"; }
+    else if (entropy < 100) { pct = 85; color = "#16a34a"; label = "強い"; }
+    else { pct = 100; color = "#15803d"; label = "とても強い"; }
+
+    $("meter").style.width = pct + "%";
+    $("meter").style.background = color;
+    $("rating").textContent = label + (isCommon ? "（よくあるパスワードです）" : "");
+    $("rating").style.color = len === 0 ? "var(--muted)" : color;
+
+    // チェック項目
+    const checks = [
+      ["12 文字以上", len >= 12],
+      ["小文字を含む", /[a-z]/.test(pw)],
+      ["大文字を含む", /[A-Z]/.test(pw)],
+      ["数字を含む", /[0-9]/.test(pw)],
+      ["記号を含む", /[^a-zA-Z0-9]/.test(pw)],
+      ["同じ文字の3連続がない", !/(.)\1\1/.test(pw) && len > 0],
+      ["よくあるパスワードでない", len > 0 && !isCommon]
+    ];
+    const ul = $("checks");
+    ul.innerHTML = "";
+    checks.forEach(([label, ok]) => {
+      const li = document.createElement("li");
+      const l = document.createElement("span");
+      l.className = "label";
+      l.textContent = label;
+      const v = document.createElement("span");
+      v.textContent = ok ? "✓" : "✕";
+      v.style.fontWeight = "600";
+      v.style.color = ok ? "var(--added-fg)" : "var(--danger)";
+      li.appendChild(l); li.appendChild(v);
+      ul.appendChild(li);
+    });
+  }
+
+  $("pw").addEventListener("input", update);
+  $("show").addEventListener("change", e => {
+    $("pw").type = e.target.checked ? "text" : "password";
+  });
+
+  update();
+</script>
+</body>
+</html>
