@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>原価率計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>原価率計算</h1>
+    <p class="lead">メニューの売価と材料原価から、原価率・粗利・推奨売価を計算します。</p>
+  </header>
+
+  <div class="card">
+    <div class="form-row">
+      <label>メニュー名</label>
+      <input type="text" id="menu" placeholder="（任意）" style="width:200px">
+      <label>売価（税抜・円）</label>
+      <input type="number" id="price" min="0" step="1" placeholder="例: 1200" style="width:120px">
+      <label>目標原価率(%)</label>
+      <input type="number" id="target" value="30" min="1" max="100" step="1" style="width:80px">
+    </div>
+  </div>
+
+  <h2>材料原価</h2>
+  <div id="rows"></div>
+  <div class="actions">
+    <button id="add" class="primary">＋ 材料を追加</button>
+    <button id="reset">リセット</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="label">原価合計</div><div class="value" id="r-cost">0 円</div></div>
+    <div class="stat"><div class="label">原価率</div><div class="value" id="r-rate">— %</div></div>
+    <div class="stat"><div class="label">粗利額</div><div class="value" id="r-profit">0 円</div></div>
+    <div class="stat"><div class="label">粗利率</div><div class="value" id="r-margin">— %</div></div>
+    <div class="stat"><div class="label">推奨売価（目標原価率）</div><div class="value" id="r-suggest">— 円</div></div>
+  </div>
+</div>
+
+<script>
+  const rowsEl = document.getElementById('rows');
+  const priceEl = document.getElementById('price');
+  const targetEl = document.getElementById('target');
+
+  function yen(n) {
+    return Math.round(n).toLocaleString('ja-JP') + ' 円';
+  }
+  function pct(n) {
+    return (Math.round(n * 10) / 10).toLocaleString('ja-JP', { maximumFractionDigits: 1 }) + ' %';
+  }
+
+  // 材料 1 行（材料名 / 単価 × 数量 = 原価）
+  function makeRow() {
+    const row = document.createElement('div');
+    row.className = 'card mat-row';
+    row.style.marginBottom = '10px';
+    row.innerHTML = `
+      <div class="form-row">
+        <label>材料名</label>
+        <input type="text" class="name" placeholder="例: 牛肉" style="width:160px">
+        <label>単価(円)</label>
+        <input type="number" class="unit" min="0" step="any" style="width:100px">
+        <label>数量</label>
+        <input type="number" class="qty" value="1" min="0" step="any" style="width:80px">
+        <span style="margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums" class="row-cost">0 円</span>
+        <button class="del">削除</button>
+      </div>`;
+    row.querySelector('.del').addEventListener('click', () => { row.remove(); calc(); });
+    row.querySelectorAll('input').forEach(i => i.addEventListener('input', calc));
+    rowsEl.appendChild(row);
+    return row;
+  }
+
+  function rowCost(row) {
+    const unit = parseFloat(row.querySelector('.unit').value);
+    const qty = parseFloat(row.querySelector('.qty').value);
+    if (!isFinite(unit) || unit < 0 || !isFinite(qty) || qty < 0) return 0;
+    return unit * qty;
+  }
+
+  function calc() {
+    let cost = 0;
+    rowsEl.querySelectorAll('.mat-row').forEach(row => {
+      const c = rowCost(row);
+      cost += c;
+      row.querySelector('.row-cost').textContent = yen(c);
+    });
+    const price = parseFloat(priceEl.value);
+    const target = parseFloat(targetEl.value);
+
+    document.getElementById('r-cost').textContent = yen(cost);
+
+    if (isFinite(price) && price > 0) {
+      const rate = cost / price * 100;
+      const profit = price - cost;
+      document.getElementById('r-rate').textContent = pct(rate);
+      document.getElementById('r-profit').textContent = yen(profit);
+      document.getElementById('r-margin').textContent = pct(profit / price * 100);
+    } else {
+      document.getElementById('r-rate').textContent = '— %';
+      document.getElementById('r-profit').textContent = '0 円';
+      document.getElementById('r-margin').textContent = '— %';
+    }
+
+    if (isFinite(target) && target > 0 && cost > 0) {
+      const suggest = Math.ceil((cost / (target / 100)) / 10) * 10; // 10円単位で切上
+      document.getElementById('r-suggest').textContent = yen(suggest);
+    } else {
+      document.getElementById('r-suggest').textContent = '— 円';
+    }
+  }
+
+  document.getElementById('add').addEventListener('click', () => { makeRow(); });
+  document.getElementById('reset').addEventListener('click', () => {
+    rowsEl.innerHTML = '';
+    document.getElementById('menu').value = '';
+    priceEl.value = '';
+    makeRow();
+    calc();
+  });
+  [priceEl, targetEl].forEach(el => el.addEventListener('input', calc));
+
+  makeRow();
+  calc();
+</script>
+</body>
+</html>
