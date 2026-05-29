@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>金属材料の重量・コスト計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>金属材料の重量・コスト計算</h1>
+    <p class="lead">形状・寸法（mm）・材質・個数から、材料の重量と材料費を概算します。</p>
+  </header>
+
+  <div class="card">
+    <div class="form-row">
+      <label>形状</label>
+      <select id="shape">
+        <option value="plate">平板</option>
+        <option value="round">丸棒</option>
+        <option value="square">角棒</option>
+        <option value="pipe">パイプ</option>
+      </select>
+    </div>
+    <div class="form-row" id="dims"></div>
+    <div class="form-row">
+      <label>材質</label>
+      <select id="mat">
+        <option value="7850">鉄（7850 kg/m³）</option>
+        <option value="7930">ステンレス（7930）</option>
+        <option value="2700">アルミ（2700）</option>
+        <option value="8960">銅（8960）</option>
+        <option value="8500">真鍮（8500）</option>
+        <option value="custom">任意</option>
+      </select>
+      <input type="number" id="customd" min="1" step="1" value="7850" style="display:none">
+      <span class="muted" id="du" style="display:none">kg/m³</span>
+    </div>
+    <div class="form-row">
+      <label>個数</label>
+      <input type="number" id="qty" min="1" step="1" value="1">
+    </div>
+    <div class="form-row">
+      <label>単価（円/kg、任意）</label>
+      <input type="number" id="price" min="0" step="1" value="">
+    </div>
+  </div>
+
+  <h2>結果</h2>
+  <div class="stats">
+    <div class="stat"><div class="label">1個の重量</div><div class="value" id="r-unit">-</div></div>
+    <div class="stat"><div class="label">総重量</div><div class="value" id="r-total">-</div></div>
+    <div class="stat"><div class="label">材料費</div><div class="value" id="r-cost">-</div></div>
+  </div>
+  <p class="muted" style="margin-top:12px">※ 体積 × 比重による概算です。実際の規格寸法・公差・端材は別途考慮してください。</p>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+
+  // 形状ごとの寸法フィールド定義（mm）
+  const SHAPES = {
+    plate:  [['w', '幅', 50], ['l', '長さ', 100], ['t', '厚み', 3]],
+    round:  [['d', '直径', 20], ['l', '長さ', 100]],
+    square: [['w', '幅', 20], ['h', '高さ', 20], ['l', '長さ', 100]],
+    pipe:   [['od', '外径', 30], ['id', '内径', 26], ['l', '長さ', 100]],
+  };
+
+  function renderDims() {
+    const shape = $('shape').value;
+    const dims = SHAPES[shape];
+    $('dims').innerHTML = dims.map(([key, label, def]) =>
+      `<label>${label}(mm)</label><input type="number" data-dim="${key}" min="0" step="0.1" value="${def}">`
+    ).join('');
+    $('dims').querySelectorAll('input').forEach(inp => inp.addEventListener('input', recalc));
+    recalc();
+  }
+
+  function dim(key) {
+    const el = $('dims').querySelector(`[data-dim="${key}"]`);
+    return el ? (parseFloat(el.value) || 0) / 1000 : 0; // mm -> m
+  }
+
+  function density() {
+    const sel = $('mat').value;
+    const custom = sel === 'custom';
+    $('customd').style.display = custom ? '' : 'none';
+    $('du').style.display = custom ? '' : 'none';
+    return custom ? (parseFloat($('customd').value) || 0) : parseFloat(sel);
+  }
+
+  function volume() {
+    const shape = $('shape').value;
+    if (shape === 'plate') return dim('w') * dim('l') * dim('t');
+    if (shape === 'round') return Math.PI * Math.pow(dim('d') / 2, 2) * dim('l');
+    if (shape === 'square') return dim('w') * dim('h') * dim('l');
+    if (shape === 'pipe') {
+      const od = dim('od'), id = dim('id');
+      const a = Math.PI * (Math.pow(od / 2, 2) - Math.pow(id / 2, 2));
+      return a > 0 ? a * dim('l') : 0;
+    }
+    return 0;
+  }
+
+  function recalc() {
+    const vol = volume();          // m³
+    const d = density();           // kg/m³
+    const qty = parseFloat($('qty').value) || 0;
+    const price = parseFloat($('price').value);
+
+    const unit = vol * d;          // kg/個
+    const total = unit * qty;
+
+    const r = n => Math.round(n * 1000) / 1000;
+    if (unit > 0) {
+      $('r-unit').textContent = r(unit).toLocaleString() + ' kg';
+      $('r-total').textContent = r(total).toLocaleString() + ' kg';
+      $('r-cost').textContent = (isFinite(price) && price > 0)
+        ? '¥' + Math.round(total * price).toLocaleString()
+        : '（単価未入力）';
+    } else {
+      ['r-unit', 'r-total', 'r-cost'].forEach(i => $(i).textContent = '-');
+    }
+  }
+
+  $('shape').addEventListener('change', renderDims);
+  ['mat', 'customd', 'qty', 'price'].forEach(id => $(id).addEventListener('input', recalc));
+  $('mat').addEventListener('change', recalc);
+  renderDims();
+</script>
+</body>
+</html>
