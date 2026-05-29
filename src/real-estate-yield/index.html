@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>不動産投資 利回り計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  .row { display: grid; grid-template-columns: 220px 1fr; gap: 12px; align-items: center; margin: 10px 0; }
+  .row label { color: var(--muted); font-size: 0.9rem; }
+  .row .unit { color: var(--muted); font-size: 0.85rem; margin-left: 6px; }
+  .row input { width: 200px; }
+  .hint { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>不動産投資 利回り計算</h1>
+    <p class="lead">物件価格・家賃・諸経費から表面利回り／実質利回り／NOI／投資回収年数を計算。</p>
+  </header>
+
+  <div class="card">
+    <div class="row">
+      <label>物件価格</label>
+      <div><input type="number" id="price" min="0" step="any" value="30000000"><span class="unit">円</span></div>
+    </div>
+    <div class="row">
+      <label>月額家賃収入</label>
+      <div><input type="number" id="rent" min="0" step="any" value="150000"><span class="unit">円 / 月（×12 で年間換算）</span></div>
+    </div>
+    <div class="row">
+      <label>想定空室率</label>
+      <div><input type="number" id="vacancy" min="0" max="100" step="any" value="5"><span class="unit">%</span></div>
+    </div>
+    <div class="row">
+      <label>年間諸経費</label>
+      <div><input type="number" id="expense" min="0" step="any" value="300000"><span class="unit">円 / 年（管理費・税・修繕等）</span></div>
+    </div>
+    <div class="row">
+      <label>購入時諸費用</label>
+      <div><input type="number" id="acq" min="0" step="any" value="2000000"><span class="unit">円（仲介手数料・登記等）</span></div>
+    </div>
+  </div>
+
+  <h2>計算結果</h2>
+  <div class="stats" id="results">
+    <div class="stat"><div class="label">表面利回り</div><div class="value" id="r-gross">-</div></div>
+    <div class="stat"><div class="label">実質利回り</div><div class="value" id="r-net">-</div></div>
+    <div class="stat"><div class="label">NOI（年間純収益）</div><div class="value" id="r-noi">-</div></div>
+    <div class="stat"><div class="label">月額キャッシュ</div><div class="value" id="r-month">-</div></div>
+    <div class="stat"><div class="label">投資回収年数</div><div class="value" id="r-payback">-</div></div>
+  </div>
+  <div class="card">
+    <div class="hint">
+      表面利回り ＝ 年間家賃（満室） ÷ 物件価格 × 100<br>
+      実質利回り ＝（実効年間家賃 − 年間諸経費）÷（物件価格 ＋ 購入時諸費用）× 100<br>
+      実効年間家賃 ＝ 月額家賃 × 12 ×（1 − 空室率）／ NOI ＝ 実効年間家賃 − 年間諸経費<br>
+      投資回収年数 ＝（物件価格 ＋ 購入時諸費用）÷ NOI（NOI が 0 以下なら算出不可）。あくまで概算で、税・ローン金利は含みません。
+    </div>
+  </div>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+  const ids = ['price', 'rent', 'vacancy', 'expense', 'acq'];
+  ids.forEach(id => $(id).addEventListener('input', recalc));
+
+  const yen = n => Math.round(n).toLocaleString('ja-JP') + ' 円';
+  const pct = n => n.toFixed(2) + ' %';
+
+  function recalc() {
+    const num = id => Math.max(0, parseFloat($(id).value) || 0);
+    const price = num('price');
+    const rent = num('rent');
+    const vacancy = Math.min(100, num('vacancy')) / 100;
+    const expense = num('expense');
+    const acq = num('acq');
+
+    const annualFull = rent * 12;            // 満室時 年間家賃
+    const annualEff = annualFull * (1 - vacancy); // 実効年間家賃
+    const noi = annualEff - expense;         // 年間純収益
+    const totalCost = price + acq;           // 取得総額
+
+    if (price <= 0) {
+      ['r-gross', 'r-net', 'r-noi', 'r-month', 'r-payback'].forEach(id => $(id).textContent = '-');
+      return;
+    }
+
+    $('r-gross').textContent = pct(annualFull / price * 100);
+    $('r-net').textContent = totalCost > 0 ? pct(noi / totalCost * 100) : '-';
+    $('r-noi').textContent = yen(noi) + ' / 年';
+    $('r-month').textContent = yen(noi / 12) + ' / 月';
+    $('r-payback').textContent = noi > 0 ? (totalCost / noi).toFixed(1) + ' 年' : '算出不可';
+  }
+
+  recalc();
+</script>
+</body>
+</html>
