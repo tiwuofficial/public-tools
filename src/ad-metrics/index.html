@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>広告指標 計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  .row { display: grid; grid-template-columns: 240px 1fr; gap: 12px; align-items: center; margin: 10px 0; }
+  .row label { color: var(--muted); font-size: 0.9rem; }
+  .stat .value .unit { font-size: 0.9rem; color: var(--muted); font-weight: 400; margin-left: 2px; }
+  .formula { font-size: 0.75rem; color: var(--muted); margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>広告指標 計算</h1>
+    <p class="lead">Web 広告の CTR / CPC / CPM / CVR / CPA / ROAS / ROI をまとめて算出。</p>
+  </header>
+
+  <div class="card">
+    <div class="row">
+      <label>インプレッション数</label>
+      <input type="number" id="imp" min="0" value="100000">
+    </div>
+    <div class="row">
+      <label>クリック数</label>
+      <input type="number" id="clicks" min="0" value="2000">
+    </div>
+    <div class="row">
+      <label>コンバージョン数</label>
+      <input type="number" id="cv" min="0" value="80">
+    </div>
+    <div class="row">
+      <label>広告費（円）</label>
+      <input type="number" id="cost" min="0" value="300000">
+    </div>
+    <div class="row">
+      <label>売上 / CV価値（円・任意）</label>
+      <input type="number" id="revenue" min="0" value="900000">
+    </div>
+  </div>
+
+  <h2>計算結果</h2>
+  <div class="stats" id="results"></div>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+  const inputs = ['imp','clicks','cv','cost','revenue'];
+  inputs.forEach(id => $(id).addEventListener('input', recalc));
+
+  const num = n => isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 0 }) : null;
+  const dec = (n, d) => isFinite(n) ? n.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d }) : null;
+
+  // value: 数値 or null。null は「-」表示。
+  function card(label, value, unit, formula) {
+    const v = value == null ? '-' : value + (unit ? `<span class="unit">${unit}</span>` : '');
+    return `<div class="stat">
+      <div class="label">${label}</div>
+      <div class="value">${v}</div>
+      <div class="formula">${formula}</div>
+    </div>`;
+  }
+
+  function recalc() {
+    const imp = parseFloat($('imp').value) || 0;
+    const clicks = parseFloat($('clicks').value) || 0;
+    const cv = parseFloat($('cv').value) || 0;
+    const cost = parseFloat($('cost').value) || 0;
+    const rev = parseFloat($('revenue').value) || 0;
+
+    const ctr  = imp > 0 ? (clicks / imp) * 100 : NaN;
+    const cpc  = clicks > 0 ? cost / clicks : NaN;
+    const cpm  = imp > 0 ? (cost / imp) * 1000 : NaN;
+    const cvr  = clicks > 0 ? (cv / clicks) * 100 : NaN;
+    const cpa  = cv > 0 ? cost / cv : NaN;
+    const roas = cost > 0 ? (rev / cost) * 100 : NaN;
+    const roi  = cost > 0 ? ((rev - cost) / cost) * 100 : NaN;
+
+    $('results').innerHTML = [
+      card('CTR（クリック率）',      dec(ctr, 2),  '%', 'クリック ÷ インプレッション'),
+      card('CPC（クリック単価）',    num(cpc),     '円', '広告費 ÷ クリック'),
+      card('CPM（千回表示単価）',    num(cpm),     '円', '広告費 ÷ インプレッション × 1000'),
+      card('CVR（コンバージョン率）',dec(cvr, 2),  '%', 'コンバージョン ÷ クリック'),
+      card('CPA（獲得単価）',        num(cpa),     '円', '広告費 ÷ コンバージョン'),
+      card('ROAS',                  dec(roas, 1), '%', '売上 ÷ 広告費'),
+      card('ROI',                   dec(roi, 1),  '%', '(売上 − 広告費) ÷ 広告費'),
+    ].join('');
+  }
+
+  recalc();
+</script>
+</body>
+</html>
