@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>神経衰弱（メモリーゲーム） - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>神経衰弱（メモリーゲーム）</h1>
+    <p class="lead">同じ絵柄のカードを2枚めくって揃えるゲーム。すべて揃えるとクリアです。</p>
+  </header>
+
+  <div class="form-row">
+    <label for="level">難易度</label>
+    <select id="level">
+      <option value="6">かんたん（6ペア）</option>
+      <option value="8" selected>ふつう（8ペア）</option>
+      <option value="12">むずかしい（12ペア）</option>
+    </select>
+    <button id="restart" class="primary" type="button">新しいゲーム</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="label">そろえたペア</div><div class="value" id="matched">0 / 0</div></div>
+    <div class="stat"><div class="label">めくった回数</div><div class="value" id="tries">0</div></div>
+    <div class="stat"><div class="label">経過</div><div class="value" id="elapsed">0.0s</div></div>
+  </div>
+
+  <div id="board" style="display:grid;gap:8px;justify-content:center;margin:20px 0"></div>
+  <div id="banner-area"></div>
+
+  <footer class="page-footer">すべてブラウザ内で完結します（外部送信なし）。</footer>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const boardEl = $("board");
+  const SYMBOLS = ["🍎","🐶","🌟","🚗","🌸","🐟","🍰","⚽","🎈","🎸","🌈","🦋","🍓","🐱","🚀","🌻","🍔","🐧","🎩","🐢"];
+
+  let cards = [];       // { sym, matched, flipped }
+  let firstIdx = -1;
+  let lock = false;
+  let tries = 0;
+  let matched = 0;
+  let pairs = 8;
+  let cols = 4;
+  let startTime = 0;
+  let timerId = null;
+  let started = false;
+
+  function shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function setup() {
+    pairs = parseInt($("level").value, 10) || 8;
+    cols = pairs <= 6 ? 4 : (pairs <= 8 ? 4 : 6);
+    const chosen = shuffle(SYMBOLS.slice()).slice(0, pairs);
+    const deck = shuffle(chosen.concat(chosen).map(s => ({ sym: s, matched: false, flipped: false })));
+    cards = deck;
+    firstIdx = -1;
+    lock = false;
+    tries = 0;
+    matched = 0;
+    started = false;
+    if (timerId) { clearInterval(timerId); timerId = null; }
+    $("matched").textContent = "0 / " + pairs;
+    $("tries").textContent = "0";
+    $("elapsed").textContent = "0.0s";
+    $("banner-area").innerHTML = "";
+    render();
+  }
+
+  function startTimer() {
+    if (started) return;
+    started = true;
+    startTime = performance.now();
+    timerId = setInterval(() => {
+      $("elapsed").textContent = ((performance.now() - startTime) / 1000).toFixed(1) + "s";
+    }, 100);
+  }
+
+  function flip(idx) {
+    if (lock) return;
+    const c = cards[idx];
+    if (c.matched || c.flipped) return;
+    startTimer();
+    c.flipped = true;
+    render();
+
+    if (firstIdx === -1) {
+      firstIdx = idx;
+      return;
+    }
+    // 2枚目
+    tries++;
+    $("tries").textContent = tries;
+    const first = cards[firstIdx];
+    if (first.sym === c.sym) {
+      first.matched = c.matched = true;
+      matched++;
+      $("matched").textContent = matched + " / " + pairs;
+      firstIdx = -1;
+      render();
+      if (matched === pairs) win();
+    } else {
+      lock = true;
+      const a = firstIdx, b = idx;
+      firstIdx = -1;
+      setTimeout(() => {
+        cards[a].flipped = false;
+        cards[b].flipped = false;
+        lock = false;
+        render();
+      }, 800);
+    }
+  }
+
+  function win() {
+    if (timerId) { clearInterval(timerId); timerId = null; }
+    const sec = ((performance.now() - startTime) / 1000).toFixed(1);
+    $("banner-area").innerHTML =
+      '<div class="banner ok">クリア！ ' + tries + ' 回めくって ' + sec + ' 秒でそろえました 🎉</div>';
+  }
+
+  function render() {
+    boardEl.style.gridTemplateColumns = "repeat(" + cols + ", 72px)";
+    boardEl.innerHTML = "";
+    cards.forEach((c, idx) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.style.width = "72px";
+      btn.style.height = "72px";
+      btn.style.fontSize = "2rem";
+      btn.style.padding = "0";
+      const up = c.flipped || c.matched;
+      btn.textContent = up ? c.sym : "";
+      if (!up) {
+        btn.style.background = "var(--accent)";
+        btn.style.borderColor = "var(--accent)";
+      } else if (c.matched) {
+        btn.style.background = "var(--added-bg)";
+        btn.style.borderColor = "#bbf7d0";
+      }
+      btn.addEventListener("click", () => flip(idx));
+      boardEl.appendChild(btn);
+    });
+  }
+
+  $("restart").addEventListener("click", setup);
+  $("level").addEventListener("change", setup);
+
+  setup();
+</script>
+</body>
+</html>
