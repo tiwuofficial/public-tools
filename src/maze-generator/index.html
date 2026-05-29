@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>迷路ジェネレータ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  .controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; }
+  .controls .field { display: flex; flex-direction: column; gap: 4px; }
+  .controls .field label { font-size: 0.85rem; color: var(--muted); }
+  .controls input, .controls select { width: 120px; }
+  #canvas-wrap { margin-top: 16px; overflow: auto; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+  canvas { display: block; background: #fff; }
+</style>
+</head>
+<body>
+<div class="container wide">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>迷路ジェネレータ</h1>
+    <p class="lead">サイズを指定してランダムな迷路を作成。答えの最短経路も表示できる。</p>
+  </header>
+
+  <div class="card">
+    <div class="controls">
+      <div class="field"><label>横セル数</label><input type="number" id="w" min="5" max="80" value="20"></div>
+      <div class="field"><label>縦セル数</label><input type="number" id="h" min="5" max="80" value="20"></div>
+      <div class="field"><label>セルサイズ(px)</label><input type="number" id="cell" min="8" max="40" value="24"></div>
+      <button class="primary" id="gen">新しい迷路</button>
+      <button id="solve">答えを表示</button>
+      <button id="hide-solve">答えを隠す</button>
+      <button id="save">PNG 保存</button>
+    </div>
+  </div>
+
+  <div id="canvas-wrap"><canvas id="canvas"></canvas></div>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+  const canvas = $('canvas');
+  const ctx = canvas.getContext('2d');
+  let maze = null;
+  let solved = false;
+
+  function generateMaze(w, h) {
+    // Each cell has walls: N,E,S,W as bits 1,2,4,8
+    const cells = Array.from({length: h}, () => Array.from({length: w}, () => ({ walls: 15, visited: false })));
+    const stack = [[0, 0]];
+    cells[0][0].visited = true;
+    const dirs = [[0,-1,1,4],[1,0,2,8],[0,1,4,1],[-1,0,8,2]]; // dx,dy,wallBit,oppositeBit
+    while (stack.length) {
+      const [x, y] = stack[stack.length - 1];
+      const cands = [];
+      for (const [dx,dy,wb,ob] of dirs) {
+        const nx = x+dx, ny = y+dy;
+        if (nx<0||ny<0||nx>=w||ny>=h) continue;
+        if (!cells[ny][nx].visited) cands.push([dx,dy,wb,ob,nx,ny]);
+      }
+      if (!cands.length) { stack.pop(); continue; }
+      const [dx,dy,wb,ob,nx,ny] = cands[Math.floor(Math.random()*cands.length)];
+      cells[y][x].walls &= ~wb;
+      cells[ny][nx].walls &= ~ob;
+      cells[ny][nx].visited = true;
+      stack.push([nx,ny]);
+    }
+    return cells;
+  }
+
+  function solvePath(cells, w, h) {
+    // BFS from (0,0) to (w-1,h-1) using open passages
+    const prev = Array.from({length: h}, () => Array(w).fill(null));
+    const visited = Array.from({length: h}, () => Array(w).fill(false));
+    const q = [[0,0]];
+    visited[0][0] = true;
+    const dirs = [[0,-1,1],[1,0,2],[0,1,4],[-1,0,8]]; // dx,dy,wallBit
+    while (q.length) {
+      const [x,y] = q.shift();
+      if (x === w-1 && y === h-1) break;
+      for (const [dx,dy,wb] of dirs) {
+        if (cells[y][x].walls & wb) continue;
+        const nx=x+dx, ny=y+dy;
+        if (nx<0||ny<0||nx>=w||ny>=h) continue;
+        if (visited[ny][nx]) continue;
+        visited[ny][nx] = true;
+        prev[ny][nx] = [x,y];
+        q.push([nx,ny]);
+      }
+    }
+    const path = [];
+    let cur = [w-1, h-1];
+    while (cur) { path.push(cur); cur = prev[cur[1]][cur[0]]; }
+    return path.reverse();
+  }
+
+  function draw(showSolution) {
+    if (!maze) return;
+    const { cells, w, h } = maze;
+    const cell = parseInt($('cell').value, 10) || 24;
+    const pad = 6;
+    canvas.width = w * cell + pad * 2;
+    canvas.height = h * cell + pad * 2;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // start/goal
+    ctx.fillStyle = '#16a34a';
+    ctx.fillRect(pad + cell*0.2, pad + cell*0.2, cell*0.6, cell*0.6);
+    ctx.fillStyle = '#dc2626';
+    ctx.fillRect(pad + (w-1)*cell + cell*0.2, pad + (h-1)*cell + cell*0.2, cell*0.6, cell*0.6);
+
+    if (showSolution) {
+      const path = solvePath(cells, w, h);
+      ctx.strokeStyle = '#2563eb';
+      ctx.lineWidth = Math.max(2, cell * 0.18);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (let i = 0; i < path.length; i++) {
+        const [x,y] = path[i];
+        const cx = pad + x*cell + cell/2;
+        const cy = pad + y*cell + cell/2;
+        if (i === 0) ctx.moveTo(cx, cy);
+        else ctx.lineTo(cx, cy);
+      }
+      ctx.stroke();
+    }
+
+    // walls
+    ctx.strokeStyle = '#111827';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const c = cells[y][x];
+        const x0 = pad + x*cell, y0 = pad + y*cell;
+        if (c.walls & 1) { ctx.moveTo(x0, y0); ctx.lineTo(x0+cell, y0); }
+        if (c.walls & 2) { ctx.moveTo(x0+cell, y0); ctx.lineTo(x0+cell, y0+cell); }
+        if (c.walls & 4) { ctx.moveTo(x0, y0+cell); ctx.lineTo(x0+cell, y0+cell); }
+        if (c.walls & 8) { ctx.moveTo(x0, y0); ctx.lineTo(x0, y0+cell); }
+      }
+    }
+    ctx.stroke();
+  }
+
+  function regen() {
+    const w = Math.max(5, Math.min(80, parseInt($('w').value, 10) || 20));
+    const h = Math.max(5, Math.min(80, parseInt($('h').value, 10) || 20));
+    maze = { cells: generateMaze(w, h), w, h };
+    solved = false;
+    draw(false);
+  }
+
+  $('gen').addEventListener('click', regen);
+  $('solve').addEventListener('click', () => { solved = true; draw(true); });
+  $('hide-solve').addEventListener('click', () => { solved = false; draw(false); });
+  $('cell').addEventListener('change', () => draw(solved));
+  $('save').addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.download = 'maze.png';
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+  });
+
+  regen();
+</script>
+</body>
+</html>
