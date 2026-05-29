@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>おみくじ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>おみくじ</h1>
+    <p class="lead">ボタンを押して今日の運勢を占いましょう。お正月や気分転換に。</p>
+  </header>
+
+  <div class="actions" style="justify-content:center">
+    <button id="draw" class="primary" type="button" style="font-size:1.1rem;padding:12px 28px">おみくじを引く</button>
+  </div>
+
+  <div id="result" hidden>
+    <div id="rank" class="display">大吉</div>
+    <p id="comment" class="lead" style="text-align:center"></p>
+    <ul id="fortunes" class="plain-list"></ul>
+    <div class="stats">
+      <div class="stat"><div class="label">ラッキーカラー</div><div class="value" id="lucky-color" style="font-size:1.1rem"></div></div>
+      <div class="stat"><div class="label">ラッキーナンバー</div><div class="value" id="lucky-number"></div></div>
+      <div class="stat"><div class="label">ラッキーアイテム</div><div class="value" id="lucky-item" style="font-size:1.1rem"></div></div>
+    </div>
+    <div class="actions" style="justify-content:center;margin-top:16px">
+      <button id="again" type="button">もう一度引く</button>
+    </div>
+  </div>
+
+  <footer class="page-footer">運勢は娯楽目的のランダム生成です。すべてブラウザ内で完結します。</footer>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+
+  // 運勢ランク（weight が大きいほど出やすい）と色・総評
+  const RANKS = [
+    { name: "大吉", weight: 10, color: "#dc2626", comment: "最高の運気！何事も思い切って挑戦しましょう。" },
+    { name: "中吉", weight: 18, color: "#ea580c", comment: "良い流れです。落ち着いて進めば吉。" },
+    { name: "小吉", weight: 22, color: "#d97706", comment: "ささやかな幸運あり。丁寧な行動が実を結びます。" },
+    { name: "吉",   weight: 22, color: "#16a34a", comment: "穏やかな運気。基本を大切にしましょう。" },
+    { name: "末吉", weight: 18, color: "#2563eb", comment: "これから運気が上向きます。焦らず準備を。" },
+    { name: "凶",   weight: 10, color: "#6b7280", comment: "控えめが吉。無理せず英気を養いましょう。" }
+  ];
+
+  const CATEGORIES = {
+    "願望": ["叶うが時間がかかる", "周りの助けで叶う", "焦らなければ叶う", "今は時期を待つべし", "強く願えば道は開ける"],
+    "恋愛": ["素直さが鍵となる", "思わぬ出会いの予感", "じっくり育てると良い", "言葉より行動で示せ", "相手を思いやれば吉"],
+    "仕事・学業": ["努力が報われる", "見直しが幸運を呼ぶ", "協力者が現れる", "基礎固めが大切", "新しい挑戦が吉"],
+    "健康": ["睡眠を大切に", "適度な運動が吉", "食生活を整えると良い", "無理は禁物", "気分転換が回復の鍵"],
+    "金運": ["こつこつ貯めると吉", "衝動買いに注意", "思わぬ収入の予感", "節約が実を結ぶ", "人への投資が吉"],
+    "待ち人": ["来るが少し遅れる", "便りがあるでしょう", "自分から動けば会える", "思わぬ人から連絡あり", "焦らず待てば来る"]
+  };
+
+  const COLORS = ["赤", "青", "黄", "緑", "白", "金", "銀", "紫", "桃", "橙", "水色", "藍"];
+  const ITEMS = ["ハンカチ", "鍵", "手帳", "お守り", "飴", "本", "傘", "観葉植物", "コーヒー", "音楽", "メガネ", "腕時計", "写真", "マグカップ"];
+
+  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+  function pickRank() {
+    const total = RANKS.reduce((s, r) => s + r.weight, 0);
+    let n = Math.random() * total;
+    for (const r of RANKS) {
+      if (n < r.weight) return r;
+      n -= r.weight;
+    }
+    return RANKS[RANKS.length - 1];
+  }
+
+  function draw() {
+    const rank = pickRank();
+    $("rank").textContent = rank.name;
+    $("rank").style.color = rank.color;
+    $("comment").textContent = rank.comment;
+
+    const ul = $("fortunes");
+    ul.innerHTML = "";
+    Object.keys(CATEGORIES).forEach(key => {
+      const li = document.createElement("li");
+      const label = document.createElement("span");
+      label.className = "label";
+      label.textContent = key;
+      const val = document.createElement("span");
+      val.textContent = pick(CATEGORIES[key]);
+      li.appendChild(label);
+      li.appendChild(val);
+      ul.appendChild(li);
+    });
+
+    $("lucky-color").textContent = pick(COLORS);
+    $("lucky-number").textContent = Math.floor(Math.random() * 9) + 1;
+    $("lucky-item").textContent = pick(ITEMS);
+
+    $("result").hidden = false;
+    $("result").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  $("draw").addEventListener("click", draw);
+  $("again").addEventListener("click", draw);
+</script>
+</body>
+</html>
