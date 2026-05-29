@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>発注点・在庫日数 計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  .row { display: grid; grid-template-columns: 240px 1fr; gap: 12px; align-items: center; margin: 10px 0; }
+  .row label { color: var(--muted); font-size: 0.9rem; }
+  .stat .value .unit { font-size: 0.9rem; color: var(--muted); font-weight: 400; margin-left: 2px; }
+  .verdict { margin-top: 16px; font-size: 1.1rem; font-weight: 600; padding: 12px 14px; border-radius: var(--radius); border: 1px solid var(--border); }
+  .verdict.order { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .verdict.ok { background: var(--card); color: var(--fg); }
+  .formula { font-size: 0.75rem; color: var(--muted); margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>発注点・在庫日数 計算</h1>
+    <p class="lead">現在庫・日販・リードタイムから発注点と在庫日数を算出し、発注タイミングと推奨発注数を判定。</p>
+  </header>
+
+  <div class="card">
+    <div class="row">
+      <label>現在の在庫数（本）</label>
+      <input type="number" id="stock" min="0" value="120">
+    </div>
+    <div class="row">
+      <label>平均日販（本 / 日）</label>
+      <input type="number" id="daily" min="0" step="0.1" value="15">
+    </div>
+    <div class="row">
+      <label>入荷リードタイム（日）</label>
+      <input type="number" id="lead" min="0" value="3">
+    </div>
+    <div class="row">
+      <label>安全在庫（日数）</label>
+      <input type="number" id="safety" min="0" value="2">
+    </div>
+    <div class="row">
+      <label>目標在庫日数（日・発注量算出用）</label>
+      <input type="number" id="target" min="0" value="14">
+    </div>
+  </div>
+
+  <h2>計算結果</h2>
+  <div id="verdict" class="verdict ok">-</div>
+  <div class="stats" id="results"></div>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+  ['stock','daily','lead','safety','target'].forEach(id => $(id).addEventListener('input', recalc));
+
+  const num = (n, d = 0) => isFinite(n) ? n.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d }) : null;
+
+  function card(label, value, unit, formula) {
+    const v = value == null ? '-' : value + (unit ? `<span class="unit">${unit}</span>` : '');
+    return `<div class="stat">
+      <div class="label">${label}</div>
+      <div class="value">${v}</div>
+      <div class="formula">${formula}</div>
+    </div>`;
+  }
+
+  function recalc() {
+    const stock  = Math.max(0, parseFloat($('stock').value)  || 0);
+    const daily  = Math.max(0, parseFloat($('daily').value)  || 0);
+    const lead   = Math.max(0, parseFloat($('lead').value)   || 0);
+    const safety = Math.max(0, parseFloat($('safety').value) || 0);
+    const target = Math.max(0, parseFloat($('target').value) || 0);
+
+    const daysOfStock = daily > 0 ? stock / daily : NaN;        // 在庫日数
+    const reorderPoint = daily * (lead + safety);               // 発注点(本)
+    const runoutDays = daily > 0 ? Math.floor(daysOfStock) : NaN; // 在庫切れまで(日)
+    const needOrder = stock <= reorderPoint;                    // 発注要否
+    const suggestQty = Math.max(0, Math.ceil(target * daily - stock)); // 推奨発注数
+
+    $('results').innerHTML = [
+      card('在庫日数',         num(daysOfStock, 1), '日', '在庫 ÷ 日販'),
+      card('発注点',           num(reorderPoint, 0), '本', '日販 ×（リードタイム＋安全在庫日数）'),
+      card('在庫切れまで',     num(runoutDays, 0), '日', '在庫日数の切り捨て'),
+      card('推奨発注数',       num(suggestQty, 0), '本', 'max(0, 目標在庫日数 × 日販 − 在庫)'),
+    ].join('');
+
+    const v = $('verdict');
+    if (daily <= 0) {
+      v.className = 'verdict ok';
+      v.textContent = '平均日販を入力してください';
+    } else if (needOrder) {
+      v.className = 'verdict order';
+      v.textContent = `⚠ 発注タイミング（在庫 ${num(stock,0)}本 ≤ 発注点 ${num(reorderPoint,0)}本）`;
+    } else {
+      v.className = 'verdict ok';
+      v.textContent = `✓ まだ発注不要（発注点まであと ${num(stock - reorderPoint, 0)}本）`;
+    }
+  }
+
+  recalc();
+</script>
+</body>
+</html>
