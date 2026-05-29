@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>コンクリート数量計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>コンクリート数量計算</h1>
+    <p class="lead">部位の寸法から生コン体積(m³)・ロス込み手配量・ミキサー車台数を概算します。</p>
+  </header>
+
+  <div class="card">
+    <div class="form-row">
+      <label>寸法の単位</label>
+      <select id="unit">
+        <option value="mm" selected>mm</option>
+        <option value="m">m</option>
+      </select>
+      <label>打設ロス率(%)</label>
+      <input type="number" id="loss" value="5" min="0" step="0.5" style="width:90px">
+      <label>ミキサー車 容量(m³/台)</label>
+      <input type="number" id="truck" value="4.5" min="0.1" step="0.1" style="width:90px">
+    </div>
+  </div>
+
+  <h2>部位</h2>
+  <div id="parts"></div>
+  <div class="actions">
+    <button id="add" class="primary">＋ 部位を追加</button>
+    <button id="reset">リセット</button>
+  </div>
+
+  <div class="stats" id="results">
+    <div class="stat"><div class="label">合計体積</div><div class="value" id="r-total">0 m³</div></div>
+    <div class="stat"><div class="label">ロス込み体積</div><div class="value" id="r-loss">0 m³</div></div>
+    <div class="stat"><div class="label">手配量（0.25m³単位）</div><div class="value" id="r-order">0 m³</div></div>
+    <div class="stat"><div class="label">ミキサー車 台数</div><div class="value" id="r-truck">0 台</div></div>
+  </div>
+</div>
+
+<script>
+  const partsEl = document.getElementById('parts');
+  const unitEl = document.getElementById('unit');
+  const lossEl = document.getElementById('loss');
+  const truckEl = document.getElementById('truck');
+
+  // 部位 1 行を生成
+  function makeRow() {
+    const row = document.createElement('div');
+    row.className = 'card part-row';
+    row.style.marginBottom = '10px';
+    row.innerHTML = `
+      <div class="form-row">
+        <label>形状</label>
+        <select class="shape">
+          <option value="box">直方体（スラブ/基礎/梁）</option>
+          <option value="cyl">円柱（柱/杭）</option>
+        </select>
+        <span class="dims box">
+          <label>幅</label><input type="number" class="d1" min="0" step="any" style="width:90px">
+          <label>奥行</label><input type="number" class="d2" min="0" step="any" style="width:90px">
+          <label>高さ</label><input type="number" class="d3" min="0" step="any" style="width:90px">
+        </span>
+        <span class="dims cyl" style="display:none">
+          <label>直径</label><input type="number" class="dia" min="0" step="any" style="width:90px">
+          <label>高さ</label><input type="number" class="ch" min="0" step="any" style="width:90px">
+        </span>
+        <label>数量</label><input type="number" class="qty" value="1" min="0" step="1" style="width:70px">
+        <span style="margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums" class="row-vol">— m³</span>
+        <button class="del">削除</button>
+      </div>`;
+    const shape = row.querySelector('.shape');
+    shape.addEventListener('change', () => {
+      const cyl = shape.value === 'cyl';
+      row.querySelector('.dims.box').style.display = cyl ? 'none' : '';
+      row.querySelector('.dims.cyl').style.display = cyl ? '' : 'none';
+      calc();
+    });
+    row.querySelector('.del').addEventListener('click', () => { row.remove(); calc(); });
+    row.querySelectorAll('input').forEach(i => i.addEventListener('input', calc));
+    partsEl.appendChild(row);
+    return row;
+  }
+
+  // 単位を m に正規化（mm入力なら /1000）
+  function toMeter(v) {
+    const n = parseFloat(v);
+    if (!isFinite(n) || n <= 0) return NaN;
+    return unitEl.value === 'mm' ? n / 1000 : n;
+  }
+
+  // 1 行の体積(m³)を計算
+  function rowVolume(row) {
+    const shape = row.querySelector('.shape').value;
+    const qty = parseInt(row.querySelector('.qty').value, 10);
+    if (!isFinite(qty) || qty <= 0) return 0;
+    let unitVol;
+    if (shape === 'box') {
+      const w = toMeter(row.querySelector('.d1').value);
+      const d = toMeter(row.querySelector('.d2').value);
+      const h = toMeter(row.querySelector('.d3').value);
+      if (isNaN(w) || isNaN(d) || isNaN(h)) return 0;
+      unitVol = w * d * h;
+    } else {
+      const dia = toMeter(row.querySelector('.dia').value);
+      const h = toMeter(row.querySelector('.ch').value);
+      if (isNaN(dia) || isNaN(h)) return 0;
+      const r = dia / 2;
+      unitVol = Math.PI * r * r * h;
+    }
+    return unitVol * qty;
+  }
+
+  function fmt(n) {
+    return (Math.round(n * 1000) / 1000).toLocaleString('ja-JP', { maximumFractionDigits: 3 });
+  }
+
+  function calc() {
+    let total = 0;
+    partsEl.querySelectorAll('.part-row').forEach(row => {
+      const v = rowVolume(row);
+      total += v;
+      row.querySelector('.row-vol').textContent = v > 0 ? fmt(v) + ' m³' : '— m³';
+    });
+    const loss = Math.max(0, parseFloat(lossEl.value) || 0);
+    const withLoss = total * (1 + loss / 100);
+    const order = Math.ceil(withLoss / 0.25) * 0.25;
+    const cap = Math.max(0.1, parseFloat(truckEl.value) || 4.5);
+    const trucks = withLoss > 0 ? Math.ceil(withLoss / cap) : 0;
+
+    document.getElementById('r-total').textContent = fmt(total) + ' m³';
+    document.getElementById('r-loss').textContent = fmt(withLoss) + ' m³';
+    document.getElementById('r-order').textContent = fmt(order) + ' m³';
+    document.getElementById('r-truck').textContent = trucks + ' 台';
+  }
+
+  document.getElementById('add').addEventListener('click', () => { makeRow(); });
+  document.getElementById('reset').addEventListener('click', () => {
+    partsEl.innerHTML = '';
+    makeRow();
+    calc();
+  });
+  [unitEl, lossEl, truckEl].forEach(el => el.addEventListener('input', calc));
+
+  // 初期行
+  makeRow();
+  calc();
+</script>
+</body>
+</html>
