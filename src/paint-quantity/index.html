@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>塗料必要量計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>塗料必要量計算</h1>
+    <p class="lead">塗装面積・塗り回数・塗布面積・ロス率から、必要な塗料量（L）と缶数を概算します。</p>
+  </header>
+
+  <div class="card">
+    <div class="form-row">
+      <label>塗装面積（m²）</label>
+      <input type="number" id="area" min="0" step="0.1" value="100">
+    </div>
+    <div class="form-row">
+      <label>塗り回数（回）</label>
+      <input type="number" id="coats" min="1" step="1" value="2">
+    </div>
+    <div class="form-row">
+      <label>塗布面積（m²/L）</label>
+      <input type="number" id="spread" min="0" step="0.1" value="7">
+      <span class="muted">塗料1Lで塗れる面積</span>
+    </div>
+    <div class="form-row">
+      <label>ロス率（%）</label>
+      <input type="number" id="loss" min="0" step="1" value="10">
+    </div>
+    <div class="form-row">
+      <label>1缶の容量（L）</label>
+      <input type="number" id="can" min="0.1" step="0.1" value="16">
+    </div>
+  </div>
+
+  <h2>結果</h2>
+  <div class="stats">
+    <div class="stat"><div class="label">延べ塗装面積</div><div class="value" id="r-area">-</div></div>
+    <div class="stat"><div class="label">必要塗料量（ロス込み）</div><div class="value" id="r-liter">-</div></div>
+    <div class="stat"><div class="label">缶数（切り上げ）</div><div class="value" id="r-cans">-</div></div>
+  </div>
+  <p class="muted" id="note" style="margin-top:12px"></p>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+  ['area', 'coats', 'spread', 'loss', 'can'].forEach(id => $(id).addEventListener('input', recalc));
+
+  function recalc() {
+    const area = parseFloat($('area').value) || 0;
+    const coats = parseFloat($('coats').value) || 0;
+    const spread = parseFloat($('spread').value) || 0;
+    const loss = parseFloat($('loss').value) || 0;
+    const can = parseFloat($('can').value) || 0;
+
+    if (area <= 0 || coats <= 0 || spread <= 0) {
+      ['r-area', 'r-liter', 'r-cans'].forEach(i => $(i).textContent = '-');
+      $('note').textContent = '塗装面積・塗り回数・塗布面積を入力してください。';
+      return;
+    }
+
+    const totalArea = area * coats;
+    const liter = totalArea / spread * (1 + loss / 100);
+    const cans = can > 0 ? Math.ceil(liter / can) : NaN;
+
+    const r = n => Math.round(n * 10) / 10;
+    $('r-area').textContent = r(totalArea).toLocaleString() + ' m²';
+    $('r-liter').textContent = r(liter).toLocaleString() + ' L';
+    $('r-cans').textContent = isFinite(cans) ? cans.toLocaleString() + ' 缶' : '-';
+    $('note').textContent = isFinite(cans)
+      ? `${can.toLocaleString()}L 缶で ${cans.toLocaleString()} 缶（実容量 ${r(cans * can).toLocaleString()}L）。ロス率 ${loss}% を含んでいます。`
+      : `1缶の容量を入力すると缶数を計算します。`;
+  }
+
+  recalc();
+</script>
+</body>
+</html>
