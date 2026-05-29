@@ -79,10 +79,40 @@
 7. `git push` する（コミットごとに都度 push してよい）
 8. 1 イテレーションで **1 ツールだけ** 追加する
 
+## 並行実行する場合（複数エージェント）は worktree で分離する
+
+複数のエージェントが同じ作業ツリー・同じ `.git` index を共有すると、互いの未追跡ファイルや
+コミットを `git reset --hard` / `git checkout` で破壊し合い、index.html にリンクだけ残って
+リンク先ファイルが未コミット（リンク切れ）になる事故が起きる。**並行で動かすときは各エージェントが
+専用の git worktree で作業すること。** 競合は push 時の rebase だけに限定される。
+
+```sh
+MAIN=/Users/w.taguchi/dev/git-work/public-tools
+cd "$MAIN" && git fetch origin main
+WT=/tmp/pt-wt-$$-$(date +%s)
+git worktree add --detach "$WT" origin/main   # 各 worktree は独立した index を持つ
+cd "$WT"
+# …ここで実装・index.html 末尾に <li> 追加・issue を実装済みに…
+git add <自分のファイルだけ>
+git commit -m "Add <tool name> tool"
+# push（remote の main へ直接）。rejected なら rebase してリトライ。
+git push origin HEAD:main \
+  || { git fetch origin main && git rebase origin/main && git push origin HEAD:main; }
+# index.html がコンフリクトしたら origin 側を採用し、自分の <li> を </ul> 直前へ再挿入：
+#   git checkout --theirs index.html && <li 再挿入> && git add index.html && git rebase --continue
+cd "$MAIN" && git worktree remove --force "$WT"   # 後始末
+```
+
+- **`git reset --hard` は使わない**（他エージェントの作業を破壊する）。
+- push 後は origin/main に「src・issue(実装済み)・index の li(重複なし)・リンク先ファイル」が
+  揃っていることを確認する。
+
 ## やってはいけないこと
 
 - `.claude/` 配下のファイルをコミットする
 - `git push --force` などの破壊的 push
+- 並行実行時に共有作業ツリーで直接コミットする（worktree を使う。上記参照）
+- `git reset --hard` で他エージェントの未コミット作業を破壊する
 - 既存ツールのスタイルを壊すような共通 CSS の破壊的変更
 - 同じツールを別名で重複追加する
 - 外部依存（CDN, fonts, npm, fetch 先 API）を持ち込む
