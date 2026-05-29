@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>面付け計算（印刷） - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  .row { display: grid; grid-template-columns: 200px 1fr; gap: 12px; align-items: center; margin: 10px 0; }
+  .row label { color: var(--muted); font-size: 0.9rem; }
+  .dim { display: flex; align-items: center; gap: 8px; }
+  .dim input { width: 110px; }
+  .dim .x { color: var(--muted); }
+  .dim .unit { color: var(--muted); font-size: 0.85rem; }
+  .count { font-size: 2.6rem; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .hint { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+  .preview-wrap { display: flex; justify-content: center; padding: 8px 0; }
+  svg.layout { max-width: 100%; height: auto; }
+  svg.layout .paper { fill: var(--card); stroke: var(--border); stroke-width: 1; }
+  svg.layout .usable { fill: none; stroke: var(--border); stroke-dasharray: 4 4; stroke-width: 1; }
+  svg.layout .piece { fill: var(--accent); fill-opacity: 0.22; stroke: var(--accent); stroke-width: 1; }
+  .err { color: #c0392b; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>面付け計算（印刷）</h1>
+    <p class="lead">原紙サイズと仕上がりサイズから面付け数・必要原紙枚数・用紙利用率を計算し、レイアウトをプレビュー。</p>
+  </header>
+
+  <div class="card">
+    <div class="row">
+      <label>原紙（全紙）サイズ</label>
+      <select id="paper-preset">
+        <option value="636,939">菊全（636 × 939）</option>
+        <option value="788,1091" selected>四六全（788 × 1091）</option>
+        <option value="625,880">A判全紙（625 × 880）</option>
+        <option value="765,1085">B判全紙（765 × 1085）</option>
+        <option value="900,1200">ハトロン判（900 × 1200）</option>
+        <option value="custom">カスタム</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>原紙サイズ（mm）</label>
+      <div class="dim">
+        <input type="number" id="paper-w" min="1" value="788">
+        <span class="x">×</span>
+        <input type="number" id="paper-h" min="1" value="1091">
+        <span class="unit">mm</span>
+      </div>
+    </div>
+    <div class="row">
+      <label>仕上がりサイズ（mm）</label>
+      <div class="dim">
+        <input type="number" id="piece-w" min="1" value="91">
+        <span class="x">×</span>
+        <input type="number" id="piece-h" min="1" value="55">
+        <span class="unit">mm（名刺 = 91 × 55）</span>
+      </div>
+    </div>
+    <div class="row">
+      <label>用紙周囲の余白（mm）</label>
+      <div class="dim">
+        <input type="number" id="margin" min="0" value="10">
+        <span class="unit">くわえ・掴み代など、四辺の余白</span>
+      </div>
+    </div>
+    <div class="row">
+      <label>ドブ（面間ギャップ, mm）</label>
+      <div class="dim">
+        <input type="number" id="gap" min="0" value="0">
+        <span class="unit">隣り合う面の間隔（断裁しろ）</span>
+      </div>
+    </div>
+    <div class="row">
+      <label>必要部数</label>
+      <div class="dim">
+        <input type="number" id="qty" min="1" value="1000">
+        <span class="unit">部</span>
+      </div>
+    </div>
+  </div>
+
+  <h2>計算結果</h2>
+  <div class="card">
+    <div class="row">
+      <label>面付け数</label>
+      <div><span class="count" id="r-count">-</span> <span class="unit">面 / 枚</span></div>
+    </div>
+    <div class="row">
+      <label>採用した配置</label>
+      <div id="r-layout">-</div>
+    </div>
+    <div class="row">
+      <label>必要原紙枚数</label>
+      <div id="r-sheets">-</div>
+    </div>
+    <div class="row">
+      <label>用紙利用率</label>
+      <div id="r-eff">-</div>
+    </div>
+    <div class="hint">面付け数 ＝ 縦置き・横置きを比較した最大の格子配置。必要原紙枚数 ＝ ⌈部数 ÷ 面付け数⌉。
+      用紙利用率 ＝ 仕上がり面積 × 面付け数 ÷ 原紙面積。単純格子面付けの概算用途です。</div>
+  </div>
+
+  <h2>レイアウトプレビュー</h2>
+  <div class="card">
+    <div class="preview-wrap" id="preview"></div>
+  </div>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+  const NS = 'http://www.w3.org/2000/svg';
+
+  // プリセット選択 → 原紙サイズ入力に反映
+  $('paper-preset').addEventListener('change', () => {
+    const v = $('paper-preset').value;
+    if (v !== 'custom') {
+      const [w, h] = v.split(',');
+      $('paper-w').value = w;
+      $('paper-h').value = h;
+    }
+    recalc();
+  });
+  // 原紙サイズを手で変えたらカスタム扱い
+  ['paper-w', 'paper-h'].forEach(id => $(id).addEventListener('input', () => {
+    $('paper-preset').value = 'custom';
+    recalc();
+  }));
+  ['piece-w', 'piece-h', 'margin', 'gap', 'qty'].forEach(id => $(id).addEventListener('input', recalc));
+
+  // 指定の向きで取れる列数・行数を返す（ギャップ込み）
+  function fit(usableW, usableH, w, h, gap) {
+    if (w <= 0 || h <= 0) return { cols: 0, rows: 0, n: 0 };
+    const cols = Math.floor((usableW + gap) / (w + gap));
+    const rows = Math.floor((usableH + gap) / (h + gap));
+    return { cols: Math.max(0, cols), rows: Math.max(0, rows), n: Math.max(0, cols) * Math.max(0, rows) };
+  }
+
+  function recalc() {
+    const num = id => parseFloat($(id).value);
+    const paperW = num('paper-w'), paperH = num('paper-h');
+    const pieceW = num('piece-w'), pieceH = num('piece-h');
+    const margin = Math.max(0, num('margin') || 0);
+    const gap = Math.max(0, num('gap') || 0);
+    const qty = Math.max(1, Math.floor(num('qty') || 0));
+
+    const valid = [paperW, paperH, pieceW, pieceH].every(v => v > 0);
+    if (!valid) {
+      setResult(null);
+      return;
+    }
+
+    const usableW = paperW - margin * 2;
+    const usableH = paperH - margin * 2;
+
+    // 縦置き（そのまま）と横置き（90°回転）を比較
+    const a = fit(usableW, usableH, pieceW, pieceH, gap); a.rot = false;
+    const b = fit(usableW, usableH, pieceH, pieceW, gap); b.rot = true;
+    const best = b.n > a.n ? b : a;
+
+    setResult({ best, paperW, paperH, pieceW, pieceH, margin, gap, qty, usableW, usableH });
+  }
+
+  function setResult(d) {
+    if (!d || d.best.n === 0) {
+      $('r-count').textContent = '0';
+      $('r-layout').innerHTML = d
+        ? '<span class="err">この原紙には 1 面も入りません（余白・サイズを確認）</span>'
+        : '値を入力してください';
+      $('r-sheets').textContent = '-';
+      $('r-eff').textContent = '-';
+      $('preview').innerHTML = '';
+      return;
+    }
+    const { best, paperW, paperH, pieceW, pieceH, margin, gap, qty, usableW, usableH } = d;
+    const n = best.n;
+    $('r-count').textContent = n.toLocaleString();
+    $('r-layout').textContent =
+      `${best.rot ? '横置き（90°回転）' : '縦置き'} ／ ${best.cols} 列 × ${best.rows} 行`;
+
+    const sheets = Math.ceil(qty / n);
+    $('r-sheets').textContent =
+      `${sheets.toLocaleString()} 枚（${qty.toLocaleString()} 部 ÷ ${n} 面）`;
+
+    const eff = (pieceW * pieceH * n) / (paperW * paperH) * 100;
+    $('r-eff').textContent = `${eff.toFixed(1)} %（余白・端材 ${(100 - eff).toFixed(1)} %）`;
+
+    drawPreview({ best, paperW, paperH, pieceW, pieceH, margin, gap, usableW, usableH });
+  }
+
+  function drawPreview({ best, paperW, paperH, pieceW, pieceH, margin, gap, usableW, usableH }) {
+    const maxW = 420, maxH = 460;
+    const scale = Math.min(maxW / paperW, maxH / paperH);
+    const W = paperW * scale, H = paperH * scale;
+    const pw = (best.rot ? pieceH : pieceW), ph = (best.rot ? pieceW : pieceH);
+
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'layout');
+    svg.setAttribute('width', W.toFixed(1));
+    svg.setAttribute('height', H.toFixed(1));
+    svg.setAttribute('viewBox', `0 0 ${W.toFixed(1)} ${H.toFixed(1)}`);
+
+    const rect = (x, y, w, h, cls) => {
+      const r = document.createElementNS(NS, 'rect');
+      r.setAttribute('x', x.toFixed(1)); r.setAttribute('y', y.toFixed(1));
+      r.setAttribute('width', w.toFixed(1)); r.setAttribute('height', h.toFixed(1));
+      r.setAttribute('class', cls);
+      svg.appendChild(r);
+    };
+
+    rect(0, 0, W, H, 'paper');
+    rect(margin * scale, margin * scale, usableW * scale, usableH * scale, 'usable');
+
+    const ox = margin * scale, oy = margin * scale;
+    for (let c = 0; c < best.cols; c++) {
+      for (let row = 0; row < best.rows; row++) {
+        const x = ox + c * (pw + gap) * scale;
+        const y = oy + row * (ph + gap) * scale;
+        rect(x, y, pw * scale, ph * scale, 'piece');
+      }
+    }
+
+    const wrap = $('preview');
+    wrap.innerHTML = '';
+    wrap.appendChild(svg);
+  }
+
+  recalc();
+</script>
+</body>
+</html>
