@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>値入率 / 粗利率 計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  .row { display: grid; grid-template-columns: 200px 1fr; gap: 12px; align-items: center; margin: 10px 0; }
+  .row label { color: var(--muted); font-size: 0.9rem; }
+  .row input { width: 180px; }
+  .row .unit { color: var(--muted); font-size: 0.85rem; margin-left: 6px; }
+  .hint { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>値入率 / 粗利率 計算</h1>
+    <p class="lead">原価（下代）と売価（上代・税抜）から粗利率・値入率・原価率を計算、目標粗利率から売価も逆算。</p>
+  </header>
+
+  <div class="card">
+    <div class="row">
+      <label>原価（仕入値・下代）</label>
+      <div><input type="number" id="cost" min="0" step="any" value="3000"><span class="unit">円</span></div>
+    </div>
+    <div class="row">
+      <label>売価（上代・税抜）</label>
+      <div><input type="number" id="price" min="0" step="any" value="7800"><span class="unit">円</span></div>
+    </div>
+  </div>
+
+  <h2>計算結果</h2>
+  <div class="stats" id="results">
+    <div class="stat"><div class="label">粗利額</div><div class="value" id="r-profit">-</div></div>
+    <div class="stat"><div class="label">粗利率（対売価）</div><div class="value" id="r-margin">-</div></div>
+    <div class="stat"><div class="label">値入率（対原価）</div><div class="value" id="r-markup">-</div></div>
+    <div class="stat"><div class="label">原価率</div><div class="value" id="r-costrate">-</div></div>
+  </div>
+
+  <h2>目標粗利率から売価を逆算</h2>
+  <div class="card">
+    <div class="row">
+      <label>目標粗利率（対売価）</label>
+      <div><input type="number" id="target" min="0" max="99.9" step="any" value="60"><span class="unit">%</span></div>
+    </div>
+    <div class="row">
+      <label>必要売価（税抜）</label>
+      <div class="value" id="r-needprice" style="font-size:1.4rem;color:var(--accent)">-</div>
+    </div>
+    <div class="hint">
+      必要売価 ＝ 原価 ÷ (1 − 目標粗利率)。粗利率(対売価) ＝ 粗利 ÷ 売価、値入率(対原価) ＝ 粗利 ÷ 原価。<br>
+      ※ 税抜ベース。実際の値付けは下代・掛率・消化率により調整してください。
+    </div>
+  </div>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+  const yen = n => Math.round(n).toLocaleString('ja-JP') + ' 円';
+  const pct = n => n.toFixed(1) + ' %';
+
+  ['cost', 'price', 'target'].forEach(id => $(id).addEventListener('input', recalc));
+
+  function recalc() {
+    const num = id => Math.max(0, parseFloat($(id).value) || 0);
+    const cost = num('cost');
+    const price = num('price');
+
+    if (price > 0) {
+      const profit = price - cost;
+      $('r-profit').textContent = yen(profit);
+      $('r-margin').textContent = pct(profit / price * 100);
+      $('r-markup').textContent = cost > 0 ? pct(profit / cost * 100) : '-';
+      $('r-costrate').textContent = pct(cost / price * 100);
+    } else {
+      ['r-profit', 'r-margin', 'r-markup', 'r-costrate'].forEach(id => $(id).textContent = '-');
+    }
+
+    // 逆算
+    const target = Math.min(99.9, num('target')) / 100;
+    if (cost > 0 && target < 1) {
+      const need = cost / (1 - target);
+      $('r-needprice').textContent = yen(need) + '（値入率 ' + pct((need - cost) / cost * 100) + '）';
+    } else {
+      $('r-needprice').textContent = '-';
+    }
+  }
+
+  recalc();
+</script>
+</body>
+</html>
