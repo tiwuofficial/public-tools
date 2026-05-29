@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>設備総合効率 OEE 計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>設備総合効率 OEE 計算</h1>
+    <p class="lead">稼働率・性能稼働率・良品率から OEE を算出します（製造現場の見える化に）。</p>
+  </header>
+
+  <div class="card">
+    <div class="form-row">
+      <label>負荷時間（分）</label>
+      <input type="number" id="load" min="0" step="any" placeholder="例: 480" style="width:110px">
+      <label>停止時間（分）</label>
+      <input type="number" id="down" min="0" step="any" placeholder="例: 60" style="width:110px">
+    </div>
+    <div class="form-row">
+      <label>基準サイクルタイム（秒/個）</label>
+      <input type="number" id="ct" min="0" step="any" placeholder="例: 30" style="width:110px">
+      <label>生産数（個）</label>
+      <input type="number" id="qty" min="0" step="1" placeholder="例: 700" style="width:110px">
+      <label>不良数（個）</label>
+      <input type="number" id="ng" min="0" step="1" value="0" style="width:90px">
+    </div>
+  </div>
+
+  <div id="warn"></div>
+
+  <div class="stats">
+    <div class="stat"><div class="label">稼働率 (Availability)</div><div class="value" id="r-a">— %</div></div>
+    <div class="stat"><div class="label">性能稼働率 (Performance)</div><div class="value" id="r-p">— %</div></div>
+    <div class="stat"><div class="label">良品率 (Quality)</div><div class="value" id="r-q">— %</div></div>
+    <div class="stat"><div class="label">OEE（総合）</div><div class="value" id="r-oee">— %</div></div>
+  </div>
+
+  <div id="judge" class="banner" style="display:none"></div>
+</div>
+
+<script>
+  const ids = ['load', 'down', 'ct', 'qty', 'ng'];
+  const el = {};
+  ids.forEach(id => el[id] = document.getElementById(id));
+
+  function pct(n) {
+    return (Math.round(n * 1000) / 10).toLocaleString('ja-JP', { maximumFractionDigits: 1 }) + ' %';
+  }
+  function num(v) {
+    const n = parseFloat(v);
+    return isFinite(n) ? n : NaN;
+  }
+
+  function calc() {
+    const load = num(el.load.value);   // 負荷時間(分)
+    const down = num(el.down.value);    // 停止時間(分)
+    const ct = num(el.ct.value);        // 基準サイクルタイム(秒/個)
+    const qty = num(el.qty.value);      // 生産数(個)
+    const ng = num(el.ng.value);        // 不良数(個)
+
+    const warn = document.getElementById('warn');
+    const warns = [];
+
+    // 稼働率 = (負荷 - 停止) / 負荷
+    let a = NaN, runMin = NaN;
+    if (isFinite(load) && load > 0 && isFinite(down) && down >= 0) {
+      runMin = load - down;
+      if (runMin < 0) { warns.push('停止時間が負荷時間を超えています。'); }
+      else a = runMin / load;
+    }
+
+    // 性能稼働率 = (基準CT[秒] × 生産数) / 稼働時間[秒]
+    let p = NaN;
+    if (isFinite(a) && runMin > 0 && isFinite(ct) && ct > 0 && isFinite(qty) && qty >= 0) {
+      p = (ct * qty) / (runMin * 60);
+      if (p > 1) { warns.push('性能稼働率が 100% を超えています（基準サイクルタイム／稼働時間を確認）。'); }
+    }
+
+    // 良品率 = (生産数 - 不良数) / 生産数
+    let q = NaN;
+    if (isFinite(qty) && qty > 0 && isFinite(ng) && ng >= 0) {
+      if (ng > qty) { warns.push('不良数が生産数を超えています。'); }
+      else q = (qty - ng) / qty;
+    }
+
+    document.getElementById('r-a').textContent = isFinite(a) ? pct(a) : '— %';
+    document.getElementById('r-p').textContent = isFinite(p) ? pct(Math.min(p, 9.999)) : '— %';
+    document.getElementById('r-q').textContent = isFinite(q) ? pct(q) : '— %';
+
+    const judge = document.getElementById('judge');
+    if (isFinite(a) && isFinite(p) && isFinite(q) && p <= 1) {
+      const oee = a * p * q;
+      document.getElementById('r-oee').textContent = pct(oee);
+      const v = oee * 100;
+      judge.style.display = '';
+      if (v >= 85) {
+        judge.className = 'banner ok';
+        judge.textContent = `OEE ${pct(oee)} — ワールドクラス基準(85%)を達成しています。`;
+      } else {
+        judge.className = 'banner';
+        judge.textContent = `OEE ${pct(oee)} — ワールドクラス基準は 85%。残り ${pct(0.85 - oee)} の改善余地があります。`;
+      }
+    } else {
+      document.getElementById('r-oee').textContent = '— %';
+      judge.style.display = 'none';
+    }
+
+    warn.innerHTML = warns.length
+      ? '<div class="banner error">' + warns.join('<br>') + '</div>'
+      : '';
+  }
+
+  ids.forEach(id => el[id].addEventListener('input', calc));
+  calc();
+</script>
+</body>
+</html>
