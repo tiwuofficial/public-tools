@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>睡眠サイクル計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>睡眠サイクル計算</h1>
+    <p class="lead">睡眠を約90分サイクルで区切り、すっきり起きやすい時刻を提案します。</p>
+  </header>
+
+  <div class="tabs">
+    <button id="tab-wake" class="active" type="button">起きたい時刻から</button>
+    <button id="tab-sleep" type="button">寝る時刻から</button>
+  </div>
+
+  <!-- 起きたい時刻から → 就寝時刻の候補 -->
+  <section id="mode-wake">
+    <div class="form-row">
+      <label for="wake-time">起きたい時刻</label>
+      <input type="time" id="wake-time" value="07:00">
+      <label for="onset-a">入眠まで</label>
+      <input type="number" id="onset-a" min="0" max="60" value="15">
+      <span class="pane-label">分</span>
+    </div>
+    <p class="lead">この時刻に起きるには、次のいずれかの時刻に寝るのがおすすめです。</p>
+  </section>
+
+  <!-- 寝る時刻から → 起床時刻の候補 -->
+  <section id="mode-sleep" hidden>
+    <div class="form-row">
+      <label for="sleep-time">寝る時刻</label>
+      <input type="time" id="sleep-time" value="23:00">
+      <button id="now-btn" type="button">今すぐ</button>
+      <label for="onset-b">入眠まで</label>
+      <input type="number" id="onset-b" min="0" max="60" value="15">
+      <span class="pane-label">分</span>
+    </div>
+    <p class="lead">この時刻に寝ると、次のいずれかの時刻に起きるとすっきりしやすいです。</p>
+  </section>
+
+  <div id="result" class="card-grid"></div>
+
+  <footer class="page-footer">
+    1 サイクル = 90 分、入眠までの時間を加味して計算しています（個人差があります）。
+  </footer>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const CYCLE = 90; // 分
+  // 表示するサイクル数（少ない順）。5〜6 を推奨としてハイライト。
+  const CYCLES = [3, 4, 5, 6];
+  const RECOMMENDED = [5, 6];
+
+  let mode = "wake";
+
+  function parseTime(str) {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(str || "");
+    if (!m) return null;
+    const h = parseInt(m[1], 10), mi = parseInt(m[2], 10);
+    if (h > 23 || mi > 59) return null;
+    return h * 60 + mi;
+  }
+
+  function fmt(totalMin) {
+    const t = ((totalMin % 1440) + 1440) % 1440;
+    const h = Math.floor(t / 60), m = t % 60;
+    return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+  }
+
+  function durLabel(min) {
+    const h = Math.floor(min / 60), m = min % 60;
+    return m === 0 ? (h + "時間") : (h + "時間" + m + "分");
+  }
+
+  function card(timeMin, cycles, dayOffset) {
+    const wrap = document.createElement("div");
+    wrap.className = "card";
+    const recommended = RECOMMENDED.includes(cycles);
+    if (recommended) {
+      wrap.style.borderColor = "var(--accent)";
+      wrap.style.borderWidth = "2px";
+    }
+    const title = document.createElement("div");
+    title.className = "card-title";
+    const t = document.createElement("span");
+    t.style.fontSize = "1.5rem";
+    t.textContent = fmt(timeMin) + (dayOffset > 0 ? "（翌日）" : dayOffset < 0 ? "（前日）" : "");
+    const badge = document.createElement("span");
+    badge.className = "count";
+    badge.textContent = recommended ? "おすすめ" : (cycles + "サイクル");
+    if (recommended) badge.style.color = "var(--accent)";
+    title.appendChild(t);
+    title.appendChild(badge);
+    const sub = document.createElement("div");
+    sub.className = "pane-label";
+    sub.textContent = cycles + " サイクル / 睡眠 " + durLabel(cycles * CYCLE);
+    wrap.appendChild(title);
+    wrap.appendChild(sub);
+    return wrap;
+  }
+
+  function calc() {
+    const result = $("result");
+    result.innerHTML = "";
+
+    if (mode === "wake") {
+      const wake = parseTime($("wake-time").value);
+      const onset = parseInt($("onset-a").value, 10) || 0;
+      if (wake == null) return;
+      // 就寝時刻 = 起床 - サイクル*90 - 入眠 （多いサイクルほど早い就寝）
+      [...CYCLES].sort((a, b) => b - a).forEach(c => {
+        const raw = wake - c * CYCLE - onset;
+        const dayOffset = raw < 0 ? -1 : 0;
+        result.appendChild(card(raw, c, dayOffset));
+      });
+    } else {
+      const sleep = parseTime($("sleep-time").value);
+      const onset = parseInt($("onset-b").value, 10) || 0;
+      if (sleep == null) return;
+      // 起床時刻 = 就寝 + 入眠 + サイクル*90
+      CYCLES.forEach(c => {
+        const raw = sleep + onset + c * CYCLE;
+        const dayOffset = raw >= 1440 ? 1 : 0;
+        result.appendChild(card(raw, c, dayOffset));
+      });
+    }
+  }
+
+  function setMode(m) {
+    mode = m;
+    $("tab-wake").classList.toggle("active", m === "wake");
+    $("tab-sleep").classList.toggle("active", m === "sleep");
+    $("mode-wake").hidden = m !== "wake";
+    $("mode-sleep").hidden = m !== "sleep";
+    calc();
+  }
+
+  $("tab-wake").addEventListener("click", () => setMode("wake"));
+  $("tab-sleep").addEventListener("click", () => setMode("sleep"));
+  $("now-btn").addEventListener("click", () => {
+    const now = new Date();
+    $("sleep-time").value =
+      String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
+    calc();
+  });
+
+  ["wake-time", "onset-a", "sleep-time", "onset-b"].forEach(id => {
+    $(id).addEventListener("input", calc);
+  });
+
+  calc();
+</script>
+</body>
+</html>
