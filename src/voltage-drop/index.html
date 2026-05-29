@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>電圧降下計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>電圧降下計算</h1>
+    <p class="lead">内線規程の簡易式で配線の電圧降下・降下率・末端電圧を計算します。</p>
+  </header>
+
+  <div class="card">
+    <div class="form-row">
+      <label>配線方式</label>
+      <select id="method">
+        <option value="35.6">単相2線式（k=35.6）</option>
+        <option value="30.8">三相3線式（k=30.8）</option>
+        <option value="17.8">単相3線式（k=17.8）</option>
+      </select>
+      <label>基準電圧 V(V)</label>
+      <input type="number" id="volt" value="100" min="0" step="any" style="width:100px">
+    </div>
+    <div class="form-row">
+      <label>こう長 L(m)</label>
+      <input type="number" id="len" min="0" step="any" placeholder="例: 40" style="width:100px">
+      <label>電流 I(A)</label>
+      <input type="number" id="cur" min="0" step="any" placeholder="例: 20" style="width:100px">
+      <label>断面積 A(mm²)</label>
+      <input type="number" id="area" min="0" step="any" placeholder="例: 3.5" style="width:100px">
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="label">電圧降下</div><div class="value" id="r-drop">— V</div></div>
+    <div class="stat"><div class="label">降下率</div><div class="value" id="r-rate">— %</div></div>
+    <div class="stat"><div class="label">末端電圧</div><div class="value" id="r-end">— V</div></div>
+  </div>
+
+  <div id="judge" class="banner" style="display:none"></div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="pane-label">計算式・許容値の目安</div>
+    <p style="margin:6px 0 0;font-size:0.9rem;color:var(--muted)">
+      電圧降下 e = k × L × I ÷ (1000 × A)。降下率 = e ÷ V × 100。<br>
+      内線規程の許容電圧降下率（幹線＋分岐の目安）: こう長 60m以下 3% ／ 120m以下 5% ／ 200m以下 6% ／ 200m超 7%。
+    </p>
+  </div>
+</div>
+
+<script>
+  const ids = ['method', 'volt', 'len', 'cur', 'area'];
+  const el = {};
+  ids.forEach(id => el[id] = document.getElementById(id));
+
+  function fmt(n, d) {
+    return (Math.round(n * Math.pow(10, d)) / Math.pow(10, d))
+      .toLocaleString('ja-JP', { maximumFractionDigits: d });
+  }
+
+  // 内線規程の許容電圧降下率(%)の目安（こう長別）
+  function allowableRate(L) {
+    if (L <= 60) return 3;
+    if (L <= 120) return 5;
+    if (L <= 200) return 6;
+    return 7;
+  }
+
+  function calc() {
+    const k = parseFloat(el.method.value);
+    const V = parseFloat(el.volt.value);
+    const L = parseFloat(el.len.value);
+    const I = parseFloat(el.cur.value);
+    const A = parseFloat(el.area.value);
+
+    const judge = document.getElementById('judge');
+    const valid = [V, L, I, A].every(x => isFinite(x) && x > 0);
+
+    if (!valid) {
+      document.getElementById('r-drop').textContent = '— V';
+      document.getElementById('r-rate').textContent = '— %';
+      document.getElementById('r-end').textContent = '— V';
+      judge.style.display = 'none';
+      return;
+    }
+
+    const e = k * L * I / (1000 * A);
+    const rate = e / V * 100;
+    const end = V - e;
+
+    document.getElementById('r-drop').textContent = fmt(e, 2) + ' V';
+    document.getElementById('r-rate').textContent = fmt(rate, 2) + ' %';
+    document.getElementById('r-end').textContent = fmt(end, 1) + ' V';
+
+    const allow = allowableRate(L);
+    judge.style.display = '';
+    if (rate <= allow) {
+      judge.className = 'banner ok';
+      judge.textContent = `降下率 ${fmt(rate, 2)}% ≤ 許容目安 ${allow}%（こう長 ${fmt(L, 0)}m）— 目安内です。`;
+    } else {
+      judge.className = 'banner error';
+      judge.textContent = `降下率 ${fmt(rate, 2)}% が許容目安 ${allow}%（こう長 ${fmt(L, 0)}m）を超過 — 電線を太くする／こう長短縮を検討。`;
+    }
+  }
+
+  ids.forEach(id => el[id].addEventListener('input', calc));
+  calc();
+</script>
+</body>
+</html>
