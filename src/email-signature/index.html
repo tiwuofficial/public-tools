@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>メール署名ジェネレータ - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  .grid { display: grid; grid-template-columns: 160px 1fr; gap: 8px 12px; align-items: center; }
+  .grid label { color: var(--muted); font-size: 0.9rem; }
+  .options { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; }
+  .options .field { display: flex; flex-direction: column; gap: 4px; }
+  pre.preview { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9rem; white-space: pre; overflow: auto; min-height: 220px; }
+  .copied { color: #16a34a; font-size: 0.85rem; margin-left: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>メール署名ジェネレータ</h1>
+    <p class="lead">入力した情報からビジネスメール用の署名(プレーンテキスト)を生成。</p>
+  </header>
+
+  <div class="card">
+    <div class="grid">
+      <label>氏名</label><input type="text" id="name" placeholder="山田 太郎">
+      <label>かな</label><input type="text" id="kana" placeholder="やまだ たろう">
+      <label>会社名</label><input type="text" id="company" placeholder="株式会社サンプル">
+      <label>部署</label><input type="text" id="dept" placeholder="営業部">
+      <label>役職</label><input type="text" id="title" placeholder="課長">
+      <label>電話</label><input type="text" id="tel" placeholder="03-1234-5678">
+      <label>Mobile</label><input type="text" id="mobile" placeholder="090-0000-0000">
+      <label>FAX</label><input type="text" id="fax" placeholder="03-1234-5679">
+      <label>メール</label><input type="text" id="email" placeholder="taro@example.com">
+      <label>URL</label><input type="text" id="url" placeholder="https://example.com">
+      <label>住所</label><input type="text" id="addr" placeholder="〒100-0001 東京都千代田区...">
+    </div>
+
+    <div class="options">
+      <div class="field">
+        <label>区切り線</label>
+        <select id="sep">
+          <option value="===">===========</option>
+          <option value="---">-----------</option>
+          <option value="━">━━━━━━━</option>
+          <option value="─">───────</option>
+          <option value="＝">＝＝＝＝＝＝＝</option>
+          <option value="">なし</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>テンプレ</label>
+        <select id="template">
+          <option value="simple">シンプル</option>
+          <option value="double">上下に二重線</option>
+          <option value="block">罫線で囲む</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>区切り線の長さ</label>
+        <input type="number" id="sepLen" min="3" max="60" value="40">
+      </div>
+    </div>
+  </div>
+
+  <h2>プレビュー</h2>
+  <pre class="preview" id="preview"></pre>
+  <div class="actions">
+    <button class="primary" id="copy">クリップボードにコピー</button>
+    <span class="copied" id="copied" hidden>コピーしました</span>
+  </div>
+</div>
+<script>
+  const ids = ['name','kana','company','dept','title','tel','mobile','fax','email','url','addr','sep','template','sepLen'];
+  const $ = id => document.getElementById(id);
+  const STORAGE_KEY = 'public-tools-email-signature';
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      for (const id of ids) if (data[id] != null) $(id).value = data[id];
+    } catch {}
+  }
+  function save() {
+    const data = {};
+    for (const id of ids) data[id] = $(id).value;
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch {}
+  }
+
+  function build() {
+    const v = {};
+    for (const id of ids) v[id] = $(id).value.trim();
+    const sep = v.sep;
+    const len = Math.max(3, Math.min(60, parseInt(v.sepLen, 10) || 40));
+    const sepLine = sep ? sep.repeat(Math.ceil(len / Math.max(1, [...sep].length))).slice(0, len) : '';
+
+    const lines = [];
+    if (v.company) lines.push(v.company);
+    if (v.dept || v.title) lines.push([v.dept, v.title].filter(Boolean).join(' '));
+    if (v.name) {
+      if (v.kana) lines.push(`${v.name} (${v.kana})`);
+      else lines.push(v.name);
+    }
+    if (v.addr) lines.push(v.addr);
+    const contacts = [];
+    if (v.tel) contacts.push(`TEL: ${v.tel}`);
+    if (v.mobile) contacts.push(`Mobile: ${v.mobile}`);
+    if (v.fax) contacts.push(`FAX: ${v.fax}`);
+    if (contacts.length) lines.push(contacts.join(' / '));
+    if (v.email) lines.push(`E-mail: ${v.email}`);
+    if (v.url) lines.push(`URL: ${v.url}`);
+
+    const tmpl = v.template;
+    let out;
+    if (tmpl === 'simple') {
+      out = (sepLine ? sepLine + '\n' : '') + lines.join('\n');
+    } else if (tmpl === 'double') {
+      out = (sepLine ? sepLine + '\n' : '') + lines.join('\n') + (sepLine ? '\n' + sepLine : '');
+    } else {
+      // block: 罫線で囲む
+      const inner = lines;
+      const w = Math.max(...inner.map(s => stringWidth(s)), 8);
+      const top = '┌' + '─'.repeat(w + 2) + '┐';
+      const bot = '└' + '─'.repeat(w + 2) + '┘';
+      const middle = inner.map(s => '│ ' + s + ' '.repeat(w - stringWidth(s)) + ' │').join('\n');
+      out = [top, middle, bot].join('\n');
+    }
+    $('preview').textContent = out || '入力してください';
+  }
+
+  function stringWidth(s) {
+    let w = 0;
+    for (const c of s) w += c.charCodeAt(0) > 0xFF ? 2 : 1;
+    return w;
+  }
+
+  for (const id of ids) {
+    $(id).addEventListener('input', () => { build(); save(); });
+    $(id).addEventListener('change', () => { build(); save(); });
+  }
+
+  $('copy').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText($('preview').textContent);
+      const c = $('copied');
+      c.hidden = false;
+      setTimeout(() => c.hidden = true, 1500);
+    } catch {
+      alert('コピーに失敗しました');
+    }
+  });
+
+  load();
+  build();
+</script>
+</body>
+</html>
