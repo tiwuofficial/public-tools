@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>会議コスト計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  .row { display: grid; grid-template-columns: 200px 1fr; gap: 12px; align-items: center; margin: 10px 0; }
+  .row label { color: var(--muted); font-size: 0.9rem; }
+  .toggle { display: inline-flex; gap: 4px; border: 1px solid var(--border); border-radius: var(--radius); padding: 2px; }
+  .toggle button { border: none; background: transparent; padding: 6px 12px; border-radius: 4px; }
+  .toggle button.active { background: var(--accent); color: #fff; }
+  .total { font-size: 2rem; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .hint { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>会議コスト計算</h1>
+    <p class="lead">人数 × 時給 × 時間 で会議のコストを計算。年間換算も。</p>
+  </header>
+
+  <div class="card">
+    <div class="row">
+      <label>参加者数(人)</label>
+      <input type="number" id="people" min="1" value="5">
+    </div>
+    <div class="row">
+      <label>給与の入力方法</label>
+      <div class="toggle" id="mode">
+        <button data-mode="hourly" class="active">時給</button>
+        <button data-mode="annual">年収</button>
+      </div>
+    </div>
+    <div class="row" id="hourly-row">
+      <label>1人あたり時給(円)</label>
+      <input type="number" id="hourly" min="0" value="3000">
+    </div>
+    <div class="row" id="annual-row" style="display:none">
+      <label>1人あたり年収(万円)</label>
+      <input type="number" id="annual" min="0" value="600">
+    </div>
+    <div class="row">
+      <label>会議時間(分)</label>
+      <input type="number" id="minutes" min="1" value="60">
+    </div>
+    <div class="row">
+      <label>頻度</label>
+      <select id="freq">
+        <option value="0">単発</option>
+        <option value="52">毎週(年52回)</option>
+        <option value="24">隔週(年24回)</option>
+        <option value="12">月1(年12回)</option>
+        <option value="4">四半期(年4回)</option>
+      </select>
+    </div>
+  </div>
+
+  <h2>結果</h2>
+  <div class="card">
+    <div class="row">
+      <label>1人あたり時給</label>
+      <div id="r-hourly">-</div>
+    </div>
+    <div class="row">
+      <label>1回のコスト</label>
+      <div class="total" id="r-once">-</div>
+    </div>
+    <div class="row">
+      <label>年間コスト</label>
+      <div class="total" id="r-year">-</div>
+    </div>
+    <div class="hint">年収→時給換算は「年収 ÷ 2000 時間」で計算しています（標準的な年間労働時間）。実コストには社会保険料等が加算されますが、ここでは含めていません。</div>
+  </div>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+  let mode = 'hourly';
+
+  document.querySelectorAll('#mode button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#mode button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      mode = btn.dataset.mode;
+      $('hourly-row').style.display = mode === 'hourly' ? '' : 'none';
+      $('annual-row').style.display = mode === 'annual' ? '' : 'none';
+      recalc();
+    });
+  });
+
+  ['people','hourly','annual','minutes','freq'].forEach(id => {
+    $(id).addEventListener('input', recalc);
+    $(id).addEventListener('change', recalc);
+  });
+
+  function fmt(n) {
+    if (!isFinite(n)) return '-';
+    return '¥' + Math.round(n).toLocaleString();
+  }
+
+  function recalc() {
+    const people = parseFloat($('people').value) || 0;
+    const minutes = parseFloat($('minutes').value) || 0;
+    const freq = parseFloat($('freq').value) || 0;
+    let hourly;
+    if (mode === 'hourly') {
+      hourly = parseFloat($('hourly').value) || 0;
+    } else {
+      const annual = parseFloat($('annual').value) || 0;
+      hourly = (annual * 10000) / 2000;
+    }
+    const once = people * hourly * (minutes / 60);
+    const year = freq > 0 ? once * freq : 0;
+    $('r-hourly').textContent = fmt(hourly) + ' / 時';
+    $('r-once').textContent = fmt(once);
+    $('r-year').textContent = freq > 0 ? fmt(year) : '（単発）';
+  }
+
+  recalc();
+</script>
+</body>
+</html>
