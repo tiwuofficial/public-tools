@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>記念日カウンター - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  .add-row { display: grid; grid-template-columns: 1fr 220px auto; gap: 8px; align-items: end; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 16px; }
+  .anniv { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; position: relative; }
+  .anniv h3 { margin: 0 0 4px; font-size: 1.05rem; }
+  .anniv .date { color: var(--muted); font-size: 0.85rem; }
+  .anniv .days { font-size: 2rem; font-weight: 600; color: var(--accent); margin: 8px 0 4px; font-variant-numeric: tabular-nums; }
+  .anniv .sub { font-size: 0.85rem; color: var(--muted); }
+  .anniv .milestone { display: inline-block; background: var(--accent-weak); color: var(--accent); padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; margin-top: 6px; }
+  .anniv .delete { position: absolute; top: 8px; right: 8px; background: transparent; border: none; color: var(--muted); cursor: pointer; padding: 4px 8px; }
+  .anniv .delete:hover { color: var(--danger); }
+  .sort-row { display: flex; gap: 12px; align-items: center; margin-top: 16px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>記念日カウンター</h1>
+    <p class="lead">大切な日からの経過日数と次の節目までの残り日数を一覧。データはブラウザ内に保存。</p>
+  </header>
+
+  <div class="card">
+    <div class="add-row">
+      <div>
+        <label style="font-size:0.85rem;color:var(--muted)">記念日の名前</label>
+        <input type="text" id="name" placeholder="例: 結婚記念日">
+      </div>
+      <div>
+        <label style="font-size:0.85rem;color:var(--muted)">日付</label>
+        <input type="date" id="date">
+      </div>
+      <button class="primary" id="add">追加</button>
+    </div>
+  </div>
+
+  <div class="sort-row">
+    <label>並び替え:</label>
+    <select id="sort" style="width:auto">
+      <option value="next">次の節目が近い順</option>
+      <option value="old">古い順(経過日数が多い順)</option>
+      <option value="new">新しい順</option>
+      <option value="added">登録順</option>
+    </select>
+  </div>
+
+  <div class="cards" id="list"></div>
+</div>
+<script>
+  const KEY = 'public-tools-anniversaries';
+  let items = [];
+  try { items = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { items = []; }
+
+  const $ = id => document.getElementById(id);
+
+  function save() { localStorage.setItem(KEY, JSON.stringify(items)); }
+
+  function daysBetween(a, b) {
+    const ms = b.getTime() - a.getTime();
+    return Math.floor(ms / 86400000);
+  }
+
+  function weddingName(years) {
+    const m = { 1:'紙婚式', 5:'木婚式', 10:'錫婚式', 15:'水晶婚式', 20:'磁器婚式', 25:'銀婚式', 30:'真珠婚式', 35:'珊瑚婚式', 40:'ルビー婚式', 45:'サファイア婚式', 50:'金婚式', 55:'エメラルド婚式', 60:'ダイヤモンド婚式', 75:'プラチナ婚式' };
+    return m[years] || null;
+  }
+
+  function nextMilestone(days) {
+    // 100日刻み: 100, 200, 300, ..., 1000, 2000, ...
+    let step;
+    if (days < 1000) step = 100;
+    else if (days < 10000) step = 1000;
+    else step = 10000;
+    const next = (Math.floor(days / step) + 1) * step;
+    return { target: next, remaining: next - days };
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function render() {
+    const sort = $('sort').value;
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const enriched = items.map((it, idx) => {
+      const d = new Date(it.date + 'T00:00:00');
+      const days = daysBetween(d, today);
+      const years = Math.floor(days / 365.25);
+      const months = Math.floor(days / 30.4375);
+      const ms = nextMilestone(days);
+      const wn = weddingName(years);
+      return { ...it, idx, d, days, years, months, ms, wn };
+    });
+    if (sort === 'next') enriched.sort((a,b) => a.ms.remaining - b.ms.remaining);
+    else if (sort === 'old') enriched.sort((a,b) => b.days - a.days);
+    else if (sort === 'new') enriched.sort((a,b) => a.days - b.days);
+    // added: original order
+
+    const list = $('list');
+    if (enriched.length === 0) {
+      list.innerHTML = '<div style="color:var(--muted)">まだ記念日が登録されていません。上のフォームから追加してください。</div>';
+      return;
+    }
+    list.innerHTML = enriched.map(it => {
+      const dateStr = it.d.toLocaleDateString('ja-JP', { year:'numeric', month:'long', day:'numeric', weekday:'short' });
+      return `<div class="anniv">
+        <button class="delete" data-idx="${it.idx}" title="削除">×</button>
+        <h3>${escapeHtml(it.name)}</h3>
+        <div class="date">${dateStr}</div>
+        <div class="days">${it.days.toLocaleString()} 日</div>
+        <div class="sub">経過: ${it.years} 年 / ${it.months} ヶ月</div>
+        <div class="sub">次の節目 ${it.ms.target.toLocaleString()} 日まであと <b>${it.ms.remaining}</b> 日</div>
+        ${it.wn ? `<div class="milestone">${it.years} 年: ${it.wn}</div>` : ''}
+      </div>`;
+    }).join('');
+
+    list.querySelectorAll('.delete').forEach(b => {
+      b.addEventListener('click', () => {
+        const idx = parseInt(b.dataset.idx, 10);
+        if (!confirm(`「${items[idx].name}」を削除しますか？`)) return;
+        items.splice(idx, 1);
+        save();
+        render();
+      });
+    });
+  }
+
+  $('add').addEventListener('click', () => {
+    const name = $('name').value.trim();
+    const date = $('date').value;
+    if (!name || !date) { alert('名前と日付を入力してください'); return; }
+    items.push({ name, date });
+    save();
+    $('name').value = '';
+    $('date').value = '';
+    render();
+  });
+
+  $('sort').addEventListener('change', render);
+
+  // 初期値で今日を日付欄に入れておく
+  const t = new Date();
+  $('date').value = t.toISOString().slice(0,10);
+
+  render();
+</script>
+</body>
+</html>
