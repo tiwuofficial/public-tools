@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>手取り給料計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  .row { display: grid; grid-template-columns: 240px 1fr 80px; gap: 12px; align-items: center; margin: 8px 0; }
+  .row label { color: var(--muted); font-size: 0.9rem; }
+  .row .unit { color: var(--muted); }
+  .net { font-size: 2.4rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+  table.breakdown { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  table.breakdown th, table.breakdown td { border: 1px solid var(--border); padding: 8px 12px; text-align: right; font-variant-numeric: tabular-nums; }
+  table.breakdown th { background: var(--bg); }
+  table.breakdown td:first-child, table.breakdown th:first-child { text-align: left; }
+  .hint { color: var(--muted); font-size: 0.85rem; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>手取り給料計算</h1>
+    <p class="lead">額面年収から社会保険料・所得税・住民税を概算で差し引いた手取りを算出。</p>
+  </header>
+
+  <h2>入力</h2>
+  <div class="card">
+    <div class="row">
+      <label>額面年収</label>
+      <input type="number" id="gross" min="0" value="5000000">
+      <div class="unit">円</div>
+    </div>
+    <div class="row">
+      <label>扶養家族数(配偶者含む)</label>
+      <input type="number" id="dependents" min="0" max="10" value="0">
+      <div class="unit">人</div>
+    </div>
+    <div class="row">
+      <label>年齢</label>
+      <input type="number" id="age" min="20" max="70" value="35">
+      <div class="unit">歳</div>
+    </div>
+  </div>
+
+  <h2>結果</h2>
+  <div class="card" style="text-align:center">
+    <div style="color:var(--muted); font-size:0.9rem">年間手取り</div>
+    <div class="net" id="net-year">-</div>
+    <div style="color:var(--muted); font-size:0.9rem; margin-top:12px">月収換算(賞与なし想定)</div>
+    <div class="net" style="font-size:1.6rem" id="net-month">-</div>
+  </div>
+
+  <h2>内訳</h2>
+  <table class="breakdown" id="break">
+    <thead><tr><th>項目</th><th>年額(円)</th><th>備考</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="hint">※ 東京都 / 協会けんぽ・40歳未満は介護保険なしを前提とした概算です。賞与・各種控除・住宅ローン控除等は含みません。実際の手取りとは差があります。</div>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+
+  // 給与所得控除(2020年以降)
+  function kyuyoKoujo(gross) {
+    if (gross <= 1625000) return 550000;
+    if (gross <= 1800000) return Math.floor(gross * 0.4) - 100000;
+    if (gross <= 3600000) return Math.floor(gross * 0.3) + 80000;
+    if (gross <= 6600000) return Math.floor(gross * 0.2) + 440000;
+    if (gross <= 8500000) return Math.floor(gross * 0.1) + 1100000;
+    return 1950000;
+  }
+
+  // 所得税(超過累進)
+  function shotokuzei(taxable) {
+    let t = 0;
+    const brackets = [
+      [1950000, 0.05, 0],
+      [3300000, 0.10, 97500],
+      [6950000, 0.20, 427500],
+      [9000000, 0.23, 636000],
+      [18000000, 0.33, 1536000],
+      [40000000, 0.40, 2796000],
+      [Infinity, 0.45, 4796000]
+    ];
+    for (const [cap, rate, ded] of brackets) {
+      if (taxable <= cap) { t = Math.max(0, Math.floor(taxable * rate) - ded); break; }
+    }
+    // 復興特別所得税 2.1%
+    return Math.floor(t * 1.021);
+  }
+
+  function yen(n) { return '¥' + Math.round(n).toLocaleString(); }
+
+  function calc() {
+    const gross = Math.max(0, parseFloat($('gross').value) || 0);
+    const dep = Math.max(0, parseInt($('dependents').value, 10) || 0);
+    const age = parseInt($('age').value, 10) || 35;
+
+    // 社会保険料(概算)
+    // 健康保険: 9.98% (協会けんぽ東京、本人負担分は半分)
+    const kenpo = gross * 0.0998 / 2;
+    // 介護保険(40-64歳): 1.82%/2
+    const kaigo = (age >= 40 && age < 65) ? gross * 0.0182 / 2 : 0;
+    // 厚生年金: 18.3%/2 = 9.15%
+    const nenkin = gross * 0.0915;
+    // 雇用保険: 0.6% (一般)
+    const koyou = gross * 0.006;
+    const social = kenpo + kaigo + nenkin + koyou;
+
+    // 基礎控除 + 配偶者控除 + 扶養控除
+    const kiso = 480000;
+    const haigu = dep >= 1 ? 380000 : 0;
+    const fuyou = Math.max(0, dep - 1) * 380000;
+
+    // 所得税
+    const kyuyo = kyuyoKoujo(gross);
+    const taxableIncome = Math.max(0, gross - kyuyo - social - kiso - haigu - fuyou);
+    const incomeTax = shotokuzei(taxableIncome);
+
+    // 住民税(課税所得 × 10% - 5,000) (基礎控除33万を別途使うが概算でこのまま)
+    const juuminTaxable = Math.max(0, gross - kyuyo - social - 430000 - (dep >= 1 ? 330000 : 0) - Math.max(0, dep - 1) * 330000);
+    const juuminTax = Math.max(0, Math.floor(juuminTaxable * 0.10) - 5000);
+
+    const totalDeduct = social + incomeTax + juuminTax;
+    const net = gross - totalDeduct;
+
+    $('net-year').textContent = yen(net);
+    $('net-month').textContent = yen(net / 12);
+
+    const rows = [
+      ['給与所得控除', kyuyo, '額面から差し引く'],
+      ['健康保険料(本人)', kenpo, ''],
+      ['介護保険料(本人)', kaigo, age >= 40 && age < 65 ? '40歳以上' : '対象外'],
+      ['厚生年金保険料(本人)', nenkin, ''],
+      ['雇用保険料(本人)', koyou, ''],
+      ['所得税', incomeTax, '復興特別所得税込'],
+      ['住民税', juuminTax, '概算'],
+      ['控除合計', totalDeduct, '手取り計算で引く分'],
+    ];
+    $('break').querySelector('tbody').innerHTML = rows
+      .map(r => `<tr><td>${r[0]}</td><td>${yen(r[1])}</td><td>${r[2]}</td></tr>`)
+      .join('');
+  }
+
+  ['gross','dependents','age'].forEach(id => {
+    $(id).addEventListener('input', calc);
+  });
+  calc();
+</script>
+</body>
+</html>
