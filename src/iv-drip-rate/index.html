@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>点滴滴下数計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>点滴滴下数計算</h1>
+    <p class="lead">輸液量・投与時間・滴下係数から、滴下数（滴/分）と10秒あたりの滴数を計算します。</p>
+  </header>
+
+  <div class="card">
+    <div class="form-row">
+      <label>輸液量（mL）</label>
+      <input type="number" id="vol" min="0" step="1" value="500">
+    </div>
+    <div class="form-row">
+      <label>投与時間</label>
+      <input type="number" id="hh" min="0" step="1" value="2">
+      <span class="muted">時間</span>
+      <input type="number" id="mm" min="0" step="1" value="0">
+      <span class="muted">分</span>
+    </div>
+    <div class="form-row">
+      <label>滴下係数</label>
+      <select id="factor">
+        <option value="20">成人用 20 gtt/mL</option>
+        <option value="60">小児・微量用 60 gtt/mL</option>
+        <option value="custom">任意</option>
+      </select>
+      <input type="number" id="customf" min="1" step="1" value="15" style="display:none">
+      <span class="muted" id="fu" style="display:none">gtt/mL</span>
+    </div>
+  </div>
+
+  <h2>結果</h2>
+  <div class="stats">
+    <div class="stat"><div class="label">滴下数</div><div class="value" id="r-min">-</div></div>
+    <div class="stat"><div class="label">10秒あたり</div><div class="value" id="r-10s">-</div></div>
+    <div class="stat"><div class="label">流量</div><div class="value" id="r-flow">-</div></div>
+    <div class="stat"><div class="label">1滴の間隔</div><div class="value" id="r-int">-</div></div>
+  </div>
+  <p class="muted" style="margin-top:12px">※ 概算値です。実際の投与は医師の指示・院内基準・使用する輸液セットの表示に従ってください。</p>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+  ['vol', 'hh', 'mm', 'factor', 'customf'].forEach(id => {
+    $(id).addEventListener('input', recalc);
+    $(id).addEventListener('change', recalc);
+  });
+
+  function factorVal() {
+    const sel = $('factor').value;
+    const custom = sel === 'custom';
+    $('customf').style.display = custom ? '' : 'none';
+    $('fu').style.display = custom ? '' : 'none';
+    return custom ? (parseFloat($('customf').value) || 0) : parseFloat(sel);
+  }
+
+  function recalc() {
+    const vol = parseFloat($('vol').value) || 0;
+    const totalMin = (parseFloat($('hh').value) || 0) * 60 + (parseFloat($('mm').value) || 0);
+    const f = factorVal();
+
+    if (vol <= 0 || totalMin <= 0 || f <= 0) {
+      ['r-min', 'r-10s', 'r-flow', 'r-int'].forEach(i => $(i).textContent = '-');
+      return;
+    }
+
+    const perMin = vol * f / totalMin;          // 滴/分
+    const per10s = perMin / 6;                   // 滴/10秒
+    const flow = vol / (totalMin / 60);          // mL/時
+    const interval = perMin > 0 ? 60 / perMin : NaN; // 秒/滴
+
+    const r = n => Math.round(n * 10) / 10;
+    $('r-min').textContent = r(perMin).toLocaleString() + ' 滴/分';
+    $('r-10s').textContent = r(per10s).toLocaleString() + ' 滴';
+    $('r-flow').textContent = r(flow).toLocaleString() + ' mL/時';
+    $('r-int').textContent = r(interval).toLocaleString() + ' 秒';
+  }
+
+  recalc();
+</script>
+</body>
+</html>
