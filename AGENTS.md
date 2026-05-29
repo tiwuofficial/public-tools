@@ -73,7 +73,7 @@
 1. `ls src/` と `ls issues/` で既存ツール・候補を確認し、未実装かつ重複しないアイデアを 1 つ決める
 2. `src/<kebab-case-name>/index.html` を作成（テンプレート準拠）
 3. 必要なら `src/_shared/style.css` に共通コンポーネントを追記
-4. ルートの `index.html` のツール一覧 `<ul class="tools">` にリンクと `.desc` を追加
+4. ルートの `index.html` のツール一覧 `<ul class="tools">` にリンクと `.desc` を追加（**必ず `<ul class="tools">` の末尾に追加する**。既存項目の順番は変えない）
 5. HTML 構文と JS の明らかな誤りを目視チェック
 6. `git add` で対象ファイルだけステージ → `git commit -m "Add <tool name> tool"`
 7. `git push` する（コミットごとに都度 push してよい）
