@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>スライドパズル（15パズル） - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>スライドパズル（15パズル）</h1>
+    <p class="lead">タイルをスライドして数字を順番に並べましょう。空きマスの隣をクリックで移動します。</p>
+  </header>
+
+  <div class="form-row">
+    <label for="size">盤面サイズ</label>
+    <select id="size">
+      <option value="3">3 × 3</option>
+      <option value="4" selected>4 × 4</option>
+      <option value="5">5 × 5</option>
+    </select>
+    <button id="shuffle" class="primary" type="button">シャッフル / 新しいゲーム</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="label">手数</div><div class="value" id="moves">0</div></div>
+    <div class="stat"><div class="label">経過</div><div class="value" id="elapsed">0.0s</div></div>
+  </div>
+
+  <div id="board" style="display:grid;gap:6px;justify-content:center;margin:20px 0"></div>
+  <div id="banner-area"></div>
+
+  <footer class="page-footer">すべてブラウザ内で完結します（外部送信なし）。</footer>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const boardEl = $("board");
+
+  let size = 4;
+  let tiles = [];      // 長さ size*size、0 が空きマス
+  let blankIndex = 0;
+  let moves = 0;
+  let startTime = 0;
+  let timerId = null;
+  let started = false;
+  let solved = true;   // シャッフル前の完成状態では操作を受けない
+
+  function solvedTiles(n) {
+    const a = [];
+    for (let i = 1; i < n * n; i++) a.push(i);
+    a.push(0);
+    return a;
+  }
+
+  function isSolved() {
+    for (let i = 0; i < tiles.length - 1; i++) {
+      if (tiles[i] !== i + 1) return false;
+    }
+    return tiles[tiles.length - 1] === 0;
+  }
+
+  function neighbors(idx) {
+    const r = Math.floor(idx / size), c = idx % size;
+    const res = [];
+    if (r > 0) res.push(idx - size);
+    if (r < size - 1) res.push(idx + size);
+    if (c > 0) res.push(idx - 1);
+    if (c < size - 1) res.push(idx + 1);
+    return res;
+  }
+
+  function swap(i, j) {
+    const t = tiles[i]; tiles[i] = tiles[j]; tiles[j] = t;
+  }
+
+  function shuffle() {
+    size = parseInt($("size").value, 10) || 4;
+    tiles = solvedTiles(size);
+    blankIndex = tiles.length - 1;
+    // 完成形からランダムな合法手を多数適用 → 必ず解ける
+    const steps = size * size * 60;
+    let prev = -1;
+    for (let s = 0; s < steps; s++) {
+      const nbrs = neighbors(blankIndex).filter(n => n !== prev);
+      const pick = nbrs[Math.floor(Math.random() * nbrs.length)];
+      swap(blankIndex, pick);
+      prev = blankIndex;
+      blankIndex = pick;
+    }
+    // 万一そろってしまったら軽く崩す
+    if (isSolved()) {
+      const nbrs = neighbors(blankIndex);
+      const pick = nbrs[0];
+      swap(blankIndex, pick);
+      blankIndex = pick;
+    }
+    moves = 0;
+    started = false;
+    solved = false;
+    $("moves").textContent = "0";
+    $("elapsed").textContent = "0.0s";
+    $("banner-area").innerHTML = "";
+    if (timerId) { clearInterval(timerId); timerId = null; }
+    render();
+  }
+
+  function startTimer() {
+    if (started) return;
+    started = true;
+    startTime = performance.now();
+    timerId = setInterval(() => {
+      $("elapsed").textContent = ((performance.now() - startTime) / 1000).toFixed(1) + "s";
+    }, 100);
+  }
+
+  function clickTile(idx) {
+    if (solved) return;
+    if (!neighbors(idx).includes(blankIndex)) return;  // 空きマス隣接のみ
+    startTimer();
+    swap(idx, blankIndex);
+    blankIndex = idx;
+    moves++;
+    $("moves").textContent = moves;
+    render();
+    if (isSolved()) win();
+  }
+
+  function win() {
+    solved = true;
+    if (timerId) { clearInterval(timerId); timerId = null; }
+    const sec = ((performance.now() - startTime) / 1000).toFixed(1);
+    $("banner-area").innerHTML =
+      '<div class="banner ok">クリア！ ' + moves + ' 手 / ' + sec + ' 秒でそろえました 🎉</div>';
+  }
+
+  function render() {
+    boardEl.style.gridTemplateColumns = "repeat(" + size + ", 64px)";
+    boardEl.innerHTML = "";
+    tiles.forEach((v, idx) => {
+      if (v === 0) {
+        const blank = document.createElement("div");
+        blank.style.width = "64px";
+        blank.style.height = "64px";
+        boardEl.appendChild(blank);
+      } else {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = v;
+        btn.style.width = "64px";
+        btn.style.height = "64px";
+        btn.style.fontSize = "1.3rem";
+        btn.style.fontWeight = "600";
+        if (solved) {
+          btn.style.background = "var(--accent-weak)";
+          btn.style.color = "var(--accent)";
+          btn.style.borderColor = "var(--accent)";
+        }
+        btn.addEventListener("click", () => clickTile(idx));
+        boardEl.appendChild(btn);
+      }
+    });
+  }
+
+  $("shuffle").addEventListener("click", shuffle);
+  $("size").addEventListener("change", shuffle);
+
+  // 初期はシャッフル済みで開始
+  shuffle();
+</script>
+</body>
+</html>
