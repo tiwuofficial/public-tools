@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>容積重量（体積重量）計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  .row { display: grid; grid-template-columns: 200px 1fr; gap: 12px; align-items: center; margin: 10px 0; }
+  .row label { color: var(--muted); font-size: 0.9rem; }
+  .dim { display: flex; align-items: center; gap: 8px; }
+  .dim input { width: 100px; }
+  .dim .x { color: var(--muted); }
+  .dim .unit { color: var(--muted); font-size: 0.85rem; }
+  .hint { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.8rem; background: var(--accent); color: #fff; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>容積重量（体積重量）計算</h1>
+    <p class="lead">荷物の寸法から容積重量を求め、実重量と比較して請求対象の課金重量を判定。</p>
+  </header>
+
+  <div class="card">
+    <div class="row">
+      <label>寸法（長さ × 幅 × 高さ）</label>
+      <div class="dim">
+        <input type="number" id="len" min="0" step="any" value="40">
+        <span class="x">×</span>
+        <input type="number" id="wid" min="0" step="any" value="30">
+        <span class="x">×</span>
+        <input type="number" id="hei" min="0" step="any" value="25">
+        <span class="unit">cm</span>
+      </div>
+    </div>
+    <div class="row">
+      <label>実重量</label>
+      <div class="dim"><input type="number" id="actual" min="0" step="any" value="3"><span class="unit">kg</span></div>
+    </div>
+    <div class="row">
+      <label>換算除数</label>
+      <div class="dim">
+        <select id="divisor-preset">
+          <option value="5000" selected>5000（国内宅配の一般値）</option>
+          <option value="6000">6000（IATA 航空・国際）</option>
+          <option value="custom">カスタム</option>
+        </select>
+        <input type="number" id="divisor" min="1" step="any" value="5000" style="width:110px">
+        <span class="unit">cm³/kg</span>
+      </div>
+    </div>
+    <div class="row">
+      <label>個数（口数）</label>
+      <div class="dim"><input type="number" id="qty" min="1" step="1" value="1"><span class="unit">個</span></div>
+    </div>
+  </div>
+
+  <h2>計算結果</h2>
+  <div class="stats" id="results">
+    <div class="stat"><div class="label">容積</div><div class="value" id="r-vol">-</div></div>
+    <div class="stat"><div class="label">容積重量</div><div class="value" id="r-vw">-</div></div>
+    <div class="stat"><div class="label">課金重量（1個）</div><div class="value" id="r-charge">-</div></div>
+    <div class="stat"><div class="label">合計課金重量</div><div class="value" id="r-total">-</div></div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <label>採用された重量</label>
+      <div id="r-which">-</div>
+    </div>
+    <div class="hint">
+      容積重量 ＝ 長さ × 幅 × 高さ（cm）÷ 除数。課金重量 ＝ max(実重量, 容積重量) を 0.5kg 単位で切り上げ。<br>
+      除数・切り上げ単位は運送会社により異なります（概算用途）。
+    </div>
+  </div>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+
+  $('divisor-preset').addEventListener('change', () => {
+    const v = $('divisor-preset').value;
+    if (v !== 'custom') $('divisor').value = v;
+    recalc();
+  });
+  $('divisor').addEventListener('input', () => {
+    $('divisor-preset').value = 'custom';
+    recalc();
+  });
+  ['len', 'wid', 'hei', 'actual', 'qty'].forEach(id => $(id).addEventListener('input', recalc));
+
+  const ceilHalf = n => Math.ceil(n * 2) / 2; // 0.5kg 単位で切り上げ
+
+  function recalc() {
+    const num = id => Math.max(0, parseFloat($(id).value) || 0);
+    const len = num('len'), wid = num('wid'), hei = num('hei');
+    const actual = num('actual');
+    const divisor = Math.max(1, parseFloat($('divisor').value) || 5000);
+    const qty = Math.max(1, Math.floor(num('qty')));
+
+    const volCm3 = len * wid * hei;
+    if (volCm3 <= 0) {
+      ['r-vol', 'r-vw', 'r-charge', 'r-total'].forEach(id => $(id).textContent = '-');
+      $('r-which').textContent = '寸法を入力してください';
+      return;
+    }
+
+    const vw = volCm3 / divisor;                 // 容積重量(kg)
+    const billable = Math.max(actual, vw);       // 大きい方
+    const charge = ceilHalf(billable);           // 0.5kg 切り上げ
+    const total = charge * qty;
+
+    $('r-vol').textContent = volCm3.toLocaleString('ja-JP') + ' cm³（' + (volCm3 / 1e6).toFixed(3) + ' m³）';
+    $('r-vw').textContent = vw.toFixed(2) + ' kg';
+    $('r-charge').textContent = charge.toFixed(1) + ' kg';
+    $('r-total').textContent = total.toFixed(1) + ' kg（' + qty + ' 個）';
+
+    const useVol = vw > actual;
+    $('r-which').innerHTML = '<span class="badge">' + (useVol ? '容積重量' : '実重量') +
+      '</span> を採用（実重量 ' + actual.toFixed(2) + ' kg / 容積重量 ' + vw.toFixed(2) + ' kg）';
+  }
+
+  recalc();
+</script>
+</body>
+</html>
