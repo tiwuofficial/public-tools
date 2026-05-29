@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>計算ドリル - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>計算ドリル</h1>
+    <p class="lead">たし算・ひき算・かけ算・わり算のランダム出題。暗算練習や脳トレに。</p>
+  </header>
+
+  <!-- 設定画面 -->
+  <section id="setup">
+    <h2>出題する計算</h2>
+    <div class="actions">
+      <label><input type="checkbox" class="op" value="+" checked> たし算 (＋)</label>
+      <label><input type="checkbox" class="op" value="-" checked> ひき算 (−)</label>
+      <label><input type="checkbox" class="op" value="*"> かけ算 (×)</label>
+      <label><input type="checkbox" class="op" value="/"> わり算 (÷)</label>
+    </div>
+
+    <div class="form-row">
+      <label for="level">むずかしさ</label>
+      <select id="level">
+        <option value="easy">やさしい（〜10）</option>
+        <option value="normal" selected>ふつう（〜20）</option>
+        <option value="hard">むずかしい（〜99）</option>
+      </select>
+      <label for="qcount">問題数</label>
+      <input type="number" id="qcount" min="1" max="100" value="10">
+    </div>
+
+    <div class="actions">
+      <button id="start" class="primary" type="button">スタート</button>
+    </div>
+    <div id="setup-banner"></div>
+  </section>
+
+  <!-- 出題画面 -->
+  <section id="quiz" hidden>
+    <div class="stats">
+      <div class="stat"><div class="label">問題</div><div class="value" id="progress">1 / 10</div></div>
+      <div class="stat"><div class="label">正解</div><div class="value" id="correct">0</div></div>
+      <div class="stat"><div class="label">経過</div><div class="value" id="elapsed">0.0s</div></div>
+    </div>
+
+    <div id="question" class="display">7 + 5 = ?</div>
+    <div class="form-row" style="justify-content:center">
+      <input type="number" id="answer" inputmode="numeric" autocomplete="off" style="max-width:200px;text-align:center;font-size:1.3rem">
+      <button id="submit" class="primary" type="button">こたえる</button>
+    </div>
+    <div id="feedback"></div>
+  </section>
+
+  <!-- 結果画面 -->
+  <section id="result" hidden>
+    <h2>けっか</h2>
+    <div class="stats">
+      <div class="stat"><div class="label">正答数</div><div class="value" id="r-correct">0 / 0</div></div>
+      <div class="stat"><div class="label">正答率</div><div class="value" id="r-rate">0%</div></div>
+      <div class="stat"><div class="label">タイム</div><div class="value" id="r-time">0.0s</div></div>
+      <div class="stat"><div class="label">1問あたり</div><div class="value" id="r-avg">0.0s</div></div>
+    </div>
+    <div id="r-wrong"></div>
+    <div class="actions">
+      <button id="again" class="primary" type="button">もう一度</button>
+      <button id="back" type="button">設定を変える</button>
+    </div>
+  </section>
+
+  <footer class="page-footer">すべてブラウザ内で完結します（外部送信なし）。</footer>
+</div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const setupEl = $("setup"), quizEl = $("quiz"), resultEl = $("result");
+
+  const LEVELS = {
+    easy:   { add: 10, mul: 9 },
+    normal: { add: 20, mul: 12 },
+    hard:   { add: 99, mul: 20 }
+  };
+
+  let problems = [];   // { text, answer }
+  let idx = 0;
+  let correct = 0;
+  let wrong = [];      // { text, answer, given }
+  let startTime = 0;
+  let timerId = null;
+
+  function rand(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function selectedOps() {
+    return Array.from(document.querySelectorAll(".op:checked")).map(c => c.value);
+  }
+
+  function makeProblem(ops, lv) {
+    const op = ops[rand(0, ops.length - 1)];
+    let a, b, ans, text;
+    if (op === "+") {
+      a = rand(0, lv.add); b = rand(0, lv.add); ans = a + b;
+      text = a + " + " + b;
+    } else if (op === "-") {
+      a = rand(0, lv.add); b = rand(0, a); ans = a - b;   // 負にならない
+      text = a + " − " + b;
+    } else if (op === "*") {
+      a = rand(1, lv.mul); b = rand(1, lv.mul); ans = a * b;
+      text = a + " × " + b;
+    } else { // "/"
+      b = rand(1, lv.mul); ans = rand(1, lv.mul); a = b * ans;  // 割り切れる
+      text = a + " ÷ " + b;
+    }
+    return { text: text + " = ?", answer: ans };
+  }
+
+  function start() {
+    const ops = selectedOps();
+    if (ops.length === 0) {
+      $("setup-banner").innerHTML = '<div class="banner error">計算の種類を1つ以上選んでください。</div>';
+      return;
+    }
+    let n = parseInt($("qcount").value, 10);
+    if (!Number.isFinite(n) || n < 1) n = 10;
+    if (n > 100) n = 100;
+    const lv = LEVELS[$("level").value] || LEVELS.normal;
+
+    problems = [];
+    for (let i = 0; i < n; i++) problems.push(makeProblem(ops, lv));
+    idx = 0; correct = 0; wrong = [];
+    $("setup-banner").innerHTML = "";
+
+    setupEl.hidden = true; resultEl.hidden = true; quizEl.hidden = false;
+    startTime = performance.now();
+    if (timerId) clearInterval(timerId);
+    timerId = setInterval(updateElapsed, 100);
+    showProblem();
+  }
+
+  function updateElapsed() {
+    const sec = (performance.now() - startTime) / 1000;
+    $("elapsed").textContent = sec.toFixed(1) + "s";
+  }
+
+  function showProblem() {
+    const p = problems[idx];
+    $("question").textContent = p.text;
+    $("progress").textContent = (idx + 1) + " / " + problems.length;
+    $("correct").textContent = correct;
+    $("feedback").innerHTML = "";
+    const ans = $("answer");
+    ans.value = "";
+    ans.focus();
+  }
+
+  function submit() {
+    const raw = $("answer").value.trim();
+    if (raw === "") { $("answer").focus(); return; }
+    const given = parseInt(raw, 10);
+    const p = problems[idx];
+    if (given === p.answer) {
+      correct++;
+      $("feedback").innerHTML = '<div class="banner ok">○ 正解！</div>';
+    } else {
+      wrong.push({ text: p.text, answer: p.answer, given: given });
+      $("feedback").innerHTML = '<div class="banner error">× 正解は ' + p.answer + '</div>';
+    }
+    idx++;
+    if (idx >= problems.length) {
+      finish();
+    } else {
+      // 少し見せてから次へ
+      setTimeout(showProblem, 350);
+    }
+  }
+
+  function finish() {
+    if (timerId) { clearInterval(timerId); timerId = null; }
+    const total = problems.length;
+    const sec = (performance.now() - startTime) / 1000;
+    quizEl.hidden = true; resultEl.hidden = false;
+    $("r-correct").textContent = correct + " / " + total;
+    $("r-rate").textContent = Math.round(correct / total * 100) + "%";
+    $("r-time").textContent = sec.toFixed(1) + "s";
+    $("r-avg").textContent = (sec / total).toFixed(1) + "s";
+
+    if (wrong.length === 0) {
+      $("r-wrong").innerHTML = '<div class="banner ok">全問正解！すばらしい！</div>';
+    } else {
+      const rows = wrong.map(w =>
+        "<li><span class='label'>" + w.text.replace(" = ?", "") +
+        "</span><span>あなた: " + w.given + " / 正解: " + w.answer + "</span></li>"
+      ).join("");
+      $("r-wrong").innerHTML = '<h2>まちがえた問題</h2><ul class="plain-list">' + rows + "</ul>";
+    }
+  }
+
+  function backToSetup() {
+    if (timerId) { clearInterval(timerId); timerId = null; }
+    resultEl.hidden = true; quizEl.hidden = true; setupEl.hidden = false;
+  }
+
+  $("start").addEventListener("click", start);
+  $("submit").addEventListener("click", submit);
+  $("answer").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); submit(); } });
+  $("again").addEventListener("click", start);
+  $("back").addEventListener("click", backToSetup);
+</script>
+</body>
+</html>
