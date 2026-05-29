@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>丸太材積計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>丸太材積計算</h1>
+    <p class="lead">末口二乗法（JAS）で末口直径・材長から丸太の材積(m³)を計算します。</p>
+  </header>
+
+  <h2>丸太の規格</h2>
+  <div id="rows"></div>
+  <div class="actions">
+    <button id="add" class="primary">＋ 規格を追加</button>
+    <button id="reset">リセット</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="label">合計本数</div><div class="value" id="r-count">0 本</div></div>
+    <div class="stat"><div class="label">合計材積</div><div class="value" id="r-vol">0 m³</div></div>
+    <div class="stat"><div class="label">石換算</div><div class="value" id="r-koku">0 石</div></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="pane-label">末口二乗法</div>
+    <p style="margin:6px 0 0;font-size:0.9rem;color:var(--muted)">
+      材長 L &lt; 6m: V = D² × L ÷ 10000 ／
+      材長 L ≥ 6m: V = (D + (L'−4)÷2)² × L ÷ 10000（L' は材長の小数切捨ての整数 m）。
+      V: m³, D: 末口直径(cm), L: 材長(m)。石換算は 1 石 ≒ 0.2782 m³。
+    </p>
+  </div>
+</div>
+
+<script>
+  const KOKU = 0.2782; // 1 石 ≒ 0.2782 m³（10立方尺）
+  const rowsEl = document.getElementById('rows');
+
+  function fmt(n, d) {
+    return (Math.round(n * Math.pow(10, d)) / Math.pow(10, d))
+      .toLocaleString('ja-JP', { maximumFractionDigits: d });
+  }
+
+  // 末口二乗法：1 本あたり材積(m³) と 適用式
+  function logVolume(D, L) {
+    if (!(D > 0) || !(L > 0)) return { v: 0, note: '' };
+    if (L < 6) {
+      return { v: D * D * L / 10000, note: 'L<6m' };
+    }
+    const Lp = Math.floor(L);          // 材長の小数切捨て（整数 m）
+    const eff = D + (Lp - 4) / 2;      // 補正後の径(cm)
+    return { v: eff * eff * L / 10000, note: 'L≥6m 補正径 ' + fmt(eff, 1) + 'cm' };
+  }
+
+  function makeRow() {
+    const row = document.createElement('div');
+    row.className = 'card log-row';
+    row.style.marginBottom = '10px';
+    row.innerHTML = `
+      <div class="form-row">
+        <label>末口直径(cm)</label>
+        <input type="number" class="dia" min="0" step="any" placeholder="例: 24" style="width:100px">
+        <label>材長(m)</label>
+        <input type="number" class="len" min="0" step="any" placeholder="例: 4" style="width:90px">
+        <label>本数</label>
+        <input type="number" class="qty" value="1" min="0" step="1" style="width:80px">
+        <span style="margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums" class="row-vol">— m³</span>
+        <button class="del">削除</button>
+      </div>
+      <div class="pane-label row-note" style="margin-top:6px"></div>`;
+    row.querySelector('.del').addEventListener('click', () => { row.remove(); calc(); });
+    row.querySelectorAll('input').forEach(i => i.addEventListener('input', calc));
+    rowsEl.appendChild(row);
+    return row;
+  }
+
+  function calc() {
+    let totalVol = 0, totalCount = 0;
+    rowsEl.querySelectorAll('.log-row').forEach(row => {
+      const D = parseFloat(row.querySelector('.dia').value);
+      const L = parseFloat(row.querySelector('.len').value);
+      const qty = parseInt(row.querySelector('.qty').value, 10);
+      const { v, note } = logVolume(D, L);
+      const n = (isFinite(qty) && qty > 0) ? qty : 0;
+      const rowVol = v * n;
+      totalVol += rowVol;
+      totalCount += n;
+      const volEl = row.querySelector('.row-vol');
+      const noteEl = row.querySelector('.row-note');
+      if (v > 0) {
+        volEl.textContent = fmt(v, 4) + ' m³/本 × ' + n + ' = ' + fmt(rowVol, 3) + ' m³';
+        noteEl.textContent = '適用式: ' + note;
+      } else {
+        volEl.textContent = '— m³';
+        noteEl.textContent = '';
+      }
+    });
+    document.getElementById('r-count').textContent = totalCount.toLocaleString('ja-JP') + ' 本';
+    document.getElementById('r-vol').textContent = fmt(totalVol, 3) + ' m³';
+    document.getElementById('r-koku').textContent = fmt(totalVol / KOKU, 2) + ' 石';
+  }
+
+  document.getElementById('add').addEventListener('click', () => { makeRow(); });
+  document.getElementById('reset').addEventListener('click', () => {
+    rowsEl.innerHTML = '';
+    makeRow();
+    calc();
+  });
+
+  makeRow();
+  calc();
+</script>
+</body>
+</html>
