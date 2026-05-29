@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ホテル RevPAR / ADR / 稼働率 計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  .row { display: grid; grid-template-columns: 220px 1fr; gap: 12px; align-items: center; margin: 10px 0; }
+  .row label { color: var(--muted); font-size: 0.9rem; }
+  .row input { width: 180px; }
+  .row .unit { color: var(--muted); font-size: 0.85rem; margin-left: 6px; }
+  .hint { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>ホテル RevPAR / ADR / 稼働率 計算</h1>
+    <p class="lead">総客室数・日数・販売室数・客室売上から OCC・ADR・RevPAR を算出。</p>
+  </header>
+
+  <div class="card">
+    <div class="row">
+      <label>総客室数</label>
+      <div><input type="number" id="rooms" min="0" step="1" value="100"><span class="unit">室</span></div>
+    </div>
+    <div class="row">
+      <label>対象日数</label>
+      <div><input type="number" id="nights" min="1" step="1" value="30"><span class="unit">泊（総供給室数 ＝ 総客室数 × 日数）</span></div>
+    </div>
+    <div class="row">
+      <label>販売客室数（期間合計）</label>
+      <div><input type="number" id="sold" min="0" step="1" value="2400"><span class="unit">室泊</span></div>
+    </div>
+    <div class="row">
+      <label>客室売上合計（期間合計）</label>
+      <div><input type="number" id="revenue" min="0" step="any" value="36000000"><span class="unit">円</span></div>
+    </div>
+  </div>
+
+  <h2>計算結果</h2>
+  <div class="stats" id="results">
+    <div class="stat"><div class="label">稼働率 OCC</div><div class="value" id="r-occ">-</div></div>
+    <div class="stat"><div class="label">ADR（平均客室単価）</div><div class="value" id="r-adr">-</div></div>
+    <div class="stat"><div class="label">RevPAR</div><div class="value" id="r-revpar">-</div></div>
+    <div class="stat"><div class="label">総供給室数</div><div class="value" id="r-supply">-</div></div>
+  </div>
+  <div class="card">
+    <div class="hint">
+      総供給室数 ＝ 総客室数 × 対象日数（室泊）<br>
+      稼働率 OCC(%) ＝ 販売客室数 ÷ 総供給室数 × 100<br>
+      ADR（円）＝ 客室売上 ÷ 販売客室数 ／ RevPAR（円）＝ 客室売上 ÷ 総供給室数 ＝ ADR × OCC
+    </div>
+  </div>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+  ['rooms', 'nights', 'sold', 'revenue'].forEach(id => $(id).addEventListener('input', recalc));
+
+  const yen = n => Math.round(n).toLocaleString('ja-JP') + ' 円';
+
+  function recalc() {
+    const num = id => Math.max(0, parseFloat($(id).value) || 0);
+    const rooms = num('rooms');
+    const nights = Math.max(1, Math.floor(num('nights')));
+    const sold = num('sold');
+    const revenue = num('revenue');
+
+    const supply = rooms * nights; // 総供給室数(室泊)
+
+    if (supply <= 0) {
+      ['r-occ', 'r-adr', 'r-revpar', 'r-supply'].forEach(id => $(id).textContent = '-');
+      return;
+    }
+
+    const occ = sold / supply * 100;
+    const adr = sold > 0 ? revenue / sold : 0;
+    const revpar = revenue / supply;
+
+    $('r-occ').textContent = occ.toFixed(1) + ' %';
+    $('r-adr').textContent = sold > 0 ? yen(adr) : '-';
+    $('r-revpar').textContent = yen(revpar);
+    $('r-supply').textContent = supply.toLocaleString('ja-JP') + ' 室泊';
+  }
+
+  recalc();
+</script>
+</body>
+</html>
