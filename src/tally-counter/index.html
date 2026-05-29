@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>数取りカウンター - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>数取りカウンター</h1>
+    <p class="lead">ボタンを押して数を数えるタリーカウンター。入場者数・棚卸し・回数・得点などに。</p>
+  </header>
+
+  <div class="actions">
+    <button id="add-counter" class="primary" type="button">＋ カウンターを追加</button>
+    <button id="reset-all" type="button">すべてリセット</button>
+  </div>
+
+  <div class="stats" id="summary">
+    <div class="stat">
+      <div class="label">カウンター数</div>
+      <div class="value" id="sum-count">0</div>
+    </div>
+    <div class="stat">
+      <div class="label">合計値</div>
+      <div class="value" id="sum-total">0</div>
+    </div>
+  </div>
+
+  <div id="counters" class="counter-list"></div>
+
+  <p class="lead" style="margin-top:16px">
+    選択中（青枠）のカウンターは <strong>Space / ↑ で +1</strong>、<strong>↓ で -1</strong> できます。
+  </p>
+
+  <footer class="page-footer">
+    内容はこのブラウザ内（localStorage）にのみ保存されます。
+  </footer>
+</div>
+
+<script>
+  const STORE_KEY = "tally-counter:v1";
+  const listEl = document.getElementById("counters");
+  const sumCountEl = document.getElementById("sum-count");
+  const sumTotalEl = document.getElementById("sum-total");
+
+  let state = load();
+  let selectedId = state.counters.length ? state.counters[0].id : null;
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.counters)) {
+          parsed.seq = parsed.seq || parsed.counters.length;
+          return parsed;
+        }
+      }
+    } catch (e) { /* ignore corrupt data */ }
+    return { seq: 0, counters: [] };
+  }
+
+  function save() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+    catch (e) { /* storage may be unavailable */ }
+  }
+
+  function addCounter() {
+    state.seq += 1;
+    const c = { id: state.seq, label: "カウンター " + state.seq, value: 0, step: 1 };
+    state.counters.push(c);
+    selectedId = c.id;
+    save();
+    render();
+  }
+
+  function findCounter(id) {
+    return state.counters.find(c => c.id === id);
+  }
+
+  function changeValue(id, delta) {
+    const c = findCounter(id);
+    if (!c) return;
+    c.value += delta;
+    selectedId = id;
+    save();
+    render();
+  }
+
+  function resetCounter(id) {
+    const c = findCounter(id);
+    if (!c) return;
+    c.value = 0;
+    save();
+    render();
+  }
+
+  function removeCounter(id) {
+    state.counters = state.counters.filter(c => c.id !== id);
+    if (selectedId === id) {
+      selectedId = state.counters.length ? state.counters[0].id : null;
+    }
+    save();
+    render();
+  }
+
+  function resetAll() {
+    if (!state.counters.length) return;
+    if (!confirm("すべてのカウンターを 0 にリセットします。よろしいですか？")) return;
+    state.counters.forEach(c => { c.value = 0; });
+    save();
+    render();
+  }
+
+  function updateSummary() {
+    sumCountEl.textContent = state.counters.length;
+    sumTotalEl.textContent = state.counters.reduce((a, c) => a + c.value, 0);
+  }
+
+  function render() {
+    listEl.textContent = "";
+    if (!state.counters.length) {
+      const empty = document.createElement("div");
+      empty.className = "card";
+      empty.style.color = "var(--muted)";
+      empty.style.textAlign = "center";
+      empty.textContent = "「＋ カウンターを追加」から始めましょう。";
+      listEl.appendChild(empty);
+      updateSummary();
+      return;
+    }
+
+    state.counters.forEach(c => {
+      const card = document.createElement("div");
+      card.className = "card counter-card" + (c.id === selectedId ? " selected" : "");
+      card.tabIndex = 0;
+      card.addEventListener("mousedown", () => { selectedId = c.id; updateSelection(); });
+      card.addEventListener("focusin", () => { selectedId = c.id; updateSelection(); });
+
+      // header row: label + remove
+      const head = document.createElement("div");
+      head.className = "counter-head";
+      const label = document.createElement("input");
+      label.type = "text";
+      label.value = c.label;
+      label.className = "counter-label";
+      label.addEventListener("input", () => { c.label = label.value; save(); });
+      const del = document.createElement("button");
+      del.type = "button";
+      del.textContent = "削除";
+      del.addEventListener("click", () => removeCounter(c.id));
+      head.appendChild(label);
+      head.appendChild(del);
+
+      // value display
+      const display = document.createElement("div");
+      display.className = "display counter-value";
+      display.textContent = c.value;
+
+      // main +/- buttons
+      const main = document.createElement("div");
+      main.className = "actions counter-main";
+      const minus = document.createElement("button");
+      minus.type = "button";
+      minus.textContent = "− " + c.step;
+      minus.addEventListener("click", () => changeValue(c.id, -c.step));
+      const plus = document.createElement("button");
+      plus.type = "button";
+      plus.className = "primary";
+      plus.textContent = "＋ " + c.step;
+      plus.addEventListener("click", () => changeValue(c.id, c.step));
+      main.appendChild(minus);
+      main.appendChild(plus);
+
+      // footer row: step + reset
+      const foot = document.createElement("div");
+      foot.className = "counter-foot";
+      const stepLabel = document.createElement("span");
+      stepLabel.className = "pane-label";
+      stepLabel.textContent = "ステップ";
+      const step = document.createElement("input");
+      step.type = "number";
+      step.min = "1";
+      step.value = c.step;
+      step.className = "counter-step";
+      step.addEventListener("input", () => {
+        const v = parseInt(step.value, 10);
+        c.step = (Number.isFinite(v) && v > 0) ? v : 1;
+        save();
+        minus.textContent = "− " + c.step;
+        plus.textContent = "＋ " + c.step;
+      });
+      const reset = document.createElement("button");
+      reset.type = "button";
+      reset.textContent = "リセット";
+      reset.addEventListener("click", () => resetCounter(c.id));
+      foot.appendChild(stepLabel);
+      foot.appendChild(step);
+      foot.appendChild(reset);
+
+      card.appendChild(head);
+      card.appendChild(display);
+      card.appendChild(main);
+      card.appendChild(foot);
+      listEl.appendChild(card);
+    });
+
+    updateSummary();
+  }
+
+  function updateSelection() {
+    document.querySelectorAll(".counter-card").forEach((el, i) => {
+      el.classList.toggle("selected", state.counters[i] && state.counters[i].id === selectedId);
+    });
+  }
+
+  document.getElementById("add-counter").addEventListener("click", addCounter);
+  document.getElementById("reset-all").addEventListener("click", resetAll);
+
+  document.addEventListener("keydown", (e) => {
+    // 入力欄にフォーカスがあるときはキーボード加減算しない
+    const tag = (e.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea") return;
+    if (selectedId == null) return;
+    if (e.key === " " || e.key === "ArrowUp") {
+      e.preventDefault();
+      changeValue(selectedId, findCounter(selectedId).step);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      changeValue(selectedId, -findCounter(selectedId).step);
+    }
+  });
+
+  render();
+</script>
+</body>
+</html>
