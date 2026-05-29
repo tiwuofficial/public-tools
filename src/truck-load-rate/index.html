@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>積載率計算（トラック） - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>積載率計算（トラック）</h1>
+    <p class="lead">最大積載量・荷台容積と荷物から、重量／容積の積載率・ネック・あと何個積めるかを計算します。</p>
+  </header>
+
+  <div class="card">
+    <div class="form-row">
+      <label>最大積載量（kg）</label>
+      <input type="number" id="maxw" min="0" step="1" value="2000">
+      <label>荷台容積（m³）</label>
+      <input type="number" id="maxv" min="0" step="0.1" value="10">
+    </div>
+    <div class="form-row">
+      <label>荷物1個の重量（kg）</label>
+      <input type="number" id="itemw" min="0" step="0.1" value="15">
+    </div>
+    <div class="form-row">
+      <label>荷物1個の体積（m³）</label>
+      <input type="number" id="itemv" min="0" step="0.001" value="0.05">
+    </div>
+    <div class="form-row">
+      <label>個数</label>
+      <input type="number" id="qty" min="0" step="1" value="100">
+    </div>
+  </div>
+
+  <h2>結果</h2>
+  <div class="stats">
+    <div class="stat"><div class="label">総重量</div><div class="value" id="r-tw">-</div></div>
+    <div class="stat"><div class="label">総体積</div><div class="value" id="r-tv">-</div></div>
+    <div class="stat"><div class="label">重量積載率</div><div class="value" id="r-rw">-</div></div>
+    <div class="stat"><div class="label">容積積載率</div><div class="value" id="r-rv">-</div></div>
+    <div class="stat"><div class="label">あと積める数</div><div class="value" id="r-more">-</div></div>
+  </div>
+  <p class="muted" id="note" style="margin-top:12px"></p>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+  ['maxw', 'maxv', 'itemw', 'itemv', 'qty'].forEach(id => $(id).addEventListener('input', recalc));
+
+  function pct(v) { return isFinite(v) ? (Math.round(v * 10) / 10).toLocaleString() + ' %' : '-'; }
+  function num(v, unit) { return isFinite(v) ? (Math.round(v * 1000) / 1000).toLocaleString() + ' ' + unit : '-'; }
+
+  function recalc() {
+    const maxw = parseFloat($('maxw').value) || 0;
+    const maxv = parseFloat($('maxv').value) || 0;
+    const itemw = parseFloat($('itemw').value) || 0;
+    const itemv = parseFloat($('itemv').value) || 0;
+    const qty = parseFloat($('qty').value) || 0;
+
+    const tw = itemw * qty;
+    const tv = itemv * qty;
+    const rw = maxw > 0 ? tw / maxw * 100 : NaN;
+    const rv = maxv > 0 ? tv / maxv * 100 : NaN;
+
+    $('r-tw').textContent = num(tw, 'kg');
+    $('r-tv').textContent = num(tv, 'm³');
+    $('r-rw').textContent = pct(rw);
+    $('r-rv').textContent = pct(rv);
+
+    // 重量・容積それぞれで積める最大個数 → 厳しい方が律速
+    const capByW = itemw > 0 ? Math.floor(maxw / itemw) : Infinity;
+    const capByV = itemv > 0 ? Math.floor(maxv / itemv) : Infinity;
+    const cap = Math.min(capByW, capByV);
+
+    if (!isFinite(cap)) {
+      $('r-more').textContent = '-';
+      $('note').textContent = '荷物1個の重量・体積を入力してください。';
+      return;
+    }
+
+    const more = cap - qty;
+    const neck = (isFinite(capByW) && isFinite(capByV))
+      ? (capByW < capByV ? '重量' : capByV < capByW ? '容積' : '重量・容積が同時')
+      : (isFinite(capByW) ? '重量' : '容積');
+
+    if (more >= 0) {
+      $('r-more').textContent = 'あと ' + more.toLocaleString() + ' 個';
+      $('note').textContent =
+        `この条件では最大 ${cap.toLocaleString()} 個まで積載可能（律速＝${neck}）。`;
+    } else {
+      $('r-more').textContent = (-more).toLocaleString() + ' 個 超過';
+      $('note').textContent =
+        `${neck}が上限を超えています。最大 ${cap.toLocaleString()} 個までに減らしてください。`;
+    }
+  }
+
+  recalc();
+</script>
+</body>
+</html>
