@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>時計の読み方練習 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  .clock-wrap { display: flex; justify-content: center; margin: 16px 0; }
+  svg.clock { background: #fff; border: 1px solid var(--border); border-radius: 50%; }
+  .level-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+  .level-row button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .answer-row { display: flex; gap: 12px; justify-content: center; align-items: center; margin-top: 16px; }
+  .answer-row input { width: 80px; font-size: 1.5rem; text-align: center; }
+  .judge { text-align: center; min-height: 1.6em; font-size: 1.3rem; font-weight: 600; margin: 12px 0; }
+  .judge.ok { color: #16a34a; }
+  .judge.ng { color: var(--danger); }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>時計の読み方練習</h1>
+    <p class="lead">ランダムに針が動く時計を見て、何時何分か当てよう。</p>
+  </header>
+
+  <div class="card">
+    <div>難易度:</div>
+    <div class="level-row" id="levels">
+      <button data-step="60" class="active">ちょうど (◯時)</button>
+      <button data-step="30">30分</button>
+      <button data-step="15">15分</button>
+      <button data-step="5">5分</button>
+      <button data-step="1">1分</button>
+    </div>
+    <div class="actions"><button class="primary" id="new">新しい問題</button></div>
+  </div>
+
+  <div class="clock-wrap"><svg class="clock" id="clock" width="280" height="280" viewBox="0 0 200 200"></svg></div>
+
+  <div class="answer-row">
+    <input type="number" id="h" min="0" max="12" placeholder="時">
+    <div>時</div>
+    <input type="number" id="m" min="0" max="59" placeholder="分">
+    <div>分</div>
+    <button class="primary" id="check">こたえあわせ</button>
+  </div>
+  <div class="judge" id="judge"></div>
+  <div class="actions" style="justify-content:center">
+    <button id="reveal">答えを表示</button>
+  </div>
+
+  <div class="stats" style="margin-top:20px">
+    <div class="stat"><div class="label">問題</div><div class="value" id="s-q">0</div></div>
+    <div class="stat"><div class="label">正解</div><div class="value" id="s-ok">0</div></div>
+    <div class="stat"><div class="label">連続</div><div class="value" id="s-streak">0</div></div>
+  </div>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+  const svg = $('clock');
+  let step = 60, cur = null, qCount = 0, okCount = 0, streak = 0;
+
+  document.querySelectorAll('#levels button').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#levels button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      step = parseInt(b.dataset.step, 10);
+      newQuestion();
+    });
+  });
+
+  function drawClock(h, m) {
+    const cx = 100, cy = 100, r = 92;
+    let html = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#fff" stroke="#111" stroke-width="3"/>`;
+    // hour marks
+    for (let i = 0; i < 60; i++) {
+      const a = (i / 60) * Math.PI * 2 - Math.PI / 2;
+      const r1 = i % 5 === 0 ? r - 10 : r - 5;
+      const x1 = cx + Math.cos(a) * r1, y1 = cy + Math.sin(a) * r1;
+      const x2 = cx + Math.cos(a) * r, y2 = cy + Math.sin(a) * r;
+      html += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#111" stroke-width="${i%5===0?2.5:1}"/>`;
+    }
+    // numbers (1-12)
+    for (let i = 1; i <= 12; i++) {
+      const a = (i / 12) * Math.PI * 2 - Math.PI / 2;
+      const x = cx + Math.cos(a) * (r - 20), y = cy + Math.sin(a) * (r - 20) + 6;
+      html += `<text x="${x}" y="${y}" text-anchor="middle" font-size="18" font-weight="600" fill="#111">${i}</text>`;
+    }
+    // hands
+    const hAngle = ((h % 12) + m / 60) / 12 * Math.PI * 2 - Math.PI / 2;
+    const mAngle = (m / 60) * Math.PI * 2 - Math.PI / 2;
+    const hx = cx + Math.cos(hAngle) * 48, hy = cy + Math.sin(hAngle) * 48;
+    const mx = cx + Math.cos(mAngle) * 72, my = cy + Math.sin(mAngle) * 72;
+    html += `<line x1="${cx}" y1="${cy}" x2="${hx}" y2="${hy}" stroke="#111" stroke-width="6" stroke-linecap="round"/>`;
+    html += `<line x1="${cx}" y1="${cy}" x2="${mx}" y2="${my}" stroke="#2563eb" stroke-width="4" stroke-linecap="round"/>`;
+    html += `<circle cx="${cx}" cy="${cy}" r="4" fill="#111"/>`;
+    svg.innerHTML = html;
+  }
+
+  function newQuestion() {
+    let h = 1 + Math.floor(Math.random() * 12);
+    let m;
+    if (step === 60) m = 0;
+    else m = Math.floor(Math.random() * (60 / step)) * step;
+    cur = { h, m };
+    drawClock(h, m);
+    $('h').value = ''; $('m').value = '';
+    $('judge').textContent = ''; $('judge').className = 'judge';
+    $('h').focus();
+  }
+
+  function judge() {
+    if (!cur) return;
+    const h = parseInt($('h').value, 10);
+    const m = parseInt($('m').value, 10);
+    if (isNaN(h) || isNaN(m)) return;
+    qCount++;
+    const hExp = cur.h % 12 === 0 ? 12 : cur.h % 12;
+    const hIn = h % 12 === 0 ? 12 : h % 12;
+    if (hIn === hExp && m === cur.m) {
+      okCount++; streak++;
+      $('judge').textContent = '○ せいかい！';
+      $('judge').className = 'judge ok';
+      setTimeout(newQuestion, 700);
+    } else {
+      streak = 0;
+      $('judge').textContent = `× ざんねん。 正解は ${cur.h}時 ${cur.m}分`;
+      $('judge').className = 'judge ng';
+    }
+    updateStats();
+  }
+
+  function updateStats() {
+    $('s-q').textContent = qCount;
+    $('s-ok').textContent = okCount;
+    $('s-streak').textContent = streak;
+  }
+
+  $('new').addEventListener('click', newQuestion);
+  $('check').addEventListener('click', judge);
+  $('reveal').addEventListener('click', () => {
+    if (!cur) return;
+    $('judge').textContent = `正解は ${cur.h}時 ${cur.m}分`;
+    $('judge').className = 'judge';
+  });
+  $('m').addEventListener('keydown', e => { if (e.key === 'Enter') judge(); });
+  $('h').addEventListener('keydown', e => { if (e.key === 'Enter') $('m').focus(); });
+
+  newQuestion();
+</script>
+</body>
+</html>
