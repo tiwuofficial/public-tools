@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>数当てゲーム - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  .game-row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .range-pick button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .guess-input { width: 140px; font-size: 2rem; text-align: center; }
+  .hint-box { font-size: 1.4rem; font-weight: 600; text-align: center; margin: 16px 0; min-height: 1.6em; }
+  .hint-box.up { color: #2563eb; }
+  .hint-box.down { color: #db2777; }
+  .hint-box.win { color: #16a34a; font-size: 2rem; }
+  .history { max-height: 220px; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 0.95rem; }
+  .history div { padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  .records { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>数当てゲーム</h1>
+    <p class="lead">指定範囲のランダムな数を当てよう。「もっと大きい/小さい」のヒントが出ます。</p>
+  </header>
+
+  <div class="card">
+    <div class="game-row">
+      <div>範囲:</div>
+      <div class="range-pick" id="ranges">
+        <button data-max="10">1-10</button>
+        <button data-max="50">1-50</button>
+        <button data-max="100" class="active">1-100</button>
+        <button data-max="1000">1-1000</button>
+      </div>
+      <button class="primary" id="start">新しいゲーム</button>
+    </div>
+  </div>
+
+  <div class="hint-box" id="hint">範囲を選んで「新しいゲーム」を押してね</div>
+
+  <div class="game-row" style="justify-content:center">
+    <input type="number" class="guess-input" id="guess" placeholder="?">
+    <button class="primary" id="check">よそうする</button>
+  </div>
+
+  <div class="stats" style="margin-top:16px">
+    <div class="stat"><div class="label">回数</div><div class="value" id="count">0</div></div>
+    <div class="stat"><div class="label">最少クリア回数</div><div class="value" id="best">-</div></div>
+  </div>
+
+  <h2>履歴</h2>
+  <div class="card history" id="history"></div>
+</div>
+<script>
+  const KEY = 'public-tools-number-guess-best';
+  const $ = id => document.getElementById(id);
+  let max = 100, answer = null, count = 0, finished = true, history = [];
+
+  function loadBest() {
+    try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { return {}; }
+  }
+  function saveBest(b) { localStorage.setItem(KEY, JSON.stringify(b)); }
+
+  function updateBestDisplay() {
+    const b = loadBest();
+    $('best').textContent = b[max] != null ? b[max] + ' 回' : '-';
+  }
+
+  document.querySelectorAll('#ranges button').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#ranges button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      max = parseInt(b.dataset.max, 10);
+      updateBestDisplay();
+    });
+  });
+
+  function newGame() {
+    answer = 1 + Math.floor(Math.random() * max);
+    count = 0;
+    finished = false;
+    history = [];
+    $('count').textContent = '0';
+    $('history').innerHTML = '';
+    $('hint').textContent = `1〜${max} の数を当てよう！`;
+    $('hint').className = 'hint-box';
+    $('guess').value = '';
+    $('guess').focus();
+    updateBestDisplay();
+  }
+
+  function check() {
+    if (finished) { alert('「新しいゲーム」を押して始めてね'); return; }
+    const v = parseInt($('guess').value, 10);
+    if (isNaN(v) || v < 1 || v > max) { alert(`1〜${max} の数を入れてね`); return; }
+    count++;
+    $('count').textContent = count;
+    history.unshift({ v, result: v === answer ? '正解!' : v < answer ? 'もっと大きい ↑' : 'もっと小さい ↓' });
+    $('history').innerHTML = history.map(h => `<div>${h.v} → ${h.result}</div>`).join('');
+    if (v === answer) {
+      finished = true;
+      $('hint').textContent = `🎉 ${count} 回でクリア！正解は ${answer} でした`;
+      $('hint').className = 'hint-box win';
+      const b = loadBest();
+      if (b[max] == null || count < b[max]) {
+        b[max] = count;
+        saveBest(b);
+        updateBestDisplay();
+      }
+    } else {
+      $('hint').textContent = v < answer ? 'もっと大きい ↑' : 'もっと小さい ↓';
+      $('hint').className = 'hint-box ' + (v < answer ? 'up' : 'down');
+      $('guess').value = '';
+      $('guess').focus();
+    }
+  }
+
+  $('start').addEventListener('click', newGame);
+  $('check').addEventListener('click', check);
+  $('guess').addEventListener('keydown', e => { if (e.key === 'Enter') check(); });
+
+  updateBestDisplay();
+</script>
+</body>
+</html>
