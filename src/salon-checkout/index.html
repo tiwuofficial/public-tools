@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>美容室 会計・終了時刻 計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  table.menu { width: 100%; border-collapse: collapse; }
+  table.menu th, table.menu td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; }
+  table.menu th { color: var(--muted); font-weight: 500; font-size: 0.85rem; }
+  table.menu td.num { text-align: right; }
+  table.menu input[type="text"] { width: 100%; }
+  table.menu input[type="number"] { width: 100px; text-align: right; }
+  table.menu .del { padding: 2px 8px; }
+  .opts { display: grid; grid-template-columns: 220px 1fr; gap: 10px; align-items: center; margin: 8px 0; }
+  .opts label { color: var(--muted); font-size: 0.9rem; }
+  .opts .inline { display: flex; gap: 8px; align-items: center; }
+  .total { font-size: 2rem; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .stat .value .unit { font-size: 0.9rem; color: var(--muted); font-weight: 400; margin-left: 2px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>美容室 会計・終了時刻 計算</h1>
+    <p class="lead">メニューを選んで合計金額・合計所要時間・終了予定時刻をまとめて計算。指名料・割引・税対応。</p>
+  </header>
+
+  <div class="card">
+    <table class="menu">
+      <thead>
+        <tr><th style="width:48px">含める</th><th>メニュー</th><th style="width:120px">料金(円)</th><th style="width:120px">所要(分)</th><th style="width:60px"></th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="actions" style="margin-top:10px">
+      <button id="add">＋ メニュー追加</button>
+    </div>
+  </div>
+
+  <h2>条件</h2>
+  <div class="card">
+    <div class="opts">
+      <label>開始時刻</label>
+      <input type="time" id="start" value="10:00">
+    </div>
+    <div class="opts">
+      <label>指名料（円）</label>
+      <input type="number" id="nominate" min="0" value="0">
+    </div>
+    <div class="opts">
+      <label>割引</label>
+      <div class="inline">
+        <input type="number" id="discount" min="0" value="0">
+        <select id="discType">
+          <option value="yen">円</option>
+          <option value="pct">％</option>
+        </select>
+      </div>
+    </div>
+    <div class="opts">
+      <label>料金は税抜</label>
+      <div class="inline">
+        <input type="checkbox" id="taxExclusive">
+        <span class="hint" style="color:var(--muted);font-size:0.85rem">チェックすると会計時に消費税10%を加算（既定は税込）</span>
+      </div>
+    </div>
+  </div>
+
+  <h2>会計</h2>
+  <div class="card">
+    <div class="stats" id="results"></div>
+    <div class="opts" style="margin-top:14px">
+      <label>合計金額</label>
+      <div class="total" id="grand">-</div>
+    </div>
+  </div>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+  const DEFAULTS = [
+    { on: true,  name: 'カット',          price: 4400, min: 40 },
+    { on: false, name: 'カラー',          price: 6600, min: 90 },
+    { on: false, name: 'パーマ',          price: 8800, min: 120 },
+    { on: false, name: 'トリートメント',  price: 2200, min: 30 },
+    { on: false, name: 'シャンプー・ブロー', price: 1100, min: 20 },
+  ];
+
+  function rowHtml(r) {
+    return `<tr>
+      <td style="text-align:center"><input type="checkbox" class="c-on" ${r.on ? 'checked' : ''}></td>
+      <td><input type="text" class="c-name" value="${r.name.replace(/"/g, '&quot;')}"></td>
+      <td class="num"><input type="number" class="c-price" min="0" value="${r.price}"></td>
+      <td class="num"><input type="number" class="c-min" min="0" value="${r.min}"></td>
+      <td><button class="del button">削除</button></td>
+    </tr>`;
+  }
+
+  function addRow(r) {
+    const tbody = $('rows');
+    const tr = document.createElement('tbody');
+    tr.innerHTML = rowHtml(r || { on: true, name: '', price: 0, min: 0 });
+    const row = tr.firstElementChild;
+    tbody.appendChild(row);
+    row.querySelectorAll('input').forEach(el => {
+      el.addEventListener('input', recalc);
+      el.addEventListener('change', recalc);
+    });
+    row.querySelector('.del').addEventListener('click', () => { row.remove(); recalc(); });
+  }
+
+  function fmtYen(n) { return isFinite(n) ? '¥' + Math.round(n).toLocaleString() : '-'; }
+  function fmtMin(m) {
+    if (!isFinite(m)) return '-';
+    const h = Math.floor(m / 60), mm = m % 60;
+    return (h > 0 ? h + '時間' : '') + mm + '分';
+  }
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function recalc() {
+    let itemSum = 0, minSum = 0;
+    document.querySelectorAll('#rows tr').forEach(tr => {
+      if (!tr.querySelector('.c-on').checked) return;
+      itemSum += parseFloat(tr.querySelector('.c-price').value) || 0;
+      minSum  += parseFloat(tr.querySelector('.c-min').value) || 0;
+    });
+
+    const nominate = parseFloat($('nominate').value) || 0;
+    const subtotal = itemSum + nominate;
+
+    const dv = parseFloat($('discount').value) || 0;
+    const discount = $('discType').value === 'pct'
+      ? subtotal * (Math.min(dv, 100) / 100)
+      : Math.min(dv, subtotal);
+
+    const afterDisc = Math.max(0, subtotal - discount);
+    const taxExcl = $('taxExclusive').checked;
+    const tax = taxExcl ? afterDisc * 0.10 : 0;
+    const grand = afterDisc + tax;
+
+    // 終了予定時刻
+    let endText = '-';
+    const sv = $('start').value;
+    if (sv && isFinite(minSum)) {
+      const [sh, sm] = sv.split(':').map(Number);
+      const total = sh * 60 + sm + minSum;
+      const eh = Math.floor(total / 60) % 24, em = total % 60;
+      const dayPlus = Math.floor(total / 60 / 24);
+      endText = (dayPlus > 0 ? '翌' : '') + pad(eh) + ':' + pad(em);
+    }
+
+    $('results').innerHTML = [
+      stat('合計所要時間', fmtMin(minSum)),
+      stat('終了予定時刻', endText),
+      stat('小計（施術）', fmtYen(itemSum)),
+      stat('指名料', fmtYen(nominate)),
+      stat('割引', discount > 0 ? '−' + fmtYen(discount) : '¥0'),
+      stat('消費税', taxExcl ? fmtYen(tax) : '込'),
+    ].join('');
+    $('grand').textContent = fmtYen(grand);
+  }
+
+  function stat(label, value) {
+    return `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div></div>`;
+  }
+
+  DEFAULTS.forEach(addRow);
+  $('add').addEventListener('click', () => addRow());
+  ['start','nominate','discount','discType','taxExclusive'].forEach(id => {
+    $(id).addEventListener('input', recalc);
+    $(id).addEventListener('change', recalc);
+  });
+  recalc();
+</script>
+</body>
+</html>
