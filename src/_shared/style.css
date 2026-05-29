@@ -425,6 +425,19 @@ mark.match.alt { background: #fcd34d; }
 .markdown-body th { background: var(--bg); }
 .markdown-body img { max-width: 100%; }
 
+/* pomodoro timer (ポモドーロタイマー) */
+.pomo-phase {
+  text-align: center;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 8px;
+  padding: 6px 0;
+  border-radius: var(--radius);
+}
+.pomo-phase.work { color: var(--accent); background: var(--accent-weak); }
+.pomo-phase.break { color: var(--added-fg); background: var(--added-bg); }
+.display.pomo.break-time { color: var(--added-fg); }
+
 /* bingo card (ビンゴカード) */
 .bingo-grid {
   margin-top: 16px;

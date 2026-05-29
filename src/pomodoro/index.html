@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ポモドーロタイマー - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>ポモドーロタイマー</h1>
+    <p class="lead">集中作業と休憩を繰り返すポモドーロ・テクニック用タイマー。仕事や勉強の集中管理に。</p>
+  </header>
+
+  <div id="phase" class="pomo-phase work">作業中</div>
+  <div id="time" class="display pomo">25:00</div>
+
+  <div class="actions" style="justify-content:center">
+    <button id="start" class="primary" type="button">スタート</button>
+    <button id="pause" type="button" disabled>一時停止</button>
+    <button id="reset" type="button">リセット</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="label">完了ポモドーロ</div>
+      <div class="value" id="done-count">0</div>
+    </div>
+    <div class="stat">
+      <div class="label">現在のセット</div>
+      <div class="value" id="set-count">1</div>
+    </div>
+  </div>
+
+  <h2>設定（分）</h2>
+  <div class="form-row">
+    <label for="work-min">作業</label>
+    <input type="number" id="work-min" min="1" max="180" value="25">
+    <label for="short-min">短い休憩</label>
+    <input type="number" id="short-min" min="1" max="60" value="5">
+    <label for="long-min">長い休憩</label>
+    <input type="number" id="long-min" min="1" max="120" value="15">
+    <label for="interval">長休憩まで</label>
+    <input type="number" id="interval" min="1" max="12" value="4">
+    <span class="pane-label">セット</span>
+  </div>
+
+  <footer class="page-footer">
+    設定はこのブラウザ内（localStorage）にのみ保存されます。
+  </footer>
+</div>
+
+<script>
+  const STORE_KEY = "pomodoro:v1";
+  const phaseEl = document.getElementById("phase");
+  const timeEl = document.getElementById("time");
+  const startBtn = document.getElementById("start");
+  const pauseBtn = document.getElementById("pause");
+  const resetBtn = document.getElementById("reset");
+  const doneCountEl = document.getElementById("done-count");
+  const setCountEl = document.getElementById("set-count");
+  const cfg = {
+    work: document.getElementById("work-min"),
+    short: document.getElementById("short-min"),
+    long: document.getElementById("long-min"),
+    interval: document.getElementById("interval")
+  };
+
+  let phase = "work";     // "work" | "short" | "long"
+  let remaining = 25 * 60;
+  let timerId = null;
+  let doneCount = 0;      // 完了した作業ポモドーロ数
+  let setInCycle = 1;     // 何セット目か（1..interval）
+  let audioCtx = null;
+
+  // --- 設定の保存・復元 ---
+  function loadConfig() {
+    try {
+      const s = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
+      if (Number.isFinite(s.work)) cfg.work.value = s.work;
+      if (Number.isFinite(s.short)) cfg.short.value = s.short;
+      if (Number.isFinite(s.long)) cfg.long.value = s.long;
+      if (Number.isFinite(s.interval)) cfg.interval.value = s.interval;
+    } catch (e) { /* ignore */ }
+  }
+  function saveConfig() {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify({
+        work: minOf("work"), short: minOf("short"),
+        long: minOf("long"), interval: intOf("interval")
+      }));
+    } catch (e) { /* ignore */ }
+  }
+
+  function minOf(key) {
+    const v = parseInt(cfg[key].value, 10);
+    return (Number.isFinite(v) && v > 0) ? v : 1;
+  }
+  function intOf(key) {
+    const v = parseInt(cfg[key].value, 10);
+    return (Number.isFinite(v) && v > 0) ? v : 1;
+  }
+
+  function phaseSeconds(p) {
+    if (p === "work") return minOf("work") * 60;
+    if (p === "short") return minOf("short") * 60;
+    return minOf("long") * 60;
+  }
+
+  function phaseLabel(p) {
+    if (p === "work") return "作業中";
+    if (p === "short") return "短い休憩";
+    return "長い休憩";
+  }
+
+  function fmt(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+  }
+
+  function render() {
+    timeEl.textContent = fmt(remaining);
+    phaseEl.textContent = phaseLabel(phase);
+    const isBreak = phase !== "work";
+    phaseEl.className = "pomo-phase " + (isBreak ? "break" : "work");
+    timeEl.className = "display pomo" + (isBreak ? " break-time" : "");
+    doneCountEl.textContent = doneCount;
+    setCountEl.textContent = setInCycle;
+    document.title = fmt(remaining) + " " + phaseLabel(phase) + " - ポモドーロ";
+  }
+
+  function beep() {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.6);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.6);
+    } catch (e) { /* 音が出せなくても継続 */ }
+  }
+
+  function nextPhase() {
+    beep();
+    if (phase === "work") {
+      doneCount++;
+      // interval セット完了ごとに長い休憩
+      if (setInCycle >= intOf("interval")) {
+        phase = "long";
+      } else {
+        phase = "short";
+      }
+    } else {
+      // 休憩終わり → 次の作業へ
+      if (phase === "long") {
+        setInCycle = 1;
+      } else {
+        setInCycle++;
+      }
+      phase = "work";
+    }
+    remaining = phaseSeconds(phase);
+    render();
+  }
+
+  function tick() {
+    if (remaining > 0) {
+      remaining--;
+      render();
+    } else {
+      nextPhase();
+    }
+  }
+
+  function start() {
+    if (timerId !== null) return;
+    // ユーザー操作のタイミングで AudioContext を準備
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+    } catch (e) { /* ignore */ }
+    timerId = setInterval(tick, 1000);
+    startBtn.disabled = true;
+    pauseBtn.disabled = false;
+    setConfigDisabled(true);
+  }
+
+  function pause() {
+    if (timerId === null) return;
+    clearInterval(timerId);
+    timerId = null;
+    startBtn.disabled = false;
+    pauseBtn.disabled = true;
+    setConfigDisabled(false);
+  }
+
+  function reset() {
+    pause();
+    phase = "work";
+    setInCycle = 1;
+    doneCount = 0;
+    remaining = phaseSeconds("work");
+    render();
+    document.title = "ポモドーロタイマー - public-tools";
+  }
+
+  function setConfigDisabled(disabled) {
+    Object.values(cfg).forEach(el => { el.disabled = disabled; });
+  }
+
+  // 設定変更（停止中のみ反映）
+  Object.values(cfg).forEach(el => {
+    el.addEventListener("input", () => {
+      saveConfig();
+      if (timerId === null) {
+        remaining = phaseSeconds(phase);
+        render();
+      }
+    });
+  });
+
+  startBtn.addEventListener("click", start);
+  pauseBtn.addEventListener("click", pause);
+  resetBtn.addEventListener("click", reset);
+
+  loadConfig();
+  remaining = phaseSeconds("work");
+  render();
+</script>
+</body>
+</html>
