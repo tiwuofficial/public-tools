@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>残業代計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  .row { display: grid; grid-template-columns: 240px 1fr 80px; gap: 12px; align-items: center; margin: 8px 0; }
+  .row label { color: var(--muted); font-size: 0.9rem; }
+  .row .rate { color: var(--muted); font-size: 0.85rem; text-align: right; }
+  .toggle { display: inline-flex; gap: 4px; border: 1px solid var(--border); border-radius: var(--radius); padding: 2px; }
+  .toggle button { border: none; background: transparent; padding: 6px 12px; border-radius: 4px; }
+  .toggle button.active { background: var(--accent); color: #fff; }
+  .total-num { font-size: 2.2rem; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+  table.breakdown { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  table.breakdown th, table.breakdown td { border: 1px solid var(--border); padding: 8px 12px; text-align: right; font-variant-numeric: tabular-nums; }
+  table.breakdown th { background: var(--bg); }
+  table.breakdown td:first-child, table.breakdown th:first-child { text-align: left; }
+  .hint { color: var(--muted); font-size: 0.85rem; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>残業代計算</h1>
+    <p class="lead">法定割増率を加味して残業代を計算。時給・月給どちらからでも。</p>
+  </header>
+
+  <h2>基準賃金</h2>
+  <div class="card">
+    <div class="row">
+      <label>給与の入力方法</label>
+      <div class="toggle" id="mode">
+        <button data-mode="hourly" class="active">時給</button>
+        <button data-mode="monthly">月給</button>
+      </div>
+      <div></div>
+    </div>
+    <div class="row" id="hourly-row">
+      <label>時給(円)</label>
+      <input type="number" id="hourly" min="0" value="2000">
+      <div></div>
+    </div>
+    <div id="monthly-rows" style="display:none">
+      <div class="row">
+        <label>月給(円)</label>
+        <input type="number" id="monthly" min="0" value="300000">
+        <div></div>
+      </div>
+      <div class="row">
+        <label>月平均所定労働時間</label>
+        <input type="number" id="monthly-hours" min="1" value="160">
+        <div class="rate">時間/月</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>残業時間と割増率</h2>
+  <div class="card">
+    <div class="row">
+      <label>法定内残業(時間)</label>
+      <input type="number" id="h-legal" min="0" step="0.5" value="0">
+      <div class="rate"><input type="number" id="r-legal" value="100" step="1" style="width:80px">%</div>
+    </div>
+    <div class="row">
+      <label>法定外残業(時間)</label>
+      <input type="number" id="h-over" min="0" step="0.5" value="20">
+      <div class="rate"><input type="number" id="r-over" value="125" step="1" style="width:80px">%</div>
+    </div>
+    <div class="row">
+      <label>月60時間超の残業(時間)</label>
+      <input type="number" id="h-over60" min="0" step="0.5" value="0">
+      <div class="rate"><input type="number" id="r-over60" value="150" step="1" style="width:80px">%</div>
+    </div>
+    <div class="row">
+      <label>深夜労働(22:00-5:00, 時間)</label>
+      <input type="number" id="h-night" min="0" step="0.5" value="0">
+      <div class="rate"><input type="number" id="r-night" value="150" step="1" style="width:80px">%</div>
+    </div>
+    <div class="row">
+      <label>休日労働(時間)</label>
+      <input type="number" id="h-holiday" min="0" step="0.5" value="0">
+      <div class="rate"><input type="number" id="r-holiday" value="135" step="1" style="width:80px">%</div>
+    </div>
+    <div class="hint">割増率は法定の標準値をデフォルトで入れています(中小企業の60時間超は要件により異なります)。会社の規定に合わせて変更してください。</div>
+  </div>
+
+  <h2>結果</h2>
+  <div class="card">
+    <div class="row">
+      <label>基準時給</label>
+      <div id="r-hourly">-</div>
+      <div></div>
+    </div>
+    <div class="row">
+      <label>残業代の合計</label>
+      <div class="total-num" id="r-total">-</div>
+      <div></div>
+    </div>
+    <table class="breakdown" id="break">
+      <thead><tr><th>項目</th><th>時間</th><th>割増率</th><th>金額</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+  let mode = 'hourly';
+
+  document.querySelectorAll('#mode button').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#mode button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      mode = b.dataset.mode;
+      $('hourly-row').style.display = mode === 'hourly' ? '' : 'none';
+      $('monthly-rows').style.display = mode === 'monthly' ? '' : 'none';
+      calc();
+    });
+  });
+
+  const items = [
+    { key: 'legal',    label: '法定内残業',        h: 'h-legal',   r: 'r-legal' },
+    { key: 'over',     label: '法定外残業',        h: 'h-over',    r: 'r-over' },
+    { key: 'over60',   label: '月60時間超の残業',   h: 'h-over60',  r: 'r-over60' },
+    { key: 'night',    label: '深夜労働',          h: 'h-night',   r: 'r-night' },
+    { key: 'holiday',  label: '休日労働',          h: 'h-holiday', r: 'r-holiday' },
+  ];
+
+  function yen(n) { return '¥' + Math.round(n).toLocaleString(); }
+
+  function calc() {
+    let hourly;
+    if (mode === 'hourly') {
+      hourly = parseFloat($('hourly').value) || 0;
+    } else {
+      const m = parseFloat($('monthly').value) || 0;
+      const mh = parseFloat($('monthly-hours').value) || 1;
+      hourly = m / mh;
+    }
+    $('r-hourly').textContent = yen(hourly) + ' / 時';
+
+    let total = 0;
+    let rows = '';
+    for (const it of items) {
+      const h = parseFloat($(it.h).value) || 0;
+      const r = parseFloat($(it.r).value) || 0;
+      const amount = hourly * (r / 100) * h;
+      total += amount;
+      rows += `<tr><td>${it.label}</td><td>${h} h</td><td>${r}%</td><td>${yen(amount)}</td></tr>`;
+    }
+    $('break').querySelector('tbody').innerHTML = rows;
+    $('r-total').textContent = yen(total);
+  }
+
+  document.querySelectorAll('input').forEach(i => {
+    i.addEventListener('input', calc);
+  });
+  calc();
+</script>
+</body>
+</html>
