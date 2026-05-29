@@ -425,6 +425,44 @@ mark.match.alt { background: #fcd34d; }
 .markdown-body th { background: var(--bg); }
 .markdown-body img { max-width: 100%; }
 
+/* card grid (汎用カードの自動折返しグリッド) */
+.card-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+.card-grid .card-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.card-grid .card-title .count {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+.card-grid ol,
+.card-grid ul {
+  margin: 0;
+  padding-left: 1.4em;
+}
+.card-grid li { margin: 2px 0; }
+
+/* inline form row (ラベル + コントロールの横並び) */
+.form-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.form-row label { font-size: 0.9rem; color: var(--muted); }
+.form-row select,
+.form-row input[type="number"] { width: auto; flex: 0 0 auto; }
+
 /* tally counter (数取りカウンター) */
 .counter-list {
   margin-top: 20px;

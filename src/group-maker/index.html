@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ランダムグループ分け - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>ランダムグループ分け</h1>
+    <p class="lead">名前のリストをランダムに班・チームへ均等に振り分けます。班分け・チーム編成・組分けに。</p>
+  </header>
+
+  <label for="names" class="pane-label">メンバー（1行に1人）</label>
+  <textarea id="names" placeholder="山田 太郎&#10;佐藤 花子&#10;鈴木 一郎&#10;..."></textarea>
+
+  <div class="form-row">
+    <label for="mode">分け方</label>
+    <select id="mode">
+      <option value="groups">グループ数を指定</option>
+      <option value="size">1グループの人数を指定</option>
+    </select>
+    <input type="number" id="count" min="1" value="2">
+    <span id="count-unit" class="pane-label">グループ</span>
+  </div>
+
+  <div class="actions">
+    <button id="shuffle" class="primary" type="button">グループ分け</button>
+    <button id="copy" type="button">結果をコピー</button>
+  </div>
+
+  <div id="banner-area"></div>
+  <div id="result" class="card-grid"></div>
+
+  <footer class="page-footer">
+    入力内容はこのブラウザ内（localStorage）にのみ保存されます。
+  </footer>
+</div>
+
+<script>
+  const STORE_KEY = "group-maker:v1";
+  const namesEl = document.getElementById("names");
+  const modeEl = document.getElementById("mode");
+  const countEl = document.getElementById("count");
+  const countUnitEl = document.getElementById("count-unit");
+  const resultEl = document.getElementById("result");
+  const bannerArea = document.getElementById("banner-area");
+
+  let lastGroups = null;
+
+  // --- 状態の復元 ---
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (typeof s.names === "string") namesEl.value = s.names;
+      if (s.mode === "groups" || s.mode === "size") modeEl.value = s.mode;
+      if (Number.isFinite(s.count) && s.count > 0) countEl.value = s.count;
+    }
+  } catch (e) { /* ignore */ }
+
+  function save() {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify({
+        names: namesEl.value,
+        mode: modeEl.value,
+        count: parseInt(countEl.value, 10) || 1
+      }));
+    } catch (e) { /* ignore */ }
+  }
+
+  function updateUnit() {
+    countUnitEl.textContent = modeEl.value === "groups" ? "グループ" : "人 / グループ";
+  }
+
+  function parseNames() {
+    return namesEl.value
+      .split("\n")
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+  }
+
+  function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function showBanner(msg) {
+    bannerArea.innerHTML = "";
+    const b = document.createElement("div");
+    b.className = "banner error";
+    b.textContent = msg;
+    bannerArea.appendChild(b);
+  }
+
+  function clearBanner() { bannerArea.innerHTML = ""; }
+
+  function makeGroups() {
+    clearBanner();
+    const names = parseNames();
+    if (names.length === 0) {
+      showBanner("メンバーを1行に1人ずつ入力してください。");
+      resultEl.innerHTML = "";
+      lastGroups = null;
+      return;
+    }
+    const count = parseInt(countEl.value, 10);
+    if (!Number.isFinite(count) || count < 1) {
+      showBanner("1以上の数を指定してください。");
+      return;
+    }
+
+    let groupCount;
+    if (modeEl.value === "groups") {
+      groupCount = Math.min(count, names.length);
+    } else {
+      groupCount = Math.ceil(names.length / count);
+    }
+
+    const shuffled = shuffle(names);
+    const groups = Array.from({ length: groupCount }, () => []);
+    // ラウンドロビンで配ると端数が先頭グループから順に入り、サイズ差は最大1
+    shuffled.forEach((name, i) => {
+      groups[i % groupCount].push(name);
+    });
+
+    lastGroups = groups;
+    render(groups);
+  }
+
+  function render(groups) {
+    resultEl.innerHTML = "";
+    groups.forEach((members, i) => {
+      const card = document.createElement("div");
+      card.className = "card";
+      const title = document.createElement("div");
+      title.className = "card-title";
+      const name = document.createElement("span");
+      name.textContent = "グループ " + (i + 1);
+      const cnt = document.createElement("span");
+      cnt.className = "count";
+      cnt.textContent = members.length + "人";
+      title.appendChild(name);
+      title.appendChild(cnt);
+      const ol = document.createElement("ol");
+      members.forEach(m => {
+        const li = document.createElement("li");
+        li.textContent = m;
+        ol.appendChild(li);
+      });
+      card.appendChild(title);
+      card.appendChild(ol);
+      resultEl.appendChild(card);
+    });
+  }
+
+  function copyResult() {
+    if (!lastGroups) {
+      showBanner("先にグループ分けを実行してください。");
+      return;
+    }
+    const text = lastGroups
+      .map((m, i) => "■ グループ " + (i + 1) + " (" + m.length + "人)\n" + m.map(n => "  - " + n).join("\n"))
+      .join("\n\n");
+    navigator.clipboard.writeText(text).then(() => {
+      clearBanner();
+      const b = document.createElement("div");
+      b.className = "banner ok";
+      b.textContent = "コピーしました。";
+      bannerArea.innerHTML = "";
+      bannerArea.appendChild(b);
+    }).catch(() => {
+      showBanner("コピーに失敗しました。手動で選択してコピーしてください。");
+    });
+  }
+
+  document.getElementById("shuffle").addEventListener("click", makeGroups);
+  document.getElementById("copy").addEventListener("click", copyResult);
+  namesEl.addEventListener("input", save);
+  countEl.addEventListener("input", save);
+  modeEl.addEventListener("change", () => { updateUnit(); save(); });
+
+  updateUnit();
+</script>
+</body>
+</html>
