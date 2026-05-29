@@ -425,6 +425,78 @@ mark.match.alt { background: #fcd34d; }
 .markdown-body th { background: var(--bg); }
 .markdown-body img { max-width: 100%; }
 
+/* bingo card (ビンゴカード) */
+.bingo-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+table.bingo {
+  border-collapse: collapse;
+  width: 100%;
+  background: var(--card);
+}
+table.bingo th,
+table.bingo td {
+  border: 1px solid var(--border);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  width: 20%;
+}
+table.bingo th {
+  background: var(--accent);
+  color: #fff;
+  font-size: 1.1rem;
+  padding: 6px 0;
+}
+table.bingo td {
+  font-size: 1.3rem;
+  padding: 10px 0;
+  height: 2.4em;
+}
+table.bingo td.free {
+  background: var(--accent-weak);
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.bingo-card-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+/* 抽選コール表示 */
+.bingo-call {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.bingo-call .ball {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.4em;
+  height: 2.4em;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--card);
+  font-variant-numeric: tabular-nums;
+}
+.bingo-call .ball.latest {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+@media print {
+  .nav, .page-header .lead, .actions, .form-row, footer.page-footer,
+  #caller-section, #banner-area { display: none !important; }
+  .bingo-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
 /* card grid (汎用カードの自動折返しグリッド) */
 .card-grid {
   margin-top: 16px;

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ビンゴカード生成 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>ビンゴカード生成</h1>
+    <p class="lead">5×5 のビンゴカードをまとめて生成して印刷。番号抽選機能つきで大会を進行できます。</p>
+  </header>
+
+  <div class="form-row">
+    <label for="num-cards">カード枚数</label>
+    <input type="number" id="num-cards" min="1" max="50" value="4">
+    <label><input type="checkbox" id="free-center" checked> 中央を FREE にする</label>
+  </div>
+
+  <div class="actions">
+    <button id="generate" class="primary" type="button">カードを生成</button>
+    <button id="print" type="button">印刷</button>
+  </div>
+
+  <div id="banner-area"></div>
+  <div id="cards" class="bingo-grid"></div>
+
+  <section id="caller-section">
+    <h2>番号抽選</h2>
+    <p class="lead">1〜75 から重複なくランダムに番号を引きます。</p>
+    <div class="actions">
+      <button id="draw" class="primary" type="button">次の番号を引く</button>
+      <button id="reset-draw" type="button">抽選をリセット</button>
+    </div>
+    <div class="stats">
+      <div class="stat">
+        <div class="label">最新</div>
+        <div class="value" id="latest-call">-</div>
+      </div>
+      <div class="stat">
+        <div class="label">引いた数</div>
+        <div class="value" id="call-count">0 / 75</div>
+      </div>
+    </div>
+    <div id="call-history" class="bingo-call"></div>
+  </section>
+
+  <footer class="page-footer">
+    生成・抽選はすべてブラウザ内で完結します（外部送信なし）。
+  </footer>
+</div>
+
+<script>
+  const COLUMNS = ["B", "I", "N", "G", "O"];
+  const cardsEl = document.getElementById("cards");
+  const bannerArea = document.getElementById("banner-area");
+
+  function showBanner(msg, ok) {
+    bannerArea.innerHTML = "";
+    const b = document.createElement("div");
+    b.className = "banner " + (ok ? "ok" : "error");
+    b.textContent = msg;
+    bannerArea.appendChild(b);
+  }
+
+  // 1..max の配列から count 個を重複なく取り出す
+  function sample(min, max, count) {
+    const pool = [];
+    for (let n = min; n <= max; n++) pool.push(n);
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    return pool.slice(0, count);
+  }
+
+  function buildCard(index, freeCenter) {
+    // 各列ごとに範囲から 5 個（中央列は FREE のとき 4 個でよいが、簡単のため 5 個引いて中央を上書き）
+    const cols = COLUMNS.map((_, c) => sample(c * 15 + 1, c * 15 + 15, 5));
+
+    const wrap = document.createElement("div");
+    const label = document.createElement("div");
+    label.className = "bingo-card-label";
+    label.textContent = "カード #" + (index + 1);
+    wrap.appendChild(label);
+
+    const table = document.createElement("table");
+    table.className = "bingo";
+    const thead = document.createElement("thead");
+    const htr = document.createElement("tr");
+    COLUMNS.forEach(ch => {
+      const th = document.createElement("th");
+      th.textContent = ch;
+      htr.appendChild(th);
+    });
+    thead.appendChild(htr);
+    table.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    for (let r = 0; r < 5; r++) {
+      const tr = document.createElement("tr");
+      for (let c = 0; c < 5; c++) {
+        const td = document.createElement("td");
+        if (freeCenter && r === 2 && c === 2) {
+          td.textContent = "FREE";
+          td.className = "free";
+        } else {
+          td.textContent = cols[c][r];
+        }
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    return wrap;
+  }
+
+  function generate() {
+    const n = parseInt(document.getElementById("num-cards").value, 10);
+    if (!Number.isFinite(n) || n < 1) {
+      showBanner("カード枚数は 1 以上を指定してください。");
+      return;
+    }
+    if (n > 50) {
+      showBanner("カード枚数は最大 50 枚までです。");
+      return;
+    }
+    const freeCenter = document.getElementById("free-center").checked;
+    cardsEl.innerHTML = "";
+    for (let i = 0; i < n; i++) {
+      cardsEl.appendChild(buildCard(i, freeCenter));
+    }
+    bannerArea.innerHTML = "";
+  }
+
+  // --- 番号抽選 ---
+  let remaining = [];
+  let called = [];
+  const latestEl = document.getElementById("latest-call");
+  const callCountEl = document.getElementById("call-count");
+  const historyEl = document.getElementById("call-history");
+
+  function resetDraw() {
+    remaining = [];
+    for (let n = 1; n <= 75; n++) remaining.push(n);
+    called = [];
+    latestEl.textContent = "-";
+    callCountEl.textContent = "0 / 75";
+    historyEl.innerHTML = "";
+  }
+
+  function draw() {
+    if (remaining.length === 0) {
+      showBanner("75 個すべて引き終わりました。", true);
+      return;
+    }
+    const idx = Math.floor(Math.random() * remaining.length);
+    const num = remaining.splice(idx, 1)[0];
+    called.push(num);
+    const col = COLUMNS[Math.floor((num - 1) / 15)];
+    latestEl.textContent = col + " " + num;
+    callCountEl.textContent = called.length + " / 75";
+    renderHistory();
+  }
+
+  function renderHistory() {
+    historyEl.innerHTML = "";
+    called.forEach((num, i) => {
+      const ball = document.createElement("span");
+      ball.className = "ball" + (i === called.length - 1 ? " latest" : "");
+      ball.textContent = num;
+      historyEl.appendChild(ball);
+    });
+  }
+
+  document.getElementById("generate").addEventListener("click", generate);
+  document.getElementById("print").addEventListener("click", () => window.print());
+  document.getElementById("draw").addEventListener("click", draw);
+  document.getElementById("reset-draw").addEventListener("click", resetDraw);
+
+  // 初期表示
+  generate();
+  resetDraw();
+</script>
+</body>
+</html>
