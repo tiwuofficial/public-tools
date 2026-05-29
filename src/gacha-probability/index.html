@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ガチャ確率計算 - public-tools</title>
+<link rel="stylesheet" href="../_shared/style.css">
+<style>
+  .row { display: grid; grid-template-columns: 220px 1fr; gap: 12px; align-items: center; margin: 10px 0; }
+  .row label { color: var(--muted); font-size: 0.9rem; }
+  .big { font-size: 2.2rem; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+  table.prob { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  table.prob th, table.prob td { border: 1px solid var(--border); padding: 8px 12px; text-align: right; font-variant-numeric: tabular-nums; }
+  table.prob th { background: var(--bg); }
+  table.prob td:first-child, table.prob th:first-child { text-align: left; }
+  .hint { color: var(--muted); font-size: 0.85rem; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="nav"><a href="../../index.html">← ツール一覧へ戻る</a></div>
+  <header class="page-header">
+    <h1>ガチャ確率計算</h1>
+    <p class="lead">排出確率と回数から「少なくとも 1 回当たる確率」を計算。</p>
+  </header>
+
+  <div class="card">
+    <div class="row">
+      <label>1 回あたりの排出確率 (%)</label>
+      <input type="number" id="rate" min="0" max="100" step="0.01" value="3">
+    </div>
+    <div class="row">
+      <label>試行回数</label>
+      <input type="number" id="trials" min="0" step="1" value="100">
+    </div>
+    <div class="row">
+      <label>1 回あたりの単価 (円, 任意)</label>
+      <input type="number" id="cost" min="0" step="1" value="300">
+    </div>
+  </div>
+
+  <h2>結果</h2>
+  <div class="card">
+    <div class="row">
+      <label>少なくとも 1 回当たる確率</label>
+      <div class="big" id="r-prob">-</div>
+    </div>
+    <div class="row">
+      <label>外れ続ける確率</label>
+      <div id="r-miss">-</div>
+    </div>
+    <div class="row">
+      <label>期待コスト(試行分)</label>
+      <div id="r-cost">-</div>
+    </div>
+  </div>
+
+  <h2>目標確率に必要な回数</h2>
+  <table class="prob">
+    <thead><tr><th>目標</th><th>必要回数</th><th>必要コスト</th></tr></thead>
+    <tbody id="goal-tbody"></tbody>
+  </table>
+
+  <h2>確率早見表</h2>
+  <table class="prob">
+    <thead><tr><th>回数</th><th>少なくとも 1 回当たる確率</th></tr></thead>
+    <tbody id="table-tbody"></tbody>
+  </table>
+  <div class="hint">独立試行を仮定しています。実際は天井 / ピックアップ / 確率変動などが入る場合があります。</div>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+
+  function pct(p) { return (p * 100).toFixed(4) + '%'; }
+  function pctShort(p) { return (p * 100).toFixed(2) + '%'; }
+  function yen(n) { return '¥' + Math.round(n).toLocaleString(); }
+
+  function calc() {
+    const r = Math.min(100, Math.max(0, parseFloat($('rate').value) || 0)) / 100;
+    const n = Math.max(0, parseInt($('trials').value, 10) || 0);
+    const c = Math.max(0, parseFloat($('cost').value) || 0);
+
+    const missOne = 1 - r;
+    const missAll = Math.pow(missOne, n);
+    const hitAtLeastOne = 1 - missAll;
+    $('r-prob').textContent = (hitAtLeastOne * 100).toFixed(3) + '%';
+    $('r-miss').textContent = pct(missAll);
+    $('r-cost').textContent = yen(n * c);
+
+    // goal table
+    const goals = [0.5, 0.7, 0.9, 0.95, 0.99];
+    let html = '';
+    for (const g of goals) {
+      let need;
+      if (r <= 0) need = Infinity;
+      else if (r >= 1) need = 1;
+      else need = Math.ceil(Math.log(1 - g) / Math.log(1 - r));
+      html += `<tr><td>${(g*100)}%</td><td>${isFinite(need) ? need + ' 回' : '∞'}</td><td>${isFinite(need) ? yen(need * c) : '-'}</td></tr>`;
+    }
+    $('goal-tbody').innerHTML = html;
+
+    // table
+    const ns = [1, 10, 20, 50, 100, 200, 300, 500, 1000];
+    let html2 = '';
+    for (const k of ns) {
+      const p = 1 - Math.pow(missOne, k);
+      html2 += `<tr><td>${k}</td><td>${pctShort(p)}</td></tr>`;
+    }
+    $('table-tbody').innerHTML = html2;
+  }
+
+  ['rate','trials','cost'].forEach(id => {
+    $(id).addEventListener('input', calc);
+  });
+  calc();
+</script>
+</body>
+</html>
